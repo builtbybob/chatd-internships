@@ -1,4 +1,4 @@
-# ChatD Internships Bot
+# Ch@d Internships Bot
 [![Tests](https://github.com/builtbybob/chatd-internships/actions/workflows/coverage.yml/badge.svg)](https://github.com/builtbybob/chatd-internships/actions)
 
 ## Overview
