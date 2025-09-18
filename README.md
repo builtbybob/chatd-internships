@@ -1,3 +1,5 @@
+![ChatD Internships Banner](ChatdInternshipsBanner.png)
+
 # Ch@d Internships Bot
 [![Tests](https://github.com/builtbybob/chatd-internships/actions/workflows/coverage.yml/badge.svg)](https://github.com/builtbybob/chatd-internships/actions)
 
@@ -85,12 +87,12 @@ For more robust log management, use the provided logrotate configuration:
 
 1. Copy the config to the logrotate.d directory:
     ```sh
-    sudo cp internships-bot.logrotate /etc/logrotate.d/internships-bot
+    sudo cp chatd-internships.logrotate /etc/logrotate.d/chatd-internships
     ```
 
 2. Test the configuration:
     ```sh
-    sudo logrotate -d /etc/logrotate.d/internships-bot
+    sudo logrotate -d /etc/logrotate.d/chatd-internships
     ```
 
 The logrotate configuration:

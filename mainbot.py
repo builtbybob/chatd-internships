@@ -25,7 +25,7 @@ logging.basicConfig(
     level=LOG_LEVEL,
     format='[%(asctime)s] [%(levelname)-7s] %(name)s: %(message)s',
 )
-logger: Logger = logging.getLogger('internships-bot')
+logger: Logger = logging.getLogger('chatd-internships')
 
 # Configuration validation
 def validate_config():
