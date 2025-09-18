@@ -1,0 +1,28 @@
+# Environment
+.env
+env/
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache
+
+# Coverage files
+.coverage
+coverage.xml
+htmlcov/
+
+# Cloned repository
+Summer2026-Internships/
+
+# Logs and runtime files
+*.log
+nohup.out
+
+# Bot data files
+message_tracking.json
+previous_data.json
+current_head.txt
