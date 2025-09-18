@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to set up a test scenario for the internships bot
+# Script to set up a test scenario for the chatd-internships bot
 # Resets the repo to an older state and saves current listings as previous_data.json
 # Usage: ./setup_test_update.sh [number_of_commits_back]
 #   e.g. ./setup_test_update.sh 3     # Go back 3 commits

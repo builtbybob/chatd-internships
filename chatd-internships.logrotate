@@ -1,4 +1,4 @@
-/home/apathy/internships-bot/nohup.out {
+/home/apathy/chatd-internships/nohup.out {
     rotate 5
     weekly
     size 10M
