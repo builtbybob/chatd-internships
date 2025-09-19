@@ -27,6 +27,11 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         from chatd.config import Config
         Config._instance = None
         
+        # Clear global bot state
+        from chatd import bot
+        bot.failed_channels.clear()
+        bot.channel_failure_counts.clear()
+        
         self.sample_role_key = 'test_company__software_engineer'
     
     def tearDown(self):
@@ -34,6 +39,11 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         self.env_patcher.stop()
         from chatd.config import Config
         Config._instance = None
+        
+        # Clear global bot state
+        from chatd import bot
+        bot.failed_channels.clear()
+        bot.channel_failure_counts.clear()
     
     async def test_send_message_success(self):
         """Test successful message sending."""
@@ -41,7 +51,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         
         # Mock Discord objects
         mock_channel = AsyncMock()
-        mock_message = AsyncMock()
+        mock_message = AsyncMock(spec=discord.Message)
         mock_message.id = 12345
         mock_channel.send.return_value = mock_message
         
@@ -113,8 +123,8 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         # Mock channels
         mock_channel1 = AsyncMock()
         mock_channel2 = AsyncMock()
-        mock_message1 = AsyncMock()
-        mock_message2 = AsyncMock()
+        mock_message1 = AsyncMock(spec=discord.Message)
+        mock_message2 = AsyncMock(spec=discord.Message)
         mock_message1.id = 12345
         mock_message2.id = 67890
         mock_channel1.send.return_value = mock_message1
@@ -283,19 +293,29 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
         
         from chatd.config import Config
         Config._instance = None
+        
+        # Clear global bot state
+        from chatd import bot
+        bot.failed_channels.clear()
+        bot.channel_failure_counts.clear()
     
     def tearDown(self):
         """Clean up after tests."""
         self.env_patcher.stop()
         from chatd.config import Config
         Config._instance = None
+        
+        # Clear global bot state
+        from chatd import bot
+        bot.failed_channels.clear()
+        bot.channel_failure_counts.clear()
     
     async def test_on_reaction_add_valid_reaction(self):
         """Test reaction event handler with valid reaction."""
         from chatd.bot import on_reaction_add
         
         # Mock Discord objects
-        mock_user = MagicMock()
+        mock_user = MagicMock(spec=discord.Member)
         mock_user.id = 67890  # Different from bot ID
         mock_user.display_name = 'TestUser'
         

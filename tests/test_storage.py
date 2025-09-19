@@ -247,8 +247,11 @@ class TestStorageIntegration(unittest.TestCase):
         """Test complete storage workflow."""
         temp_dir = tempfile.mkdtemp()
         try:
-            data_file = os.path.join(temp_dir, 'test_data.json')
-            storage = get_storage('file', data_file=data_file)
+            data_file = os.path.join(temp_dir, 'workflow_data.json')
+            messages_file = os.path.join(temp_dir, 'workflow_messages.json')
+            
+            # Create a fresh storage instance instead of using singleton
+            storage = FileStorage(data_file=data_file, messages_file=messages_file)
             
             # Test data operations
             test_data = [
@@ -262,15 +265,15 @@ class TestStorageIntegration(unittest.TestCase):
             self.assertEqual(loaded_data, test_data)
             
             # Test message tracking
-            self.assertTrue(storage.save_message_info('msg1', 'ch1', 'role_a'))
-            self.assertTrue(storage.save_message_info('msg2', 'ch1', 'role_b'))
-            self.assertTrue(storage.save_message_info('msg3', 'ch2', 'role_a'))
+            self.assertTrue(storage.save_message_info('msg1', 'ch1', 'workflow_role_a'))
+            self.assertTrue(storage.save_message_info('msg2', 'ch1', 'workflow_role_b'))
+            self.assertTrue(storage.save_message_info('msg3', 'ch2', 'workflow_role_a'))
             
             # Retrieve messages for specific role
-            role_a_messages = storage.get_messages_for_role('role_a')
+            role_a_messages = storage.get_messages_for_role('workflow_role_a')
             self.assertEqual(len(role_a_messages), 2)
             
-            role_b_messages = storage.get_messages_for_role('role_b')
+            role_b_messages = storage.get_messages_for_role('workflow_role_b')
             self.assertEqual(len(role_b_messages), 1)
         finally:
             import shutil

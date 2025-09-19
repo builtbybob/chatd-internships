@@ -200,7 +200,7 @@ class TestAsyncIntegration(unittest.IsolatedAsyncioTestCase):
         
         # Mock Discord objects
         mock_channel = AsyncMock()
-        mock_message = AsyncMock()
+        mock_message = AsyncMock(spec=discord.Message)
         mock_message.id = 12345
         mock_channel.send.return_value = mock_message
         
