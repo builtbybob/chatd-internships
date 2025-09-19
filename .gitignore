@@ -28,3 +28,11 @@ message_tracking.json
 messages.json
 previous_data.json
 current_head.txt
+
+# Docker deployment data
+data/
+logs/
+
+# Backup files
+chatd_backup_*.tar.gz
+*.backup

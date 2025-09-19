@@ -83,7 +83,9 @@ async def send_message(message: str, channel_id: str, role_key: Optional[str] = 
         
         # Store message info if we have a role key
         if role_key:
-            storage = get_storage()
+            storage = get_storage('file', 
+                                data_file=config.data_file, 
+                                messages_file=config.messages_file)
             storage.save_message_info(str(sent_message.id), channel_id, role_key)
         
         # Reset failure count on success
@@ -157,7 +159,9 @@ async def check_for_new_roles() -> None:
     new_data = read_json()
     
     # Get storage and load previous data
-    storage = get_storage()
+    storage = get_storage('file', 
+                        data_file=config.data_file, 
+                        messages_file=config.messages_file)
     old_data = storage.load_data()
     
     if old_data:
@@ -271,7 +275,9 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
         Optional[Dict[str, Any]]: The role data if found, None otherwise
     """
     # Load all data
-    storage = get_storage()
+    storage = get_storage('file', 
+                        data_file=config.data_file, 
+                        messages_file=config.messages_file)
     all_data = read_json()
     
     # For each role key in storage, check if the message ID matches

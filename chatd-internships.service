@@ -1,18 +1,54 @@
 [Unit]
-Description=Chatd Internships Discord Bot
-After=network.target
+Description=ChatD Internships Discord Bot
+Documentation=https://github.com/builtbybob/chatd-internships
+After=docker.service network.target
+Requires=docker.service
+StartLimitIntervalSec=0
 
 [Service]
-Type=simple
-User=apathy
-WorkingDirectory=/home/apathy/chatd-internships
-Environment="LOG_FILE=/home/apathy/chatd-internships/chatd.log"
-Environment="LOG_LEVEL=INFO"
-Environment="LOG_MAX_BYTES=10485760"
-Environment="LOG_BACKUP_COUNT=5"
-ExecStart=/usr/bin/python3 /home/apathy/chatd-internships/main.py
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Group=root
+TimeoutStartSec=300
+TimeoutStopSec=30
 Restart=on-failure
-RestartSec=5s
+RestartSec=30
+
+# Create data directories if they don't exist
+ExecStartPre=/bin/mkdir -p /var/lib/chatd/data /var/lib/chatd/repo /var/lib/chatd/logs
+ExecStartPre=/bin/chown -R 1000:1000 /var/lib/chatd
+
+# Build image if needed (only if source code changed)
+ExecStartPre=-/usr/bin/docker build -t chatd-internships:latest /home/apathy/dev/chatd-internships
+
+# Stop and remove any existing container
+ExecStartPre=-/usr/bin/docker stop chatd-bot
+ExecStartPre=-/usr/bin/docker rm chatd-bot
+
+# Start container with all volume mounts and configuration
+ExecStart=/usr/bin/docker run -d \
+  --name chatd-bot \
+  --env-file /etc/chatd/.env \
+  --restart unless-stopped \
+  --log-driver json-file \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
+  -v /var/lib/chatd/data:/app/data \
+  -v /var/lib/chatd/repo:/app/Summer2026-Internships \
+  -v /var/lib/chatd/logs:/app/logs \
+  chatd-internships:latest
+
+# Health check
+ExecStartPost=/bin/sleep 10
+ExecStartPost=/usr/bin/docker exec chatd-bot python -c "import sys; sys.exit(0)"
+
+# Stop and remove container
+ExecStop=/usr/bin/docker stop chatd-bot
+ExecStopPost=/usr/bin/docker rm -f chatd-bot
+
+# Cleanup on reload
+ExecReload=/usr/bin/docker restart chatd-bot
 
 [Install]
 WantedBy=multi-user.target

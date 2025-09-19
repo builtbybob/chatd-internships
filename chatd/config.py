@@ -18,7 +18,11 @@ logger = logging.getLogger('chatd-internships')
 # Default configuration values
 DEFAULT_CONFIG = {
     'REPO_URL': 'https://github.com/SimplifyJobs/Summer2026-Internships.git',
-    'LOCAL_REPO_PATH': 'Summer2026-Internships',
+    'LOCAL_REPO_PATH': '/app/Summer2026-Internships',
+    'DATA_FILE': '/app/data/previous_data.json',
+    'MESSAGES_FILE': '/app/data/message_tracking.json',
+    'CURRENT_HEAD_FILE': '/app/data/current_head.txt',
+    'LOG_FILE': '/app/logs/chatd.log',
     'LOG_LEVEL': 'INFO',
     'MAX_RETRIES': '3',
     'CHECK_INTERVAL_MINUTES': '1',
@@ -77,6 +81,12 @@ class Config:
         
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')
+        
+        # Make data file paths easily accessible
+        self.data_file = self.data_file
+        self.messages_file = self.messages_file  
+        self.current_head_file = self.current_head_file
+        self.log_file = self.log_file
         
         self._initialized = True
 
