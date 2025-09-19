@@ -21,6 +21,7 @@ Summer2026-Internships/
 # Logs and runtime files
 *.log
 nohup.out
+nohup.debug.out
 
 # Bot data files
 message_tracking.json
