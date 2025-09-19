@@ -1,0 +1,18 @@
+[Unit]
+Description=Chatd Internships Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=apathy
+WorkingDirectory=/home/apathy/chatd-internships
+Environment="LOG_FILE=/home/apathy/chatd-internships/chatd.log"
+Environment="LOG_LEVEL=INFO"
+Environment="LOG_MAX_BYTES=10485760"
+Environment="LOG_BACKUP_COUNT=5"
+ExecStart=/usr/bin/python3 /home/apathy/chatd-internships/main.py
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

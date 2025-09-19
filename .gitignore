@@ -24,5 +24,6 @@ nohup.out
 
 # Bot data files
 message_tracking.json
+messages.json
 previous_data.json
 current_head.txt

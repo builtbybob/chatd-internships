@@ -11,16 +11,17 @@ This project is a Discord bot designed to monitor a GitHub repository for new in
 2. Reads a JSON file containing internship listings.
 3. Compares the new listings with previously stored data.
 4. Sends formatted messages to a Discord channel for any new visible and active roles.
+5. Adds reactions to messages for user interaction (configurable via `ENABLE_REACTIONS`).
+6. Sends detailed job information DMs when users react to a message (when enabled).
 
 ## Setup
 
 ### Prerequisites
 
-- Python 3.6 or higher
+- Python 3.8 or higher
 - Git
-- Discord bot with Message Content Intent enabled
+- Discord bot with Message Content Intent and Reactions Intent enabled
 - One or more Discord channel IDs
-- (Optional) System logrotate for log management
 
 ### Installation
 
@@ -57,67 +58,130 @@ LOCAL_REPO_PATH=Summer2026-Internships        # Optional: Local path for the rep
 # Bot Configuration
 MAX_RETRIES=3                                 # Optional: Max retries for failed channels
 CHECK_INTERVAL_MINUTES=1                      # Optional: Minutes between repo checks
+
+# Logging Configuration
 LOG_LEVEL=INFO                                # Optional: Logging level (INFO/DEBUG/etc)
+LOG_FILE=chatd.log                            # Optional: Path to log file
+LOG_MAX_BYTES=10485760                        # Optional: Max log file size (10MB)
+LOG_BACKUP_COUNT=5                            # Optional: Number of backup logs to keep
 ```
 
-## Log Management
+## Running the Bot
 
-The bot includes two methods for log rotation to prevent disk space issues:
+### Direct Execution
 
-### Built-in Log Rotation (run_bot.sh)
+You can run the bot directly:
 
-The included `run_bot.sh` script provides basic log rotation:
+```bash
+# Make the script executable
+chmod +x main.py
+
+# Run the bot
+./main.py
+```
+
+### Using the Run Script
+
+The included `run_bot.sh` script provides a simple way to run the bot with automatic restart:
 
 ```bash
 # Make the script executable
 chmod +x run_bot.sh
 
-# Run the bot with built-in log rotation
+# Run the bot with the script
 ./run_bot.sh
 ```
 
-This method:
-- Rotates logs when they reach 10MB
-- Maintains 5 backup files (nohup.out.1 through nohup.out.5)
-- Automatically restarts the bot if it exits
+### As a systemd Service
 
-### System Log Rotation (logrotate)
+For a more robust deployment, use the provided systemd service:
 
-For more robust log management, use the provided logrotate configuration:
-
-1. Copy the config to the logrotate.d directory:
+1. Copy the service file to the systemd directory:
     ```sh
-    sudo cp chatd-internships.logrotate /etc/logrotate.d/chatd-internships
+    sudo cp chatd-internships.service /etc/systemd/system/
     ```
 
-2. Test the configuration:
+2. Edit the service file to update paths and user if needed:
     ```sh
-    sudo logrotate -d /etc/logrotate.d/chatd-internships
+    sudo nano /etc/systemd/system/chatd-internships.service
     ```
 
-The logrotate configuration:
-- Rotates logs weekly or when they reach 10MB
-- Keeps 5 compressed backups
-- Uses appropriate permissions
-- Handles missing log files gracefully
-
-## Usage
-
-1. Start the bot using either method:
+3. Enable and start the service:
     ```sh
-    # Using run_bot.sh (recommended)
-    ./run_bot.sh
-    
-    # Or directly (for development)
-    python mainbot.py
+    sudo systemctl daemon-reload
+    sudo systemctl enable chatd-internships
+    sudo systemctl start chatd-internships
     ```
 
-2. The bot will:
-    - Validate the environment configuration
-    - Clone or update the GitHub repository
-    - Process the internship listings
-    - Send formatted messages to all configured channels
-    - Continue monitoring for updates at the configured interval
+4. Check the service status:
+    ```sh
+    sudo systemctl status chatd-internships
+    ```
+
+### Using Docker
+
+You can also run the bot using Docker:
+
+1. Build the Docker image:
+    ```sh
+    docker build -t chatd-internships .
+    ```
+
+2. Run the Docker container:
+    ```sh
+    docker run -d \
+      --name chatd-internships \
+      --restart unless-stopped \
+      -v $(pwd)/.env:/app/.env \
+      -v chatd-data:/app/Summer2026-Internships \
+      -v chatd-logs:/app/logs \
+      chatd-internships
+    ```
+
+## Development
+
+The bot is organized into modules:
+
+- `chatd/config.py`: Configuration management
+- `chatd/logging_utils.py`: Logging setup and management
+- `chatd/repo.py`: GitHub repository handling
+- `chatd/messages.py`: Message formatting
+- `chatd/storage.py`: Data persistence
+- `chatd/bot.py`: Discord bot and event handlers
+- `main.py`: Entry point
+
+### Running Tests
+
+```bash
+python -m pytest tests/
+```
+
+## Log Management
+
+The bot includes built-in log rotation via the `logging_utils.py` module:
+
+- Automatically rotates logs when they reach the configured size
+- Maintains the configured number of backup files
+- Can be adjusted via environment variables
+
+## Adjusting Log Levels at Runtime
+
+You can change the log level at runtime by sending signals to the process:
+
+- `SIGUSR1`: Increase verbosity (e.g., INFO → DEBUG)
+- `SIGUSR2`: Decrease verbosity (e.g., DEBUG → INFO)
+
+Example:
+```bash
+# Get the process ID
+ps aux | grep main.py
+
+# Increase verbosity
+kill -SIGUSR1 <process_id>
+
+# Decrease verbosity
+kill -SIGUSR2 <process_id>
+```
 
 ## Features
 
@@ -128,6 +192,12 @@ The logrotate configuration:
 - **Multi-Channel Support**: Can send messages to multiple Discord channels simultaneously.
 - **Rate Limiting**: Includes built-in delays to prevent Discord API rate limiting.
 
+### Reaction Processing
+
+- **Interactive Messages**: The bot adds reactions to each message for user interaction.
+- **DM Support**: When users react to a message, they receive a detailed DM with more job information.
+- **Rich Formatting**: DMs include full job descriptions and application links.
+
 ### Error Handling and Recovery
 
 - **Channel Recovery**: Automatically retries failed channel messages up to configured MAX_RETRIES.
@@ -135,11 +205,9 @@ The logrotate configuration:
 - **Permission Handling**: Properly handles Discord permission errors and channel access issues.
 - **Graceful Shutdown**: Handles SIGINT and SIGTERM signals for clean shutdown.
 
-### Message Tracking
+## License
 
-- **Duplicate Prevention**: Uses normalized role keys to prevent duplicate messages.
-- **Message History**: Tracks previously sent messages to prevent re-sending on restarts.
-- **Change Detection**: Efficiently detects repository updates using git commit hashes.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ### Core Functions
 
