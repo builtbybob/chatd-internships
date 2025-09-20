@@ -58,6 +58,7 @@ LOCAL_REPO_PATH=Summer2026-Internships        # Optional: Local path for the rep
 # Bot Configuration
 MAX_RETRIES=3                                 # Optional: Max retries for failed channels
 CHECK_INTERVAL_MINUTES=1                      # Optional: Minutes between repo checks
+ENABLE_REACTIONS=false                        # Optional: Enable reaction features (default: true)
 
 # Logging Configuration
 LOG_LEVEL=INFO                                # Optional: Logging level (INFO/DEBUG/etc)
@@ -68,7 +69,26 @@ LOG_BACKUP_COUNT=5                            # Optional: Number of backup logs 
 
 ## Running the Bot
 
-### Direct Execution
+### Production Deployment (Recommended)
+
+For production environments, use the Docker + systemd deployment:
+
+```bash
+# Start the production service
+sudo systemctl start chatd-internships
+
+# Check status
+chatd status
+
+# Follow logs
+chatd logs -f
+```
+
+See the "Production Deployment with Docker + systemd" section below for full setup instructions.
+
+### Development and Testing
+
+#### Direct Execution
 
 You can run the bot directly:
 
@@ -80,7 +100,7 @@ chmod +x main.py
 ./main.py
 ```
 
-### Using the Run Script
+#### Using the Run Script (Development)
 
 The included `run_bot.sh` script provides a simple way to run the bot with automatic restart:
 
@@ -92,9 +112,9 @@ chmod +x run_bot.sh
 ./run_bot.sh
 ```
 
-### As a systemd Service
+#### Legacy systemd Service (Without Docker)
 
-For a more robust deployment, use the provided systemd service:
+For non-Docker deployments, use the basic systemd service:
 
 1. Copy the service file to the systemd directory:
     ```sh
@@ -118,25 +138,86 @@ For a more robust deployment, use the provided systemd service:
     sudo systemctl status chatd-internships
     ```
 
-### Using Docker
+### Production Deployment with Docker + systemd
 
-You can also run the bot using Docker:
+The recommended production deployment uses Docker with systemd for robust service management:
 
-1. Build the Docker image:
+#### Prerequisites for Production
+
+1. Install Docker:
     ```sh
-    docker build -t chatd-internships .
+    sudo apt update && sudo apt install -y docker.io
+    sudo systemctl enable docker
+    sudo systemctl start docker
     ```
 
-2. Run the Docker container:
+2. Create the production configuration:
     ```sh
-    docker run -d \
-      --name chatd-internships \
-      --restart unless-stopped \
-      -v $(pwd)/.env:/app/.env \
-      -v chatd-data:/app/Summer2026-Internships \
-      -v chatd-logs:/app/logs \
-      chatd-internships
+    sudo mkdir -p /etc/chatd
+    sudo cp .env /etc/chatd/.env
+    sudo chmod 600 /etc/chatd/.env
     ```
+
+3. Set up the systemd service:
+    ```sh
+    sudo cp chatd-internships.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable chatd-internships
+    ```
+
+#### Starting the Production Service
+
+```sh
+sudo systemctl start chatd-internships
+sudo systemctl status chatd-internships
+```
+
+#### Management Scripts
+
+The deployment includes management scripts for easy administration:
+
+```sh
+# Check service status
+chatd status
+
+# View logs
+chatd logs -f              # Follow logs in real-time
+chatd logs -n 100          # Show last 100 lines
+
+# Service control
+chatd start/stop/restart   # Control the service
+
+# Maintenance
+chatd-backup               # Create data backup
+chatd-build                # Update and rebuild
+chatd-data                 # Show data status
+```
+
+#### Docker Volumes
+
+The production setup uses persistent volumes:
+- `/var/lib/chatd/data`: Bot data and storage
+- `/var/lib/chatd/repo`: GitHub repository cache
+- `/var/lib/chatd/logs`: Application logs
+
+#### Manual Docker Usage
+
+For development or manual deployment:
+
+```sh
+# Build the image
+docker build -t chatd-internships:latest .
+
+# Run manually
+docker run -d \
+  --name chatd-bot \
+  --env-file /etc/chatd/.env \
+  --restart unless-stopped \
+  -v /var/lib/chatd/data:/app/data \
+  -v /var/lib/chatd/repo:/app/Summer2026-Internships \
+  -v /var/lib/chatd/logs:/app/logs \
+  chatd-internships:latest
+```
 
 ## Development
 
@@ -152,8 +233,18 @@ The bot is organized into modules:
 
 ### Running Tests
 
+The project uses unittest for testing:
+
 ```bash
-python -m pytest tests/
+# Run all tests
+python -m unittest discover tests/
+
+# Run specific test modules
+python -m unittest tests.test_bot
+python -m unittest tests.test_config
+
+# Run with verbose output
+python -m unittest discover tests/ -v
 ```
 
 ## Log Management
@@ -192,11 +283,12 @@ kill -SIGUSR2 <process_id>
 - **Multi-Channel Support**: Can send messages to multiple Discord channels simultaneously.
 - **Rate Limiting**: Includes built-in delays to prevent Discord API rate limiting.
 
-### Reaction Processing
+### Reaction Processing (Optional Feature)
 
-- **Interactive Messages**: The bot adds reactions to each message for user interaction.
-- **DM Support**: When users react to a message, they receive a detailed DM with more job information.
-- **Rich Formatting**: DMs include full job descriptions and application links.
+- **Configurable Reactions**: Use `ENABLE_REACTIONS=false` to disable reaction features for stability
+- **Interactive Messages**: When enabled, the bot adds reactions to each message for user interaction
+- **DM Support**: When users react to a message, they receive a detailed DM with more job information
+- **Rich Formatting**: DMs include full job descriptions and application links
 
 ### Error Handling and Recovery
 
