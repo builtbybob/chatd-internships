@@ -80,14 +80,15 @@ def read_json() -> List[Dict[str, Any]]:
 
 def normalize_role_key(role: Union[Dict[str, Any], str]) -> str:
     """
-    Create a stable normalized key for a role using company, title and URL (if available).
-    This reduces mismatches caused by whitespace, capitalization or minor title changes.
+    Create a stable normalized key for a role using company, title, and date_posted.
+    Including date_posted enables detection of role re-openings and prevents 
+    over-matching when the same company posts the same role multiple times.
     
     Args:
         role: Role data as a dictionary or string
         
     Returns:
-        str: Normalized role key
+        str: Normalized role key in format "company__title__date_posted"
     """
     def norm(s: Optional[str]) -> str:
         return (s or "").strip().lower()
@@ -95,7 +96,8 @@ def normalize_role_key(role: Union[Dict[str, Any], str]) -> str:
     if isinstance(role, str):
         return role.strip().lower()
 
-    url = role.get('url') if isinstance(role, dict) else None
-    if url:
-        return f"{norm(role.get('company_name'))}__{norm(role.get('title'))}__{url}"
-    return f"{norm(role.get('company_name'))}__{norm(role.get('title'))}"
+    company = norm(role.get('company_name'))
+    title = norm(role.get('title'))
+    date_posted = role.get('date_posted', 0)
+    
+    return f"{company}__{title}__{date_posted}"

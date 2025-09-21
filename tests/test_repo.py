@@ -124,24 +124,26 @@ class TestRepositoryOperations(unittest.TestCase):
     def test_normalize_role_key_with_url(self):
         """Test role key normalization with URL."""
         role = {
-            'company_name': '  Test Company  ',
-            'title': '  Software Engineer  ',
-            'url': 'https://example.com/job'
+            'company_name': 'TEST COMPANY',
+            'title': 'Software Engineer',
+            'url': 'https://example.com/job',
+            'date_posted': 1725148800.123456
         }
         
         key = normalize_role_key(role)
-        expected = 'test company__software engineer__https://example.com/job'
+        expected = 'test company__software engineer__1725148800.123456'
         self.assertEqual(key, expected)
     
     def test_normalize_role_key_without_url(self):
         """Test role key normalization without URL."""
         role = {
             'company_name': 'TEST COMPANY',
-            'title': 'Software Engineer'
+            'title': 'Software Engineer',
+            'date_posted': 1725148800.123456
         }
         
         key = normalize_role_key(role)
-        expected = 'test company__software engineer'
+        expected = 'test company__software engineer__1725148800.123456'
         self.assertEqual(key, expected)
     
     def test_normalize_role_key_string_input(self):
@@ -154,11 +156,11 @@ class TestRepositoryOperations(unittest.TestCase):
         """Test role key normalization with missing fields."""
         role = {
             'company_name': 'Test Company'
-            # Missing title
+            # Missing title and date_posted
         }
         
         key = normalize_role_key(role)
-        expected = 'test company__'
+        expected = 'test company____0'
         self.assertEqual(key, expected)
     
     def test_normalize_role_key_none_values(self):
@@ -166,11 +168,36 @@ class TestRepositoryOperations(unittest.TestCase):
         role = {
             'company_name': None,
             'title': 'Software Engineer'
+            # Missing date_posted (defaults to 0)
         }
         
         key = normalize_role_key(role)
-        expected = '__software engineer'
+        expected = '__software engineer__0'
         self.assertEqual(key, expected)
+        
+    def test_normalize_role_key_reopening_scenario(self):
+        """Test role key normalization handles re-opening scenario correctly."""
+        # Original posting
+        role1 = {
+            'company_name': 'Meta',
+            'title': 'Software Engineer Intern',
+            'date_posted': 1725148800.123456
+        }
+        
+        # Re-opening (same role, different date)
+        role2 = {
+            'company_name': 'Meta',
+            'title': 'Software Engineer Intern', 
+            'date_posted': 1725840000.789012
+        }
+        
+        key1 = normalize_role_key(role1)
+        key2 = normalize_role_key(role2)
+        
+        # Keys should be different to allow re-opening detection
+        self.assertNotEqual(key1, key2)
+        self.assertEqual(key1, 'meta__software engineer intern__1725148800.123456')
+        self.assertEqual(key2, 'meta__software engineer intern__1725840000.789012')
 
 
 if __name__ == '__main__':
