@@ -37,20 +37,22 @@ This document tracks planned improvements and enhancements for the ChatD Interns
   - [x] `chatd-build`: Manual rebuild trigger
   - [x] `chatd-deploy`: Deploy with existing image
   - [x] `chatd-update`: Build + restart in one command
-- [ ] **2.3** Implement image versioning
-  - [ ] Tag images with git commit hash: `chatd-internships:${GIT_COMMIT}`
-  - [ ] Track current deployment version
+- [x] **2.3** Implement image versioning ✅ **COMPLETED**
+  - [x] Tag images with git commit hash: `chatd-internships:${GIT_COMMIT}`
+  - [x] Track current deployment version
 - [ ] **2.4** Add CI/CD build hooks
   - [ ] GitHub Actions to build and push images
   - [ ] Local deployment pulls pre-built images
-- [x] **2.5** Update systemd service file
+- [x] **2.5** Update systemd service file ✅ **COMPLETED**
   - [x] Remove build steps from service startup
   - [x] Add health checks for faster failure detection
 
 **Results Achieved**:
 - **Deployment time**: Reduced from ~4+ minutes to ~8 seconds
 - **Build separation**: Can now build once, deploy multiple times
-- **New commands**: `chatd build`, `chatd deploy`, `chatd update`
+- **Smart builds**: Skip rebuilds when no code changes (~0.5 seconds)
+- **Version tracking**: Git commit-based image tagging and management
+- **New commands**: `chatd build`, `chatd deploy`, `chatd update`, `chatd version`
 - **Faster iteration**: Quick deployments for testing and rollbacks
 
 **Files modified**: `chatd-internships.service`, `scripts/create-management-scripts.sh`
