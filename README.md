@@ -158,18 +158,29 @@ The recommended production deployment uses Docker with systemd for robust servic
     sudo chmod 600 /etc/chatd/.env
     ```
 
-3. Set up the systemd service:
+3. Set up the management scripts:
+    ```sh
+    sudo bash scripts/create-management-scripts.sh
+    ```
+
+4. Set up the systemd service:
     ```sh
     sudo cp chatd-internships.service /etc/systemd/system/
     sudo systemctl daemon-reload
     sudo systemctl enable chatd-internships
     ```
 
-#### Starting the Production Service
+#### Initial Deployment
 
 ```sh
+# Build the Docker image
+sudo chatd build
+
+# Start the service
 sudo systemctl start chatd-internships
-sudo systemctl status chatd-internships
+
+# Check status
+chatd status
 ```
 
 #### Management Scripts
@@ -187,11 +198,20 @@ chatd logs -n 100          # Show last 100 lines
 # Service control
 chatd start/stop/restart   # Control the service
 
+# Build and deployment (NEW - Optimized Workflow)
+chatd build                # Build Docker image only
+chatd deploy               # Deploy with existing image (fast ~8 seconds)
+chatd update               # Build and deploy together
+
 # Maintenance
-chatd-backup               # Create data backup
-chatd-build                # Update and rebuild
-chatd-data                 # Show data status
+chatd backup               # Create data backup
+chatd data                 # Show data status
 ```
+
+**New Optimized Deployment Workflow:**
+- **Development**: Use `chatd build` once, then `chatd deploy` for quick iterations
+- **Production Updates**: Use `chatd update` for full rebuild and deployment
+- **Performance**: Deployment time reduced from 4+ minutes to ~8 seconds
 
 #### Docker Volumes
 
@@ -208,7 +228,7 @@ For development or manual deployment:
 # Build the image
 docker build -t chatd-internships:latest .
 
-# Run manually
+# Run manually (or use the optimized commands above)
 docker run -d \
   --name chatd-bot \
   --env-file /etc/chatd/.env \
@@ -218,6 +238,8 @@ docker run -d \
   -v /var/lib/chatd/logs:/app/logs \
   chatd-internships:latest
 ```
+
+**Note**: The production systemd service no longer rebuilds Docker images on startup for faster deployment. Use the management commands above for optimal workflow.
 
 ## Development
 
