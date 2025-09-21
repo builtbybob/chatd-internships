@@ -4,7 +4,7 @@
 # These scripts help manage the dockerized ChatD Internships bot
 #
 
-# Build script - Build Docker image only (no restart)
+# Build script - Build Docker image only with smart commit-based detection
 create_chatd_build() {
     cat > /usr/local/bin/chatd-build << 'EOF'
 #!/bin/bash
@@ -19,11 +19,32 @@ cd /home/apathy/dev/chatd-internships
 echo "📡 Pulling latest changes from git..."
 git pull
 
-# Build new docker image
-echo "🐳 Building Docker image..."
-docker build -t chatd-internships:latest .
+# Get current git commit hash
+COMMIT_HASH=$(git rev-parse --short HEAD)
+IMAGE_TAG="chatd-internships:${COMMIT_HASH}"
+LATEST_TAG="chatd-internships:latest"
+
+echo "📋 Current commit: ${COMMIT_HASH}"
+
+# Check if image for this commit already exists
+if docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
+    echo "✅ Image for commit ${COMMIT_HASH} already exists!"
+    echo "🏷️  Tagging as latest..."
+    docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
+    echo "⚡ Build skipped - no changes detected"
+    exit 0
+fi
+
+# Build new docker image with commit tag
+echo "🐳 Building Docker image for commit ${COMMIT_HASH}..."
+docker build -t "${IMAGE_TAG}" .
+
+# Also tag as latest
+echo "🏷️  Tagging as latest..."
+docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
 
 echo "✅ Bot image built successfully!"
+echo "📦 Image: ${IMAGE_TAG}"
 echo "ℹ️  Use 'chatd deploy' to restart with the new image."
 EOF
     chmod +x /usr/local/bin/chatd-build
@@ -58,7 +79,7 @@ EOF
     chmod +x /usr/local/bin/chatd-deploy
 }
 
-# Update script - Build and deploy in one command
+# Update script - Build and deploy with smart detection
 create_chatd_update() {
     cat > /usr/local/bin/chatd-update << 'EOF'
 #!/bin/bash
@@ -73,22 +94,153 @@ cd /home/apathy/dev/chatd-internships
 echo "📡 Pulling latest changes from git..."
 git pull
 
-# Build new docker image
-echo "🐳 Building Docker image..."
-docker build -t chatd-internships:latest .
+# Get current git commit hash
+COMMIT_HASH=$(git rev-parse --short HEAD)
+IMAGE_TAG="chatd-internships:${COMMIT_HASH}"
+LATEST_TAG="chatd-internships:latest"
+
+echo "📋 Current commit: ${COMMIT_HASH}"
+
+# Check if image for this commit already exists
+if docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
+    echo "✅ Image for commit ${COMMIT_HASH} already exists!"
+    echo "🏷️  Tagging as latest..."
+    docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
+    echo "⚡ Build skipped - no changes detected"
+else
+    # Build new docker image with commit tag
+    echo "🐳 Building Docker image for commit ${COMMIT_HASH}..."
+    docker build -t "${IMAGE_TAG}" .
+    
+    # Also tag as latest
+    echo "🏷️  Tagging as latest..."
+    docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
+    echo "✅ Bot image built successfully!"
+fi
 
 # Restart the service if it's running
 if systemctl is-active --quiet chatd-internships; then
     echo "🔄 Restarting service..."
     systemctl restart chatd-internships
     echo "✅ Bot updated and deployed!"
+    echo "📦 Running: ${IMAGE_TAG}"
 else
     echo "🚀 Starting bot service..."
     systemctl start chatd-internships
     echo "✅ Bot built and started!"
+    echo "📦 Running: ${IMAGE_TAG}"
 fi
 EOF
     chmod +x /usr/local/bin/chatd-update
+}
+
+# Version script - Show version information and manage image versions
+create_chatd_version() {
+    cat > /usr/local/bin/chatd-version << 'EOF'
+#!/bin/bash
+
+show_usage() {
+    echo "ChatD Bot Version Management"
+    echo "Usage: chatd-version [COMMAND]"
+    echo ""
+    echo "Commands:"
+    echo "  show, current    Show currently running version"
+    echo "  list             List all available image versions"
+    echo "  images           Show Docker images with sizes"
+    echo "  clean            Remove old unused images (keep last 5)"
+    echo ""
+    echo "Examples:"
+    echo "  chatd-version                # Show current version"
+    echo "  chatd-version list          # List all versions"
+    echo "  chatd-version clean         # Clean old images"
+}
+
+show_current_version() {
+    echo "🔍 Current ChatD Bot Version Information"
+    echo "========================================"
+    
+    # Check if container is running
+    if docker ps -q -f name=chatd-bot >/dev/null 2>&1; then
+        CONTAINER_ID=$(docker ps -q -f name=chatd-bot)
+        IMAGE_ID=$(docker inspect --format='{{.Image}}' $CONTAINER_ID 2>/dev/null)
+        IMAGE_TAG=$(docker inspect --format='{{index .RepoTags 0}}' $IMAGE_ID 2>/dev/null || echo "Unknown")
+        
+        echo "📦 Running Image: $IMAGE_TAG"
+        echo "🆔 Image ID: $(echo $IMAGE_ID | cut -c1-12)"
+        echo "📅 Created: $(docker inspect --format='{{.Created}}' $IMAGE_ID 2>/dev/null | cut -c1-19)"
+        
+        # Try to extract commit hash from tag
+        if [[ $IMAGE_TAG =~ chatd-internships:([a-f0-9]+) ]]; then
+            COMMIT_HASH="${BASH_REMATCH[1]}"
+            echo "🔗 Git Commit: $COMMIT_HASH"
+            
+            # Show commit info if we're in the repo directory
+            if cd /home/apathy/dev/chatd-internships 2>/dev/null; then
+                if git show --oneline -s $COMMIT_HASH 2>/dev/null; then
+                    echo "📝 Commit Info: $(git show --oneline -s $COMMIT_HASH 2>/dev/null)"
+                fi
+            fi
+        fi
+    else
+        echo "❌ ChatD bot container is not running"
+    fi
+    
+    echo ""
+}
+
+list_versions() {
+    echo "📋 Available ChatD Bot Image Versions"
+    echo "====================================="
+    docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}" \
+        --filter reference=chatd-internships \
+        | head -20
+    echo ""
+}
+
+clean_old_images() {
+    echo "🧹 Cleaning old ChatD Bot images..."
+    echo "Keeping the 5 most recent images..."
+    
+    # Get images sorted by creation date, skip the first 5 (most recent)
+    OLD_IMAGES=$(docker images chatd-internships --format "{{.ID}}" | tail -n +6)
+    
+    if [ -n "$OLD_IMAGES" ]; then
+        echo "Removing old images:"
+        echo "$OLD_IMAGES" | while read image_id; do
+            echo "  🗑️  Removing: $image_id"
+            docker rmi "$image_id" 2>/dev/null || echo "    ⚠️  Could not remove $image_id (may be in use)"
+        done
+    else
+        echo "✅ No old images to clean"
+    fi
+    echo ""
+}
+
+case "${1:-show}" in
+    show|current|"")
+        show_current_version
+        ;;
+    list)
+        list_versions
+        ;;
+    images)
+        list_versions
+        ;;
+    clean)
+        clean_old_images
+        ;;
+    help|-h|--help)
+        show_usage
+        ;;
+    *)
+        echo "❌ Unknown command: $1"
+        echo ""
+        show_usage
+        exit 1
+        ;;
+esac
+EOF
+    chmod +x /usr/local/bin/chatd-version
 }
 
 # Logs script - View bot logs
@@ -307,12 +459,14 @@ show_usage() {
     echo "  build      Build Docker image (alias for chatd-build)"
     echo "  deploy     Deploy with existing image (alias for chatd-deploy)"
     echo "  update     Build and deploy together (alias for chatd-update)"
+    echo "  version    Show version information (alias for chatd-version)"
     echo ""
     echo "Examples:"
     echo "  chatd start           # Start the bot"
     echo "  chatd build           # Build new image"
     echo "  chatd deploy          # Deploy with existing image"
     echo "  chatd update          # Build and deploy together"
+    echo "  chatd version         # Show current version"
     echo "  chatd logs -f         # Follow logs in real-time"
     echo "  chatd status          # Check if bot is running"
 }
@@ -360,6 +514,10 @@ case "$1" in
     update)
         chatd-update
         ;;
+    version)
+        shift
+        chatd-version "$@"
+        ;;
     ""|help|-h|--help)
         show_usage
         ;;
@@ -386,6 +544,9 @@ echo "✅ Created chatd-deploy"
 create_chatd_update
 echo "✅ Created chatd-update"
 
+create_chatd_version
+echo "✅ Created chatd-version"
+
 create_chatd_logs
 echo "✅ Created chatd-logs" 
 
@@ -406,6 +567,7 @@ echo "  chatd start/stop/restart - Control the bot"
 echo "  chatd-logs -f           - Follow logs in real-time"
 echo "  chatd-data              - Check bot data status"
 echo "  chatd-backup            - Create data backup"
-echo "  chatd-build             - Build Docker image only"
+echo "  chatd-build             - Build Docker image with smart detection"
 echo "  chatd-deploy            - Deploy with existing image"
 echo "  chatd-update            - Build and deploy together"
+echo "  chatd-version           - Show version and manage images"
