@@ -27,6 +27,7 @@ DEFAULT_CONFIG = {
     'MAX_RETRIES': '3',
     'CHECK_INTERVAL_MINUTES': '1',
     'ENABLE_REACTIONS': 'false',
+    'MAX_POST_AGE_DAYS': '5',
 }
 
 # Required configuration values that must be set
@@ -75,6 +76,7 @@ class Config:
         # Convert numeric values to integers
         self.max_retries = int(self.max_retries)
         self.check_interval_minutes = int(self.check_interval_minutes)
+        self.max_post_age_days = int(self.max_post_age_days)
         
         # Convert boolean values
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')
@@ -114,6 +116,11 @@ class Config:
                 int(channel_id)
         except (ValueError, AttributeError):
             logger.error("CHANNEL_IDS must be comma-separated integers")
+            return False
+        
+        # Validate max_post_age_days is within reasonable bounds
+        if not (1 <= self.max_post_age_days <= 30):
+            logger.error(f"MAX_POST_AGE_DAYS must be between 1 and 30 days. Got: {self.max_post_age_days}")
             return False
         
         logger.info("Configuration validation passed.")

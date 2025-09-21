@@ -184,16 +184,16 @@ async def check_for_new_roles() -> None:
         
         # Check for new, visible, and active roles only
         if not old_role and new_is_visible and new_active:
-            # Check if the role was updated within the last 5 days
+            # Check if the role was updated within the configured time period
             days_since_posted = (datetime.now().timestamp() - new_role['date_posted']) / (24 * 60 * 60)
-            if days_since_posted <= 5:
+            if days_since_posted <= config.max_post_age_days:
                 # Add to priority queue in chronological order (oldest first)
                 # Using (timestamp, counter) as the key to ensure unique ordering
                 counter = len(new_roles_heap)  # Use length as a unique secondary key
                 heapq.heappush(new_roles_heap, (new_role['date_posted'], counter, new_role))
                 logger.debug(f"New role found: {new_role['title']} at {new_role['company_name']}")
             else:
-                logger.debug(f"Skipping old role: {new_role['title']} at {new_role['company_name']} (posted {days_since_posted:.1f} days ago)")
+                logger.debug(f"Skipping old role: {new_role['title']} at {new_role['company_name']} (posted {days_since_posted:.1f} days ago, max age: {config.max_post_age_days} days)")
 
     logger.debug(f"Found {len(new_roles_heap)} new roles, processing in chronological order")
 
