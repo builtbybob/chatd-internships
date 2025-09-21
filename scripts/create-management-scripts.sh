@@ -4,13 +4,67 @@
 # These scripts help manage the dockerized ChatD Internships bot
 #
 
-# Build script - Update and rebuild the bot
+# Build script - Build Docker image only (no restart)
 create_chatd_build() {
     cat > /usr/local/bin/chatd-build << 'EOF'
 #!/bin/bash
 set -e
 
-echo "🔄 Updating ChatD Internships Bot..."
+echo "🔄 Building ChatD Internships Bot..."
+
+# Navigate to source directory
+cd /home/apathy/dev/chatd-internships
+
+# Pull latest changes
+echo "📡 Pulling latest changes from git..."
+git pull
+
+# Build new docker image
+echo "🐳 Building Docker image..."
+docker build -t chatd-internships:latest .
+
+echo "✅ Bot image built successfully!"
+echo "ℹ️  Use 'chatd deploy' to restart with the new image."
+EOF
+    chmod +x /usr/local/bin/chatd-build
+}
+
+# Deploy script - Restart service with existing image
+create_chatd_deploy() {
+    cat > /usr/local/bin/chatd-deploy << 'EOF'
+#!/bin/bash
+set -e
+
+echo "🚀 Deploying ChatD Internships Bot..."
+
+# Check if image exists
+if ! docker image inspect chatd-internships:latest >/dev/null 2>&1; then
+    echo "❌ Docker image 'chatd-internships:latest' not found!"
+    echo "ℹ️  Run 'chatd build' first to create the image."
+    exit 1
+fi
+
+# Restart the service if it's running
+if systemctl is-active --quiet chatd-internships; then
+    echo "🔄 Restarting service with new image..."
+    systemctl restart chatd-internships
+    echo "✅ Bot deployed successfully!"
+else
+    echo "🚀 Starting bot service..."
+    systemctl start chatd-internships
+    echo "✅ Bot started successfully!"
+fi
+EOF
+    chmod +x /usr/local/bin/chatd-deploy
+}
+
+# Update script - Build and deploy in one command
+create_chatd_update() {
+    cat > /usr/local/bin/chatd-update << 'EOF'
+#!/bin/bash
+set -e
+
+echo "🔄 Updating ChatD Internships Bot (build + deploy)..."
 
 # Navigate to source directory
 cd /home/apathy/dev/chatd-internships
@@ -27,12 +81,14 @@ docker build -t chatd-internships:latest .
 if systemctl is-active --quiet chatd-internships; then
     echo "🔄 Restarting service..."
     systemctl restart chatd-internships
-    echo "✅ Bot updated and restarted!"
+    echo "✅ Bot updated and deployed!"
 else
-    echo "ℹ️  Bot updated! Use 'sudo systemctl start chatd-internships' to start it."
+    echo "🚀 Starting bot service..."
+    systemctl start chatd-internships
+    echo "✅ Bot built and started!"
 fi
 EOF
-    chmod +x /usr/local/bin/chatd-build
+    chmod +x /usr/local/bin/chatd-update
 }
 
 # Logs script - View bot logs
@@ -248,10 +304,15 @@ show_usage() {
     echo "  logs       Show recent logs (alias for chatd-logs)"
     echo "  data       Show data status (alias for chatd-data)"
     echo "  backup     Create backup (alias for chatd-backup)"
-    echo "  build      Update and rebuild (alias for chatd-build)"
+    echo "  build      Build Docker image (alias for chatd-build)"
+    echo "  deploy     Deploy with existing image (alias for chatd-deploy)"
+    echo "  update     Build and deploy together (alias for chatd-update)"
     echo ""
     echo "Examples:"
     echo "  chatd start           # Start the bot"
+    echo "  chatd build           # Build new image"
+    echo "  chatd deploy          # Deploy with existing image"
+    echo "  chatd update          # Build and deploy together"
     echo "  chatd logs -f         # Follow logs in real-time"
     echo "  chatd status          # Check if bot is running"
 }
@@ -293,6 +354,12 @@ case "$1" in
     build)
         chatd-build
         ;;
+    deploy)
+        chatd-deploy
+        ;;
+    update)
+        chatd-update
+        ;;
     ""|help|-h|--help)
         show_usage
         ;;
@@ -312,6 +379,12 @@ echo "Creating ChatD management scripts..."
 
 create_chatd_build
 echo "✅ Created chatd-build"
+
+create_chatd_deploy
+echo "✅ Created chatd-deploy"
+
+create_chatd_update
+echo "✅ Created chatd-update"
 
 create_chatd_logs
 echo "✅ Created chatd-logs" 
@@ -333,4 +406,6 @@ echo "  chatd start/stop/restart - Control the bot"
 echo "  chatd-logs -f           - Follow logs in real-time"
 echo "  chatd-data              - Check bot data status"
 echo "  chatd-backup            - Create data backup"
-echo "  chatd-build             - Update and rebuild bot"
+echo "  chatd-build             - Build Docker image only"
+echo "  chatd-deploy            - Deploy with existing image"
+echo "  chatd-update            - Build and deploy together"

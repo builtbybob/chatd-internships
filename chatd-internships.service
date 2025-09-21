@@ -19,9 +19,6 @@ RestartSec=30
 ExecStartPre=/bin/mkdir -p /var/lib/chatd/data /var/lib/chatd/repo /var/lib/chatd/logs
 ExecStartPre=/bin/chown -R 1000:1000 /var/lib/chatd
 
-# Build image if needed (only if source code changed)
-ExecStartPre=-/usr/bin/docker build -t chatd-internships:latest /home/apathy/dev/chatd-internships
-
 # Stop and remove any existing container
 ExecStartPre=-/usr/bin/docker stop chatd-bot
 ExecStartPre=-/usr/bin/docker rm chatd-bot
