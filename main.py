@@ -31,14 +31,31 @@ def main():
     # Set up signal handlers for log level changes
     setup_signal_handlers()
     
+    logger.info("🚀 Starting ChatD Internships Bot...")
+    
     # Validate configuration
-    validate_config()
+    try:
+        logger.info("🔧 Validating configuration...")
+        if not validate_config():
+            logger.error("💥 Configuration validation failed. Cannot start bot.")
+            logger.error("   Please fix the configuration issues above and try again.")
+            sys.exit(1)
+        logger.info("✅ Configuration validation completed successfully")
+    except Exception as e:
+        logger.error(f"💥 Configuration validation encountered an error: {e}")
+        logger.error("   Please check your configuration and try again.")
+        sys.exit(1)
     
     try:
+        logger.info("🤖 Starting Discord bot...")
         # Run the bot
         run_bot()
+    except KeyboardInterrupt:
+        logger.info("👋 Bot stopped by user")
+        sys.exit(0)
     except Exception as e:
-        logger.error(f"Error running bot: {e}")
+        logger.error(f"💥 Error running bot: {e}")
+        logger.error("   Check the logs above for more details.")
         sys.exit(1)
 
 
