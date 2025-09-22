@@ -6,8 +6,23 @@ configuration values from environment variables or other sources.
 """
 
 import os
-import sys
-import subprocess
+import s    def _validate_file_permissions(self):
+        """Validate that all required file paths exist and are writable."""
+        logger.info("✅ Starting file permissions validation...")
+        
+        # List of file paths to validate
+        file_paths = [
+            ('DATA_FILE', self.data_file),
+            ('MESSAGES_FILE', self.messages_file),
+            ('CURRENT_HEAD_FILE', self.current_head_file),
+            ('LOG_FILE', self.log_file),
+            ('LOCAL_REPO_PATH', self.local_repo_path),
+        ]
+        
+        # Debug: Print all paths
+        logger.info("🔍 Debug - File paths being validated:")
+        for config_name, file_path in file_paths:
+            logger.info(f"   {config_name}: '{file_path}' (type: {type(file_path)})")subprocess
 import tempfile
 from pathlib import Path
 from typing import List, Optional
@@ -59,9 +74,14 @@ class Config:
         # Load environment variables from .env file
         load_dotenv()
         
-        # Set default values
-        for key, value in DEFAULT_CONFIG.items():
-            setattr(self, key.lower(), os.getenv(key, value))
+        # Set default values, but don't let empty environment variables override defaults
+        for key, default_value in DEFAULT_CONFIG.items():
+            env_value = os.getenv(key)
+            # Use environment value only if it's not None and not empty
+            if env_value is not None and env_value.strip() != '':
+                setattr(self, key.lower(), env_value)
+            else:
+                setattr(self, key.lower(), default_value)
         
         # Set up path to JSON file
         self.json_file_path = os.path.join(
@@ -211,16 +231,39 @@ class Config:
 
     def _validate_file_permissions(self) -> bool:
         """Validate file system permissions for required directories."""
+        # Create list of file paths and their names for validation
+        file_paths = [
+            ('DATA_FILE', self.data_file),
+            ('MESSAGES_FILE', self.messages_file),
+            ('CURRENT_HEAD_FILE', self.current_head_file),
+            ('LOG_FILE', self.log_file),
+            ('LOCAL_REPO_PATH', self.local_repo_path),
+        ]
+        
+        # Check for empty paths first
+        for config_name, file_path in file_paths:
+            if not file_path or file_path.strip() == '':
+                logger.error(f"❌ {config_name} is empty or not set")
+                logger.error(f"   Please check your environment variables or .env file")
+                logger.error(f"   Default value should be: {DEFAULT_CONFIG.get(config_name, 'N/A')}")
+                return False
+        
         # Create list of directories that need to be writable
         required_dirs = [
             os.path.dirname(self.data_file),
             os.path.dirname(self.messages_file),
             os.path.dirname(self.current_head_file),
             os.path.dirname(self.log_file),
-            os.path.dirname(self.local_repo_path),
+            self.local_repo_path,  # This is already a directory path, not a file path
         ]
         
         for dir_path in required_dirs:
+            # Skip empty paths
+            if not dir_path or dir_path.strip() == '':
+                logger.error("❌ Empty directory path found in configuration")
+                logger.error("   Please check your environment variables for empty values")
+                return False
+                
             if not self._check_directory_writable(dir_path):
                 logger.error(f"❌ Directory not writable: {dir_path}")
                 logger.error("   The bot needs write access to store data and logs")
