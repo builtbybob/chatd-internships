@@ -14,6 +14,225 @@ This project is a Discord bot designed to monitor a GitHub repository for new in
 5. Adds reactions to messages for user interaction (configurable via `ENABLE_REACTIONS`).
 6. Sends detailed job information DMs when users react to a message (when enabled).
 
+## 🖥️ Server Setup Guide
+
+### Fresh Raspberry Pi Setup
+
+This guide covers setting up a new Raspberry Pi from scratch for hosting the ChatD bot.
+
+#### 1. Initial Raspberry Pi Setup
+
+```bash
+# Flash Raspberry Pi OS to microSD card (recommend 32GB+ for adequate space)
+# Enable SSH during flash or enable manually:
+sudo systemctl enable ssh
+sudo systemctl start ssh
+
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install essential packages
+sudo apt install -y git docker.io curl vim htop
+```
+
+#### 2. Docker Setup
+
+```bash
+# Add user to docker group
+sudo usermod -aG docker $USER
+
+# Restart to apply group changes
+sudo reboot
+
+# Test Docker (after reboot)
+docker --version
+docker run hello-world
+```
+
+#### 3. Security & SSH Setup
+
+```bash
+# Generate SSH key pair (if not using existing keys)
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+# Copy public key to authorized_keys
+cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
+# Configure SSH for better security
+sudo nano /etc/ssh/sshd_config
+# Recommended settings:
+# PermitRootLogin no
+# PasswordAuthentication no
+# PubkeyAuthentication yes
+
+sudo systemctl restart sshd
+```
+
+#### 4. System Optimization
+
+```bash
+# Configure log rotation to save space
+sudo nano /etc/logrotate.d/rsyslog
+# Add: daily, rotate 7, compress, delaycompress
+
+# Set up automatic updates (optional)
+sudo apt install unattended-upgrades
+sudo dpkg-reconfigure -plow unattended-upgrades
+
+# Monitor disk space
+echo 'df -h /' >> ~/.bashrc  # Show disk usage on login
+```
+
+#### 5. ChatD Bot Installation
+
+```bash
+# Clone repository
+git clone https://github.com/builtbybob/chatd-internships.git
+cd chatd-internships
+
+# Install management scripts
+sudo ./scripts/create-management-scripts.sh
+
+# Create configuration
+sudo mkdir -p /etc/chatd
+sudo cp .env.example /etc/chatd/.env
+sudo chmod 600 /etc/chatd/.env
+sudo nano /etc/chatd/.env  # Configure with your Discord token and settings
+```
+
+### Migration from Existing Setup
+
+If migrating from an existing installation:
+
+#### Option 1: Full Disk Clone (Recommended)
+```bash
+# On another machine with both SD cards connected
+sudo dd if=/dev/old_card of=/dev/new_card bs=4M status=progress conv=fsync
+
+# After cloning, expand filesystem on new card
+sudo raspi-config  # Advanced Options -> Expand Filesystem
+```
+
+#### Option 2: Selective Backup & Restore
+```bash
+# Backup essential data from old system
+scp -r user@old-pi:/etc/chatd/ ./backup/
+scp -r user@old-pi:/var/lib/chatd/ ./backup/
+scp -r user@old-pi:~/.ssh/ ./backup/
+
+# Save Docker image
+ssh user@old-pi "docker save chatd-internships:latest" > chatd-image.tar
+
+# Restore on new system (after basic setup)
+sudo cp -r ./backup/chatd/ /etc/
+sudo cp -r ./backup/chatd/ /var/lib/
+cp -r ./backup/.ssh/ ~/
+docker load < chatd-image.tar
+```
+
+#### Option 3: Fresh Setup (Clean Start)
+Follow the complete setup guide below - often the cleanest approach.
+
+### Disk Space Recommendations
+
+- **Minimum**: 16GB microSD card
+- **Recommended**: 32GB+ microSD card  
+- **For development**: 64GB+ microSD card
+
+**Current typical usage:**
+- Base OS: ~4GB
+- Docker images: ~400MB per image
+- ChatD data: ~50-100MB
+- Logs: ~10-50MB (with rotation)
+- **Total recommended free space**: 8GB+ for comfortable operation
+
+### 📋 Quick Migration Checklist
+
+For your specific migration to a larger microSD card:
+
+#### Essential Files to Backup:
+- [ ] **Discord Configuration**: `/etc/chatd/.env` (contains your bot token)
+- [ ] **Bot Data**: `/var/lib/chatd/data/` (message tracking, previous data)
+- [ ] **SSH Keys**: `~/.ssh/` (for remote access)
+- [ ] **Docker Image**: Save with `docker save chatd-internships:latest > chatd-backup.tar`
+
+#### Migration Commands:
+```bash
+# 1. Backup from current system
+ssh user@current-pi
+sudo tar czf chatd-backup.tar.gz /etc/chatd/ /var/lib/chatd/
+docker save chatd-internships:latest > chatd-image.tar
+scp chatd-backup.tar.gz chatd-image.tar user@new-pi:~/
+
+# 2. On new system (after basic setup)
+sudo tar xzf chatd-backup.tar.gz -C /
+docker load < chatd-image.tar
+sudo chown -R 1000:1000 /var/lib/chatd/
+
+# 3. Install management scripts and start
+cd chatd-internships
+sudo ./scripts/create-management-scripts.sh
+sudo systemctl enable chatd-internships
+sudo systemctl start chatd-internships
+```
+
+#### Post-Migration Verification:
+- [ ] `sudo chatd status` shows service running
+- [ ] `sudo chatd-logs` shows no errors
+- [ ] `sudo chatd-loglevel debug` works (test dynamic logging)
+- [ ] SSH access working with keys
+- [ ] `df -h` shows adequate free space
+
+### 🔧 Common Setup Issues
+
+#### Disk Space Problems
+```bash
+# Check disk usage
+df -h
+du -h --max-depth=1 /var/lib/
+
+# Clean up if needed
+docker system prune -f
+sudo apt autoremove
+sudo journalctl --vacuum-size=100M
+```
+
+#### Permission Issues
+```bash
+# Fix ChatD data permissions
+sudo chown -R 1000:1000 /var/lib/chatd/
+sudo chmod 600 /etc/chatd/.env
+
+# Fix Docker permissions  
+sudo usermod -aG docker $USER
+# Then logout and login again
+```
+
+#### SSH Connection Issues
+```bash
+# Check SSH service
+sudo systemctl status sshd
+
+# Reset SSH config (if locked out)
+sudo nano /etc/ssh/sshd_config
+# Temporarily set: PasswordAuthentication yes
+sudo systemctl restart sshd
+```
+
+#### Docker Problems
+```bash
+# Restart Docker service
+sudo systemctl restart docker
+
+# Check Docker status
+systemctl status docker
+docker ps -a
+
+# Rebuild image if needed
+sudo chatd-build
+```
+
 ## Setup
 
 ### Prerequisites
