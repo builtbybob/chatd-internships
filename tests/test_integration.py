@@ -54,11 +54,22 @@ class TestIntegration(unittest.TestCase):
         'DISCORD_TOKEN': 'test_token',
         'CHANNEL_IDS': '123456789,987654321',
         'LOG_LEVEL': 'INFO',
-        'ENABLE_REACTIONS': 'false'
+        'ENABLE_REACTIONS': 'false',
+        'DATA_FILE': '/tmp/test-data/previous_data.json',
+        'MESSAGES_FILE': '/tmp/test-data/message_tracking.json',
+        'CURRENT_HEAD_FILE': '/tmp/test-data/current_head.txt',
+        'LOG_FILE': '/tmp/test-logs/chatd.log',
+        'LOCAL_REPO_PATH': '/tmp/test-repo'
     })
-    def test_config_integration(self):
+    @patch('sys.exit')
+    @patch('chatd.config.Config._validate_discord_connection', return_value=True)
+    @patch('chatd.config.Config._validate_repository', return_value=True)
+    def test_config_integration(self, mock_repo, mock_discord, mock_exit):
         """Test configuration loading and validation."""
         from chatd.config import Config, validate_config
+        
+        # Reset singleton to reload with new env vars
+        Config._instance = None
         
         config = Config()
         self.assertEqual(config.discord_token, 'test_token')
@@ -67,6 +78,8 @@ class TestIntegration(unittest.TestCase):
         
         # Test validation
         result = validate_config()
+        # If sys.exit was called, that means validation failed
+        mock_exit.assert_not_called()
         self.assertTrue(result)
     
     @patch.dict(os.environ, {}, clear=True)

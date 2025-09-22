@@ -6,23 +6,8 @@ configuration values from environment variables or other sources.
 """
 
 import os
-import s    def _validate_file_permissions(self):
-        """Validate that all required file paths exist and are writable."""
-        logger.info("✅ Starting file permissions validation...")
-        
-        # List of file paths to validate
-        file_paths = [
-            ('DATA_FILE', self.data_file),
-            ('MESSAGES_FILE', self.messages_file),
-            ('CURRENT_HEAD_FILE', self.current_head_file),
-            ('LOG_FILE', self.log_file),
-            ('LOCAL_REPO_PATH', self.local_repo_path),
-        ]
-        
-        # Debug: Print all paths
-        logger.info("🔍 Debug - File paths being validated:")
-        for config_name, file_path in file_paths:
-            logger.info(f"   {config_name}: '{file_path}' (type: {type(file_path)})")subprocess
+import sys
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import List, Optional

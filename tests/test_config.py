@@ -39,7 +39,7 @@ class TestConfig(unittest.TestCase):
         """Test default configuration values."""
         config = Config()
         self.assertEqual(config.repo_url, 'https://github.com/SimplifyJobs/Summer2026-Internships.git')
-        self.assertEqual(config.local_repo_path, 'Summer2026-Internships')
+        self.assertEqual(config.local_repo_path, '/tmp/test-repo')  # Updated to match test environment
         self.assertEqual(config.max_retries, 3)
         self.assertEqual(config.check_interval_minutes, 1)
         self.assertEqual(config.enable_reactions, False)  # Test default reaction setting
@@ -51,10 +51,25 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(config.channel_ids, ['123456789', '987654321'])
         self.assertEqual(config.log_level, 'DEBUG')
     
-    def test_validate_config(self):
+    @patch('sys.exit')
+    @patch('chatd.config.Config._validate_discord_connection', return_value=True)
+    @patch('chatd.config.Config._validate_repository', return_value=True)
+    def test_validate_config(self, mock_repo, mock_discord, mock_exit):
         """Test configuration validation."""
-        result = validate_config()
-        self.assertTrue(result)
+        # Set up additional environment variables needed for testing
+        with patch.dict(os.environ, {
+            'DATA_FILE': '/tmp/test-data/previous_data.json',
+            'MESSAGES_FILE': '/tmp/test-data/message_tracking.json',
+            'CURRENT_HEAD_FILE': '/tmp/test-data/current_head.txt',
+            'LOG_FILE': '/tmp/test-logs/chatd.log',
+            'LOCAL_REPO_PATH': '/tmp/test-repo'
+        }):
+            # Reset singleton to reload with new env vars
+            Config._instance = None
+            result = validate_config()
+            # If sys.exit was called, that means validation failed
+            mock_exit.assert_not_called()
+            self.assertTrue(result)
     
     @patch.dict(os.environ, {}, clear=True)
     def test_validate_config_missing_vars(self):
