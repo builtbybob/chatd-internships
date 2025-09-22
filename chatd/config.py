@@ -257,10 +257,23 @@ class Config:
             self.local_repo_path,  # This is already a directory path, not a file path
         ]
         
-        for dir_path in required_dirs:
+        # Debug logging to identify empty paths
+        file_paths = [
+            ("data_file", self.data_file),
+            ("messages_file", self.messages_file), 
+            ("current_head_file", self.current_head_file),
+            ("log_file", self.log_file),
+            ("local_repo_path", self.local_repo_path)
+        ]
+        
+        for name, path in file_paths:
+            logger.info(f"🔍 {name}: '{path}'")
+        
+        for i, dir_path in enumerate(required_dirs):
+            logger.info(f"🔍 Required dir {i}: '{dir_path}'")
             # Skip empty paths
             if not dir_path or dir_path.strip() == '':
-                logger.error("❌ Empty directory path found in configuration")
+                logger.error(f"❌ Empty directory path found in configuration (index {i})")
                 logger.error("   Please check your environment variables for empty values")
                 return False
                 
