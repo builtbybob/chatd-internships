@@ -68,22 +68,97 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 **Files modified**: `chatd-internships.service`, `scripts/create-management-scripts.sh`
 
-### 3. Asynchronous Message Reactions
+### 3. Docker Image Auto-Pruning 🧹 **(Quick Win - High Priority)**
+**Goal**: Automatically clean up old Docker images to prevent disk space issues
+
+**Current Issue**: Multiple Docker images accumulate (386MB each), consuming limited disk space
+**Current State**: 3 images = ~1.1GB, only 505MB free space remaining
+
+**Implementation Plan**:
+- [ ] **3.1** Add auto-pruning to deployment workflow
+  - [ ] Modify `chatd-update` script to retain only N latest versions (default: 3)
+  - [ ] Keep current commit, latest tag, and 1 previous version
+  - [ ] Automatic cleanup after successful deployment
+  - [ ] Configuration option for retention count: `DOCKER_IMAGE_RETENTION=3`
+- [ ] **3.2** Manual cleanup commands
+  - [ ] Add `chatd cleanup` command for manual image pruning
+  - [ ] Add `chatd images` command to list current images with sizes
+  - [ ] Add `chatd prune` command for aggressive cleanup (keep only latest)
+  - [ ] Dry-run mode: `chatd cleanup --dry-run` to preview what would be deleted
+- [ ] **3.3** Disk space monitoring integration
+  - [ ] Check available disk space before building new images
+  - [ ] Automatic emergency cleanup if disk usage > 90%
+  - [ ] Warning messages when approaching space limits
+  - [ ] Integration with future monitoring dashboard alerts
+
+**Example Auto-Pruning Logic**:
+```bash
+# In chatd-update script, after successful deployment:
+echo "🧹 Cleaning up old Docker images..."
+RETENTION_COUNT=${DOCKER_IMAGE_RETENTION:-3}
+
+# Get all chatd images sorted by creation date (newest first)
+IMAGES=$(docker images chatd-internships --format "{{.Tag}}" | head -n +$RETENTION_COUNT)
+
+# Remove images older than retention count
+docker images chatd-internships --format "{{.Tag}}" | tail -n +$((RETENTION_COUNT + 1)) | while read tag; do
+    if [[ "$tag" != "latest" ]]; then
+        echo "🗑️  Removing old image: chatd-internships:$tag"
+        docker rmi "chatd-internships:$tag" 2>/dev/null || true
+    fi
+done
+
+echo "✅ Cleanup complete. Retained $RETENTION_COUNT images."
+```
+
+**New Management Commands**:
+```bash
+# Image management
+sudo chatd images                    # List all ChatD images with sizes
+sudo chatd cleanup                   # Clean up old images (keep 3)
+sudo chatd cleanup --count 5         # Keep 5 images instead of 3
+sudo chatd cleanup --dry-run         # Preview what would be deleted
+sudo chatd prune                     # Aggressive cleanup (keep only latest)
+
+# Disk space monitoring
+sudo chatd disk                      # Show disk usage and image sizes
+sudo chatd disk --alert              # Check if cleanup needed
+```
+
+**Immediate Benefits**:
+- **Prevent disk space exhaustion** with current 7GB constraint
+- **Automatic maintenance** - no manual intervention needed
+- **Configurable retention** - balance between rollback capability and space
+- **Emergency cleanup** - automatic recovery from space issues
+- **Better visibility** - commands to monitor image usage
+
+**Disk Space Recovery**:
+- **Current**: 3 images × 386MB = ~1.1GB used
+- **After cleanup**: 3 images × 386MB = ~1.1GB (same, but prevents growth)
+- **Emergency cleanup**: 1 image × 386MB = ~770MB recovered
+
+**Time to Implement**: ~30-45 minutes (high impact, low effort)
+
+**Files to modify**: 
+- `/usr/local/bin/chatd-update` (add auto-pruning logic)
+- `scripts/create-management-scripts.sh` (add new cleanup commands)
+
+### 4. Asynchronous Message Reactions
 **Goal**: Improve reaction performance through async processing
 
 **Current Issue**: Adding reactions blocks message sending, slowing overall performance
 
 **Implementation Plan**:
-- [ ] **3.1** Refactor reaction logic in `bot.py`
+- [ ] **4.1** Refactor reaction logic in `bot.py`
   - [ ] Move reactions to background task queue
   - [ ] Use `asyncio.create_task()` for non-blocking reactions
-- [ ] **3.2** Implement reaction batching
+- [ ] **4.2** Implement reaction batching
   - [ ] Queue reactions and process in batches
   - [ ] Add configurable delay between reaction batches
-- [ ] **3.3** Add reaction failure handling
+- [ ] **4.3** Add reaction failure handling
   - [ ] Retry logic for failed reactions
   - [ ] Graceful degradation when reactions fail
-- [ ] **3.4** Configuration options
+- [ ] **4.4** Configuration options
   - [ ] `REACTION_BATCH_SIZE=10`
   - [ ] `REACTION_DELAY_MS=100`
   - [ ] `REACTION_RETRY_COUNT=3`
@@ -92,33 +167,33 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 ## 🎯 Feature Enhancements
 
-### 4. Smart Reaction-Based Info Sharing
+### 5. Smart Reaction-Based Info Sharing
 **Goal**: Enhanced info messages triggered by specific reactions
 
 **Current Behavior**: All reactions trigger DM with job details
 **Target Behavior**: Only '❓' reaction triggers enhanced company info
 
 **Implementation Plan**:
-- [ ] **4.1** Update reaction handler logic
+- [ ] **5.1** Update reaction handler logic
   - [ ] Check reaction emoji type before processing
   - [ ] Only process '❓' emoji for detailed info
-- [ ] **4.2** Enhanced company information gathering
+- [ ] **5.2** Enhanced company information gathering
   - [ ] Query `listings.json` for same company roles
   - [ ] Filter by configurable time window (default: 7 days)
   - [ ] Group by company and format nicely
-- [ ] **4.3** Rich DM formatting
+- [ ] **5.3** Rich DM formatting
   - [ ] Company overview section
   - [ ] All recent roles from company
   - [ ] Application deadlines and dates
   - [ ] Direct links to applications
-- [ ] **4.4** Configuration options
+- [ ] **5.4** Configuration options
   - [ ] `COMPANY_INFO_DAYS=7`
   - [ ] `INFO_REACTION_EMOJI=❓`
   - [ ] `ENABLE_COMPANY_INFO=true`
 
 **Files to modify**: `chatd/bot.py`, `chatd/messages.py`, `chatd/config.py`
 
-### 5. Configurable Date Filtering ✅ **COMPLETED**
+### 6. Configurable Date Filtering ✅ **COMPLETED**
 **Goal**: Make "too old" threshold configurable instead of hardcoded
 
 **Current Implementation**: ~~Hardcoded 5-day filter in code~~ **RESOLVED**
@@ -149,7 +224,7 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 ## 🔍 Data Quality & Performance
 
-### 6. Listings Data Audit
+### 7. Listings Data Audit
 **Goal**: Comprehensive audit of matching logic accuracy
 
 **Scope**: Ensure no false positives or missed matches in role detection
@@ -190,7 +265,7 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 **Files to create**: `scripts/audit_listings.py`, `tests/test_matching_audit.py`
 **Files to modify**: `tests/test_messages.py`, `chatd/messages.py`
 
-### 7. Efficient Delta Processing
+### 8. Efficient Delta Processing
 **Goal**: Process only changes instead of full file comparison
 
 **Current Approach**: Full file read and comparison on every check
@@ -219,7 +294,7 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 **Files to modify**: `chatd/repo.py`, `chatd/storage.py`, `chatd/bot.py`
 
-### 8. Role Status Management
+### 9. Role Status Management
 **Goal**: Handle role deactivations and visibility changes
 
 **Current Behavior**: Only posts new roles, ignores status changes
@@ -250,7 +325,7 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 **Files to modify**: `chatd/storage.py`, `chatd/bot.py`, `chatd/messages.py`, `chatd/config.py`
 
-### 9. Enhanced Monitoring & Observability
+### 10. Enhanced Monitoring & Observability
 **Goal**: Better visibility into bot performance and health
 
 **Benefits**: Proactive issue detection, performance optimization insights, operational visibility
@@ -279,7 +354,7 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 **Files to modify**: `chatd/bot.py`, `chatd/config.py`, `main.py`, `requirements.txt`
 
-### 10. Configuration Validation & Safety ✅ **COMPLETED**
+### 11. Configuration Validation & Safety ✅ **COMPLETED**
 **Goal**: Prevent misconfigurations and provide better error messages
 
 **Benefits**: Faster debugging, prevents runtime failures, improves user experience
@@ -326,7 +401,7 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 **Files modified**: `chatd/config.py`, `main.py`
 
-### 11. Backup & Recovery System 🎯 **(Stretch Goal)**
+### 12. Backup & Recovery System 🎯 **(Stretch Goal)**
 **Goal**: Automated backup and disaster recovery procedures
 
 **Note**: Limited by device storage constraints - requires external storage solution
@@ -351,7 +426,7 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 **Files to modify**: `scripts/chatd-backup`, `chatd/config.py`, `scripts/recovery.sh`
 
-### 12. Multi-Environment Support 🎯 **(Requires Larger Disk)**
+### 13. Multi-Environment Support 🎯 **(Requires Larger Disk)**
 **Goal**: Support for development, staging, and production environments
 
 **Benefits**: Safe testing, isolated development, professional deployment workflow, separate Discord bots for testing
@@ -502,7 +577,7 @@ sudo chatd env promote staging prod    # Promote staging to prod
 - `chatd-internships.service` (production-specific service)
 - `Dockerfile` (environment-aware builds)
 
-### 13. Enhanced Test Simulation Framework 🧪 **(Depends on Multi-Environment)**
+### 14. Enhanced Test Simulation Framework 🧪 **(Depends on Multi-Environment)**
 **Goal**: Migrate and enhance existing test simulation script for multi-environment support
 
 **Current State**: `setup_test_update.sh` allows replaying message updates by resetting to older commits
@@ -636,7 +711,7 @@ git reset --hard "$RESET_TARGET"
 **Files to modify**:
 - `setup_test_update.sh` (mark as deprecated, reference new script)
 
-### 14. Monitoring Dashboard & Alerting System 📊 **(High Priority)**
+### 15. Monitoring Dashboard & Alerting System 📊 **(High Priority)**
 **Goal**: Comprehensive monitoring dashboard with real-time metrics, alerts, and historical analytics
 
 **Benefits**: Proactive issue detection, performance insights, usage analytics, operational visibility
@@ -979,10 +1054,13 @@ sudo chatd-loglevel critical  # Critical failures only
 - [x] **Performance Improvements**: 1/1 (Docker build optimization) 
 - [x] **Configuration Enhancements**: 2/2 (Configurable date filtering, configuration validation)
 - [x] **Operational Improvements**: 1/1 (Dynamic log level control)
-- [ ] **Infrastructure Projects**: 0/3 (Multi-environment support, enhanced test simulation, monitoring dashboard - all require disk migration)
-- [ ] **Items Started**: 1/8 (Data audit partially completed)
-- [ ] **Items Completed**: 4/8 (Docker optimization, date filtering, log level control, config validation completed)
-- [ ] **Total Sub-tasks**: 24/50 completed (5 new sub-tasks added for monitoring dashboard)
+- [ ] **Infrastructure Projects**: 0/4 (Docker auto-pruning, multi-environment support, enhanced test simulation, monitoring dashboard)
+- [ ] **Items Started**: 1/9 (Data audit partially completed)
+- [ ] **Items Completed**: 4/9 (Docker optimization, date filtering, log level control, config validation completed)
+- [ ] **Total Sub-tasks**: 24/55 completed (5 new sub-tasks added for monitoring dashboard, 5 for Docker auto-pruning)
+
+**Immediate Quick Wins** 🚀:
+- Docker Image Auto-Pruning (can be implemented now, will free up disk space immediately)
 
 **Blocked by Disk Migration**:
 - Multi-Environment Support (requires ~15-20GB disk space, currently have 7GB total)
