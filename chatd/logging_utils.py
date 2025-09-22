@@ -154,44 +154,8 @@ def setup_signal_handlers():
     """
     Set up signal handlers for changing log levels.
     
-    SIGUSR1: Increase log verbosity (e.g., INFO -> DEBUG)
-    SIGUSR2: Decrease log verbosity (e.g., DEBUG -> INFO)
     SIGHUP: Check for log level change request via file
     """
-    def increase_verbosity(sig, frame):
-        """Increase log verbosity on SIGUSR1."""
-        global logger
-        if not logger:
-            return
-            
-        current_level = logger.getEffectiveLevel()
-        levels = list(LOG_LEVELS.values())
-        levels.sort()  # Sort from least to most verbose
-        
-        # Find the next more verbose level
-        for level in reversed(levels):
-            if level < current_level:
-                level_name = next(k for k, v in LOG_LEVELS.items() if v == level)
-                change_log_level(level_name)
-                break
-    
-    def decrease_verbosity(sig, frame):
-        """Decrease log verbosity on SIGUSR2."""
-        global logger
-        if not logger:
-            return
-            
-        current_level = logger.getEffectiveLevel()
-        levels = list(LOG_LEVELS.values())
-        levels.sort()  # Sort from least to most verbose
-        
-        # Find the next less verbose level
-        for level in levels:
-            if level > current_level:
-                level_name = next(k for k, v in LOG_LEVELS.items() if v == level)
-                change_log_level(level_name)
-                break
-
     def handle_direct_level_change(sig, frame):
         """Handle direct log level change request via SIGHUP."""
         level_file = '/tmp/chatd_loglevel'
@@ -206,10 +170,8 @@ def setup_signal_handlers():
             if logger:
                 logger.error(f"Error processing log level change: {e}")
     
-    # Register signal handlers
-    signal.signal(signal.SIGUSR1, increase_verbosity)
-    signal.signal(signal.SIGUSR2, decrease_verbosity)
+    # Register signal handler for direct level setting
     signal.signal(signal.SIGHUP, handle_direct_level_change)
     
     if logger:
-        logger.info("Log level signal handlers registered (SIGUSR1/SIGUSR2/SIGHUP)")
+        logger.info("Log level signal handler registered (SIGHUP)")

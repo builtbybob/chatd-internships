@@ -198,6 +198,13 @@ chatd logs -n 100          # Show last 100 lines
 # Service control
 chatd start/stop/restart   # Control the service
 
+# Dynamic log level control (NEW)
+chatd-loglevel debug       # Enable debug logging for troubleshooting
+chatd-loglevel info        # Normal operational logging
+chatd-loglevel warning     # Show warnings and errors only
+chatd-loglevel error       # Show errors only
+chatd-loglevel critical    # Show critical errors only
+
 # Build and deployment (NEW - Optimized Workflow)
 chatd build                # Build Docker image only
 chatd deploy               # Deploy with existing image (fast ~8 seconds)
@@ -277,24 +284,37 @@ The bot includes built-in log rotation via the `logging_utils.py` module:
 - Maintains the configured number of backup files
 - Can be adjusted via environment variables
 
-## Adjusting Log Levels at Runtime
+## 🔧 Troubleshooting & Log Management
 
-You can change the log level at runtime by sending signals to the process:
+### Dynamic Log Level Control
 
-- `SIGUSR1`: Increase verbosity (e.g., INFO → DEBUG)
-- `SIGUSR2`: Decrease verbosity (e.g., DEBUG → INFO)
+The bot supports **instant log level changes without restart**, perfect for production debugging:
 
-Example:
 ```bash
-# Get the process ID
-ps aux | grep main.py
+# Enable debug logging for detailed troubleshooting
+sudo chatd-loglevel debug
 
-# Increase verbosity
-kill -SIGUSR1 <process_id>
+# View detailed logs in real-time
+sudo chatd-logs -f
 
-# Decrease verbosity
-kill -SIGUSR2 <process_id>
+# Return to normal logging after debugging  
+sudo chatd-loglevel info
 ```
+
+**Available Log Levels:**
+- `debug`: Maximum verbosity - shows all operations, git commands, API calls
+- `info`: Normal operations - startup, shutdown, role processing
+- `warning`: Warnings and errors only - for quiet production monitoring
+- `error`: Error conditions only - for minimal logging
+- `critical`: Critical failures only - for emergency situations
+
+**Use Cases:**
+- **Production Issues**: Instantly enable debug logging to investigate problems
+- **Performance Monitoring**: Use warning level for clean production logs
+- **Development**: Use debug level to see detailed operation flow
+- **Troubleshooting**: No service restart required - maintain uptime while debugging
+
+### Log Rotation
 
 ## Features
 
