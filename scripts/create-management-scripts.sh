@@ -243,6 +243,82 @@ EOF
     chmod +x /usr/local/bin/chatd-version
 }
 
+# Dynamic log level control script
+create_chatd_loglevel() {
+    cat > /usr/local/bin/chatd-loglevel << 'EOF'
+#!/bin/bash
+# ChatD Bot - Dynamic Log Level Control
+# Change log levels without restarting the bot
+
+CONTAINER_NAME="chatd-bot"
+
+# Check if container is running
+if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    echo "❌ ChatD bot container is not running"
+    echo "   Start it with: chatd start"
+    exit 1
+fi
+
+# Function to set log level
+set_log_level() {
+    local level="$1"
+    
+    # Write level to temp file and signal the container
+    echo "${level}" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+    
+    # Send SIGHUP signal to trigger level change (using docker kill instead of exec kill)
+    docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
+    
+    echo "📝 Log level changed to: ${level}"
+    echo "   View logs with: chatd-logs -f"
+}
+
+# Parse command line argument
+case "${1:-}" in
+    debug|DEBUG)
+        set_log_level "DEBUG"
+        echo "   🔍 Debug logging enabled - very verbose output"
+        ;;
+    info|INFO)
+        set_log_level "INFO"
+        echo "   ℹ️  Info logging enabled - normal operational messages"
+        ;;
+    warning|WARNING|warn|WARN)
+        set_log_level "WARNING"
+        echo "   ⚠️  Warning logging enabled - warnings and errors only"
+        ;;
+    error|ERROR)
+        set_log_level "ERROR"
+        echo "   ❌ Error logging enabled - errors and critical only"
+        ;;
+    critical|CRITICAL|crit|CRIT)
+        set_log_level "CRITICAL"
+        echo "   🚨 Critical logging enabled - critical errors only"
+        ;;
+    "")
+        echo "Usage: chatd-loglevel <level>"
+        echo ""
+        echo "Available log levels:"
+        echo "  debug    - Very verbose, shows all debug information"
+        echo "  info     - Normal operations, startup/shutdown messages"
+        echo "  warning  - Warnings and more severe messages only"
+        echo "  error    - Error conditions and critical issues only"
+        echo "  critical - Only critical system failures"
+        echo ""
+        echo "Current container status:"
+        docker ps --format "  {{.Names}}: {{.Status}}" --filter name="${CONTAINER_NAME}"
+        exit 1
+        ;;
+    *)
+        echo "❌ Invalid log level: $1"
+        echo "   Valid levels: debug, info, warning, error, critical"
+        exit 1
+        ;;
+esac
+EOF
+    chmod +x /usr/local/bin/chatd-loglevel
+}
+
 # Logs script - View bot logs
 create_chatd_logs() {
     cat > /usr/local/bin/chatd-logs << 'EOF'
@@ -547,6 +623,9 @@ echo "✅ Created chatd-update"
 create_chatd_version
 echo "✅ Created chatd-version"
 
+create_chatd_loglevel
+echo "✅ Created chatd-loglevel"
+
 create_chatd_logs
 echo "✅ Created chatd-logs" 
 
@@ -571,3 +650,4 @@ echo "  chatd-build             - Build Docker image with smart detection"
 echo "  chatd-deploy            - Deploy with existing image"
 echo "  chatd-update            - Build and deploy together"
 echo "  chatd-version           - Show version and manage images"
+echo "  chatd-loglevel <level>  - Change log level without restart"
