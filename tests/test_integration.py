@@ -51,8 +51,8 @@ class TestIntegration(unittest.TestCase):
         Config._instance = None
     
     @patch.dict(os.environ, {
-        'DISCORD_TOKEN': 'test_token',
-        'CHANNEL_IDS': '123456789,987654321',
+        'DISCORD_TOKEN': 'test-token-long-enough-to-pass-validation-checks-1234567890',
+        'CHANNEL_IDS': '123456789012345678,987654321098765432',
         'LOG_LEVEL': 'INFO',
         'ENABLE_REACTIONS': 'false',
         'DATA_FILE': '/tmp/test-data/previous_data.json',
@@ -64,7 +64,11 @@ class TestIntegration(unittest.TestCase):
     @patch('sys.exit')
     @patch('chatd.config.Config._validate_discord_connection', return_value=True)
     @patch('chatd.config.Config._validate_repository', return_value=True)
-    def test_config_integration(self, mock_repo, mock_discord, mock_exit):
+    @patch('chatd.config.Config._validate_file_permissions', return_value=True)
+    @patch('chatd.config.Config._validate_numeric_config', return_value=True)
+    @patch('chatd.config.Config._validate_channel_ids', return_value=True)
+    @patch('chatd.config.Config._validate_discord_token', return_value=True)
+    def test_config_integration(self, mock_token, mock_channels, mock_numeric, mock_files, mock_repo, mock_discord, mock_exit):
         """Test configuration loading and validation."""
         from chatd.config import Config, validate_config
         
@@ -72,8 +76,8 @@ class TestIntegration(unittest.TestCase):
         Config._instance = None
         
         config = Config()
-        self.assertEqual(config.discord_token, 'test_token')
-        self.assertEqual(config.channel_ids, ['123456789', '987654321'])
+        self.assertEqual(config.discord_token, 'test-token-long-enough-to-pass-validation-checks-1234567890')
+        self.assertEqual(config.channel_ids, ['123456789012345678', '987654321098765432'])
         self.assertEqual(config.enable_reactions, False)
         
         # Test validation

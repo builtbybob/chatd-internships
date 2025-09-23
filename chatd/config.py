@@ -92,12 +92,6 @@ class Config:
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')
         
-        # Make data file paths easily accessible
-        self.data_file = self.data_file
-        self.messages_file = self.messages_file  
-        self.current_head_file = self.current_head_file
-        self.log_file = self.log_file
-        
         self._initialized = True
 
     def validate(self) -> bool:
