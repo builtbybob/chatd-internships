@@ -3,7 +3,7 @@ Tests for the messages module.
 """
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from chatd.messages import format_epoch, format_message, compare_roles
 
@@ -12,11 +12,19 @@ class TestMessages(unittest.TestCase):
     """Test cases for the messages module."""
     
     def test_format_epoch(self):
-        """Test epoch time formatting."""
-        # Create a specific timestamp (2023-09-15 19:13:00)
-        timestamp = datetime(2023, 9, 15, 19, 13, 0).timestamp()
+        """Test epoch time formatting with timezone conversion."""
+        # Create a specific UTC timestamp (2023-09-15 19:13:00 UTC)
+        # This should convert to 3:13 PM EDT in Eastern time (September is in EDT, so UTC-4)
+        utc_dt = datetime(2023, 9, 15, 19, 13, 0, tzinfo=timezone.utc)
+        timestamp = utc_dt.timestamp()
         formatted = format_epoch(timestamp)
-        self.assertEqual(formatted, 'September, 15 @ 07:13 PM')
+        
+        # September 15, 2023 is in EDT (UTC-4), so 19:13 UTC = 15:13 EDT (3:13 PM)
+        # The function should now output without leading zeros and use the correct timezone name
+        
+        # Check that it contains the expected time (without leading zero) and timezone suffix
+        self.assertIn('September, 15 @ 3:13 PM', formatted)
+        self.assertTrue(formatted.endswith('EST') or formatted.endswith('EDT'))
     
     def test_format_message(self):
         """Test message formatting."""

@@ -31,6 +31,7 @@ DEFAULT_CONFIG = {
     'CHECK_INTERVAL_MINUTES': '1',
     'ENABLE_REACTIONS': 'false',
     'MAX_POST_AGE_DAYS': '5',
+    'TIMEZONE': '',  # Default to system timezone
 }
 
 # Required configuration values that must be set
@@ -91,6 +92,9 @@ class Config:
         
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')
+        
+        # Set timezone (empty string means use system default)
+        self.timezone = os.getenv('TIMEZONE', '').strip()
         
         self._initialized = True
 

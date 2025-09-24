@@ -14,458 +14,128 @@ This project is a Discord bot designed to monitor a GitHub repository for new in
 5. Adds reactions to messages for user interaction (configurable via `ENABLE_REACTIONS`).
 6. Sends detailed job information DMs when users react to a message (when enabled).
 
-## 🖥️ Server Setup Guide
+## � Quick Start
 
-### Fresh Raspberry Pi Setup
+**For initial setup and installation, see [SETUP.md](SETUP.md) for the complete step-by-step guide.**
 
-This guide covers setting up a new Raspberry Pi from scratch for hosting the ChatD bot.
-
-#### 1. Initial Raspberry Pi Setup
-
-```bash
-# Flash Raspberry Pi OS to microSD card (recommend 32GB+ for adequate space)
-# Enable SSH during flash or enable manually:
-sudo systemctl enable ssh
-sudo systemctl start ssh
-
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install essential packages
-sudo apt install -y git docker.io curl vim htop
-```
-
-#### 2. Docker Setup
-
-```bash
-# Add user to docker group
-sudo usermod -aG docker $USER
-
-# Restart to apply group changes
-sudo reboot
-
-# Test Docker (after reboot)
-docker --version
-docker run hello-world
-```
-
-#### 3. Security & SSH Setup
-
-```bash
-# Generate SSH key pair (if not using existing keys)
-ssh-keygen -t ed25519 -C "your_email@example.com"
-
-# Copy public key to authorized_keys
-cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-
-# Configure SSH for better security
-sudo nano /etc/ssh/sshd_config
-# Recommended settings:
-# PermitRootLogin no
-# PasswordAuthentication no
-# PubkeyAuthentication yes
-
-sudo systemctl restart sshd
-```
-
-#### 4. System Optimization
-
-```bash
-# Configure log rotation to save space
-sudo nano /etc/logrotate.d/rsyslog
-# Add: daily, rotate 7, compress, delaycompress
-
-# Set up automatic updates (optional)
-sudo apt install unattended-upgrades
-sudo dpkg-reconfigure -plow unattended-upgrades
-
-# Monitor disk space
-echo 'df -h /' >> ~/.bashrc  # Show disk usage on login
-```
-
-#### 5. ChatD Bot Installation
-
-```bash
-# Clone repository
-git clone https://github.com/builtbybob/chatd-internships.git
-cd chatd-internships
-
-# Install management scripts
-sudo ./scripts/create-management-scripts.sh
-
-# Create configuration
-sudo mkdir -p /etc/chatd
-sudo cp .env.example /etc/chatd/.env
-sudo chmod 600 /etc/chatd/.env
-sudo nano /etc/chatd/.env  # Configure with your Discord token and settings
-```
-
-### Migration from Existing Setup
-
-If migrating from an existing installation:
-
-#### Option 1: Full Disk Clone (Recommended)
-```bash
-# On another machine with both SD cards connected
-sudo dd if=/dev/old_card of=/dev/new_card bs=4M status=progress conv=fsync
-
-# After cloning, expand filesystem on new card
-sudo raspi-config  # Advanced Options -> Expand Filesystem
-```
-
-#### Option 2: Selective Backup & Restore
-```bash
-# Backup essential data from old system
-scp -r user@old-pi:/etc/chatd/ ./backup/
-scp -r user@old-pi:/var/lib/chatd/ ./backup/
-scp -r user@old-pi:~/.ssh/ ./backup/
-
-# Save Docker image
-ssh user@old-pi "docker save chatd-internships:latest" > chatd-image.tar
-
-# Restore on new system (after basic setup)
-sudo cp -r ./backup/chatd/ /etc/
-sudo cp -r ./backup/chatd/ /var/lib/
-cp -r ./backup/.ssh/ ~/
-docker load < chatd-image.tar
-```
-
-#### Option 3: Fresh Setup (Clean Start)
-Follow the complete setup guide below - often the cleanest approach.
-
-### Disk Space Recommendations
-
-- **Minimum**: 16GB microSD card
-- **Recommended**: 32GB+ microSD card  
-- **For development**: 64GB+ microSD card
-
-**Current typical usage:**
-- Base OS: ~4GB
-- Docker images: ~400MB per image
-- ChatD data: ~50-100MB
-- Logs: ~10-50MB (with rotation)
-- **Total recommended free space**: 8GB+ for comfortable operation
-
-### 📋 Quick Migration Checklist
-
-For your specific migration to a larger microSD card:
-
-#### Essential Files to Backup:
-- [ ] **Discord Configuration**: `/etc/chatd/.env` (contains your bot token)
-- [ ] **Bot Data**: `/var/lib/chatd/data/` (message tracking, previous data)
-- [ ] **SSH Keys**: `~/.ssh/` (for remote access)
-- [ ] **Docker Image**: Save with `docker save chatd-internships:latest > chatd-backup.tar`
-
-#### Migration Commands:
-```bash
-# 1. Backup from current system
-ssh user@current-pi
-sudo tar czf chatd-backup.tar.gz /etc/chatd/ /var/lib/chatd/
-docker save chatd-internships:latest > chatd-image.tar
-scp chatd-backup.tar.gz chatd-image.tar user@new-pi:~/
-
-# 2. On new system (after basic setup)
-sudo tar xzf chatd-backup.tar.gz -C /
-docker load < chatd-image.tar
-sudo chown -R 1000:1000 /var/lib/chatd/
-
-# 3. Install management scripts and start
-cd chatd-internships
-sudo ./scripts/create-management-scripts.sh
-sudo systemctl enable chatd-internships
-sudo systemctl start chatd-internships
-```
-
-#### Post-Migration Verification:
-- [ ] `sudo chatd status` shows service running
-- [ ] `sudo chatd-logs` shows no errors
-- [ ] `sudo chatd-loglevel debug` works (test dynamic logging)
-- [ ] SSH access working with keys
-- [ ] `df -h` shows adequate free space
-
-### 🔧 Common Setup Issues
-
-#### Disk Space Problems
-```bash
-# Check disk usage
-df -h
-du -h --max-depth=1 /var/lib/
-
-# Clean up if needed
-docker system prune -f
-sudo apt autoremove
-sudo journalctl --vacuum-size=100M
-```
-
-#### Permission Issues
-```bash
-# Fix ChatD data permissions
-sudo chown -R 1000:1000 /var/lib/chatd/
-sudo chmod 600 /etc/chatd/.env
-
-# Fix Docker permissions  
-sudo usermod -aG docker $USER
-# Then logout and login again
-```
-
-#### SSH Connection Issues
-```bash
-# Check SSH service
-sudo systemctl status sshd
-
-# Reset SSH config (if locked out)
-sudo nano /etc/ssh/sshd_config
-# Temporarily set: PasswordAuthentication yes
-sudo systemctl restart sshd
-```
-
-#### Docker Problems
-```bash
-# Restart Docker service
-sudo systemctl restart docker
-
-# Check Docker status
-systemctl status docker
-docker ps -a
-
-# Rebuild image if needed
-sudo chatd-build
-```
-
-## Setup
-
-### Prerequisites
+### Prerequisites for Development
 
 - Python 3.8 or higher
 - Git
 - Discord bot with Message Content Intent and Reactions Intent enabled
 - One or more Discord channel IDs
 
-### Installation
+### Development Setup
 
-1. Clone the repository:
-    ```sh
-    git clone https://github.com/builtbybob/chatd-internships.git
-    cd chatd-internships
-    ```
+1. **Clone and setup virtual environment:**
+   ```bash
+   git clone https://github.com/builtbybob/chatd-internships.git
+   cd chatd-internships
+   
+   # Create virtual environment
+   python3 -m venv .venv
+   
+   # Activate virtual environment
+   source .venv/bin/activate  # On Linux/Mac
+   # OR
+   .venv\Scripts\activate     # On Windows
+   
+   # Install dependencies
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
 
-2. Install the required Python packages:
-    ```sh
-    pip install -r requirements.txt
-    ```
+2. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Discord token and channel IDs
+   ```
 
-3. Set up your Discord bot:
-    - Create a new bot on the [Discord Developer Portal](https://discord.com/developers/applications).
-    - Enable the "Message Content Intent" in the Bot section.
-    - Copy the bot token and set it in your `.env` file.
-    - Get the channel IDs where you want the bot to send messages and set them in `CHANNEL_IDS`.
-
-### Configuration
+### Basic Configuration
 
 The bot uses environment variables for configuration. Copy the `.env.example` file to `.env` and configure:
 
 ```ini
-# Discord Bot Configuration
-DISCORD_TOKEN=your_discord_bot_token_here      # Required: Your Discord bot token
-CHANNEL_IDS=123456789,987654321               # Required: Comma-separated list of channel IDs
+# Discord Bot Configuration (Required)
+DISCORD_TOKEN=your_discord_bot_token_here
+CHANNEL_IDS=123456789012345678,987654321098765432
 
-# Repository Configuration
-REPO_URL=https://github.com/SimplifyJobs/Summer2026-Internships.git  # Optional: Default shown
-LOCAL_REPO_PATH=Summer2026-Internships        # Optional: Local path for the repo
-
-# Bot Configuration
-MAX_RETRIES=3                                 # Optional: Max retries for failed channels
-CHECK_INTERVAL_MINUTES=1                      # Optional: Minutes between repo checks
-ENABLE_REACTIONS=false                        # Optional: Enable reaction features (default: true)
+# Bot Behavior
+ENABLE_REACTIONS=false
+MAX_RETRIES=3
+CHECK_INTERVAL_MINUTES=1
+MAX_POST_AGE_DAYS=5
 
 # Logging Configuration
-LOG_LEVEL=INFO                                # Optional: Logging level (INFO/DEBUG/etc)
-LOG_FILE=chatd.log                            # Optional: Path to log file
-LOG_MAX_BYTES=10485760                        # Optional: Max log file size (10MB)
-LOG_BACKUP_COUNT=5                            # Optional: Number of backup logs to keep
+LOG_LEVEL=INFO
+LOG_FILE=/app/logs/chatd.log
+LOG_MAX_BYTES=10485760
+LOG_BACKUP_COUNT=5
 ```
 
-## Running the Bot
+### Production Deployment
 
-### Production Deployment (Recommended)
+**Production deployment uses Docker + systemd.** See [SETUP.md](SETUP.md) for complete instructions.
 
-For production environments, use the Docker + systemd deployment:
+#### Deployment Workflow
+
+**Making Changes:**
+1. Push changes to GitHub repository
+2. Deploy to production server:
 
 ```bash
-# Start the production service
-sudo systemctl start chatd-internships
+# Full update (auto git pull + smart rebuild + deploy)
+sudo chatd update
 
-# Check status
-chatd status
-
-# Follow logs
-chatd logs -f
+# Alternative: Step-by-step deployment
+sudo chatd build              # Auto git pull + smart build (skips if no changes)
+sudo chatd deploy             # Restart service with latest image (fast ~8 seconds)
 ```
 
-See the "Production Deployment with Docker + systemd" section below for full setup instructions.
+**Smart Build System:**
+- `chatd build` and `chatd update` automatically run `git pull`
+- Images are tagged with commit hashes for version tracking
+- Builds are skipped if image for current commit already exists
+- Uses `chatd-internships:latest` tag for deployment
 
-### Development and Testing
-
-#### Direct Execution
-
-You can run the bot directly:
+#### Service Management
 
 ```bash
-# Make the script executable
-chmod +x main.py
+# Service status and control
+chatd status                    # Check service status
+sudo systemctl start chatd-internships    # Start service
+sudo systemctl stop chatd-internships     # Stop service
+sudo systemctl restart chatd-internships  # Restart service
 
-# Run the bot
-./main.py
+# Log monitoring
+chatd logs -f                   # View logs in real-time
+chatd logs -n 100              # Show last 100 lines
+chatd-loglevel debug           # Enable debug logging (no restart needed)
+chatd-loglevel info            # Return to normal logging
 ```
 
-#### Using the Run Script (Development)
-
-The included `run_bot.sh` script provides a simple way to run the bot with automatic restart:
+#### Repository Synchronization
 
 ```bash
-# Make the script executable
-chmod +x run_bot.sh
+# Sync repository data (prevents message replay)
+sudo ./scripts/sync-repo-data.sh              # Sync to latest
+sudo ./scripts/sync-repo-data.sh abc123def    # Sync to specific commit
 
-# Run the bot with the script
-./run_bot.sh
+# Use after major repository updates to set new baseline
 ```
 
-#### Legacy systemd Service (Without Docker)
+#### Maintenance Commands
 
-For non-Docker deployments, use the basic systemd service:
+```bash
+# Docker management
+sudo chatd build              # Build Docker image only
+sudo chatd deploy             # Deploy with existing image (fast ~8 seconds)
+sudo chatd update             # Full update: build + deploy
 
-1. Copy the service file to the systemd directory:
-    ```sh
-    sudo cp chatd-internships.service /etc/systemd/system/
-    ```
-
-2. Edit the service file to update paths and user if needed:
-    ```sh
-    sudo nano /etc/systemd/system/chatd-internships.service
-    ```
-
-3. Enable and start the service:
-    ```sh
-    sudo systemctl daemon-reload
-    sudo systemctl enable chatd-internships
-    sudo systemctl start chatd-internships
-    ```
-
-4. Check the service status:
-    ```sh
-    sudo systemctl status chatd-internships
-    ```
-
-### Production Deployment with Docker + systemd
-
-The recommended production deployment uses Docker with systemd for robust service management:
-
-#### Prerequisites for Production
-
-1. Install Docker:
-    ```sh
-    sudo apt update && sudo apt install -y docker.io
-    sudo systemctl enable docker
-    sudo systemctl start docker
-    ```
-
-2. Create the production configuration:
-    ```sh
-    sudo mkdir -p /etc/chatd
-    sudo cp .env /etc/chatd/.env
-    sudo chmod 600 /etc/chatd/.env
-    ```
-
-3. Set up the management scripts:
-    ```sh
-    sudo bash scripts/create-management-scripts.sh
-    ```
-
-4. Set up the systemd service:
-    ```sh
-    sudo cp chatd-internships.service /etc/systemd/system/
-    sudo systemctl daemon-reload
-    sudo systemctl enable chatd-internships
-    ```
-
-#### Initial Deployment
-
-```sh
-# Build the Docker image
-sudo chatd build
-
-# Start the service
-sudo systemctl start chatd-internships
-
-# Check status
-chatd status
+# System maintenance
+docker system prune -f        # Clean up unused Docker resources
+sudo journalctl --vacuum-size=100M  # Clean system logs
 ```
-
-#### Management Scripts
-
-The deployment includes management scripts for easy administration:
-
-```sh
-# Check service status
-chatd status
-
-# View logs
-chatd logs -f              # Follow logs in real-time
-chatd logs -n 100          # Show last 100 lines
-
-# Service control
-chatd start/stop/restart   # Control the service
-
-# Dynamic log level control (NEW)
-chatd-loglevel debug       # Enable debug logging for troubleshooting
-chatd-loglevel info        # Normal operational logging
-chatd-loglevel warning     # Show warnings and errors only
-chatd-loglevel error       # Show errors only
-chatd-loglevel critical    # Show critical errors only
-
-# Build and deployment (NEW - Optimized Workflow)
-chatd build                # Build Docker image only
-chatd deploy               # Deploy with existing image (fast ~8 seconds)
-chatd update               # Build and deploy together
-
-# Maintenance
-chatd backup               # Create data backup
-chatd data                 # Show data status
-```
-
-**New Optimized Deployment Workflow:**
-- **Development**: Use `chatd build` once, then `chatd deploy` for quick iterations
-- **Production Updates**: Use `chatd update` for full rebuild and deployment
-- **Performance**: Deployment time reduced from 4+ minutes to ~8 seconds
-
-#### Docker Volumes
-
-The production setup uses persistent volumes:
-- `/var/lib/chatd/data`: Bot data and storage
-- `/var/lib/chatd/repo`: GitHub repository cache
-- `/var/lib/chatd/logs`: Application logs
-
-#### Manual Docker Usage
-
-For development or manual deployment:
-
-```sh
-# Build the image
-docker build -t chatd-internships:latest .
-
-# Run manually (or use the optimized commands above)
-docker run -d \
-  --name chatd-bot \
-  --env-file /etc/chatd/.env \
-  --restart unless-stopped \
-  -v /var/lib/chatd/data:/app/data \
-  -v /var/lib/chatd/repo:/app/Summer2026-Internships \
-  -v /var/lib/chatd/logs:/app/logs \
-  chatd-internships:latest
-```
-
-**Note**: The production systemd service no longer rebuilds Docker images on startup for faster deployment. Use the management commands above for optimal workflow.
 
 ## Development
 
@@ -481,9 +151,12 @@ The bot is organized into modules:
 
 ### Running Tests
 
-The project uses unittest for testing:
+The project uses unittest for testing. Make sure your virtual environment is activated:
 
 ```bash
+# Activate virtual environment first
+source .venv/bin/activate
+
 # Run all tests
 python -m unittest discover tests/
 

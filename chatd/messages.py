@@ -7,6 +7,16 @@ This module handles formatting and comparing role data for Discord messages.
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
+# Import timezone support
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except ImportError:
+    try:
+        from backports.zoneinfo import ZoneInfo  # Fallback for older Python
+    except ImportError:
+        # If no timezone support available, we'll use a simple offset
+        ZoneInfo = None
+
 from chatd.logging_utils import get_logger
 
 # Get logger
@@ -15,15 +25,84 @@ logger = get_logger()
 
 def format_epoch(val: float) -> str:
     """
-    Format Unix timestamp (seconds) as a human-readable date string.
+    Format Unix timestamp (seconds) as a human-readable date string in the configured timezone.
     
     Args:
         val: Unix timestamp in seconds
         
     Returns:
-        str: Formatted date string (e.g., 'September, 15 @ 07:13 PM')
+        str: Formatted date string without leading zeros (e.g., 'September, 15 @ 7:13 PM EDT')
     """
-    return datetime.fromtimestamp(val).strftime('%B, %d @ %I:%M %p')
+    from chatd.config import config
+    
+    if ZoneInfo is not None:
+        # Use proper timezone conversion
+        utc_dt = datetime.fromtimestamp(val, tz=ZoneInfo('UTC'))
+        
+        # Determine target timezone
+        if config.timezone:
+            # Use configured timezone
+            target_tz = ZoneInfo(config.timezone)
+        else:
+            # Use system default timezone
+            import time
+            system_tz_name = time.tzname[time.daylight] if time.daylight else time.tzname[0]
+            try:
+                # Try to get the system timezone using common methods
+                import os
+                if os.path.exists('/etc/timezone'):
+                    with open('/etc/timezone', 'r') as f:
+                        system_tz_name = f.read().strip()
+                elif 'TZ' in os.environ:
+                    system_tz_name = os.environ['TZ']
+                else:
+                    # Fallback to America/New_York if we can't determine system timezone
+                    system_tz_name = 'America/New_York'
+                
+                target_tz = ZoneInfo(system_tz_name)
+            except:
+                # Final fallback to America/New_York
+                target_tz = ZoneInfo('America/New_York')
+        
+        # Convert to target timezone
+        local_dt = utc_dt.astimezone(target_tz)
+        
+        # Format with actual timezone name and without leading zeros
+        # Use %-I on Unix systems to remove leading zero from hour
+        try:
+            formatted_time = local_dt.strftime('%B, %d @ %-I:%M %p')
+        except ValueError:
+            # Windows doesn't support %-I, so use %I and strip leading zero manually
+            formatted_time = local_dt.strftime('%B, %d @ %I:%M %p')
+            # Remove leading zero from hour manually
+            parts = formatted_time.split(' @ ')
+            if len(parts) == 2:
+                time_part = parts[1]
+                if time_part.startswith('0'):
+                    time_part = time_part[1:]
+                formatted_time = f"{parts[0]} @ {time_part}"
+        
+        # Get the actual timezone abbreviation (EST/EDT)
+        tz_name = local_dt.tzname()
+        return f"{formatted_time} {tz_name}"
+    else:
+        # Fallback: ZoneInfo not available (very rare on modern systems), display in UTC
+        utc_dt = datetime.fromtimestamp(val)
+        
+        # Format without leading zero
+        try:
+            formatted_time = utc_dt.strftime('%B, %d @ %-I:%M %p')
+        except ValueError:
+            # Windows doesn't support %-I, so use %I and strip leading zero manually
+            formatted_time = utc_dt.strftime('%B, %d @ %I:%M %p')
+            parts = formatted_time.split(' @ ')
+            if len(parts) == 2:
+                time_part = parts[1]
+                if time_part.startswith('0'):
+                    time_part = time_part[1:]
+                formatted_time = f"{parts[0]} @ {time_part}"
+            
+        return f"{formatted_time} UTC"
 
 
 def format_message(role: Dict[str, Any]) -> str:
