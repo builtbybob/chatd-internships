@@ -16,7 +16,7 @@ import schedule
 from chatd.config import config
 from chatd.logging_utils import get_logger
 from chatd.messages import format_message
-from chatd.repo import clone_or_update_repo, read_json, normalize_role_key
+from chatd.repo import clone_or_update_repo, read_json
 from chatd.storage import get_storage
 
 # Get logger
@@ -172,11 +172,11 @@ async def check_for_new_roles() -> None:
     # Initialize a priority queue for new roles
     new_roles_heap = []
     
-    # Create a dictionary for quick lookup of old roles using normalized keys
-    old_roles_dict = { normalize_role_key(role): role for role in old_data }
+    # Create a dictionary for quick lookup of old roles using role IDs
+    old_roles_dict = { role['id']: role for role in old_data }
 
     for new_role in new_data:
-        old_role = old_roles_dict.get(normalize_role_key(new_role))
+        old_role = old_roles_dict.get(new_role['id'])
 
         # Get boolean values directly since they are stored as proper booleans
         new_active = new_role.get('active', False)
@@ -200,7 +200,7 @@ async def check_for_new_roles() -> None:
     # Process roles in order (oldest first)
     while new_roles_heap:
         _, _, role = heapq.heappop(new_roles_heap)  # Unpack timestamp, counter, and role
-        role_key = normalize_role_key(role)
+        role_key = role['id']
         message = format_message(role)
         await send_messages_to_channels(message, role_key)
 
@@ -282,7 +282,7 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
     
     # For each role key in storage, check if the message ID matches
     for role in all_data:
-        role_key = normalize_role_key(role)
+        role_key = role['id']
         messages = storage.get_messages_for_role(role_key)
         
         for message_info in messages:
