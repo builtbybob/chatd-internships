@@ -150,7 +150,15 @@ async def check_for_new_roles() -> None:
     Check for new roles in the repository and send notifications.
     """
     logger.debug("Checking for new roles...")
-    has_updates = clone_or_update_repo()
+    
+    # Run git operations in a thread pool to avoid blocking the event loop
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        has_updates = await loop.run_in_executor(None, clone_or_update_repo)
+    except Exception as e:
+        logger.error(f"Error updating repository: {e}")
+        return
     
     if not has_updates:
         logger.debug("No updates to listings file, skipping check.")
