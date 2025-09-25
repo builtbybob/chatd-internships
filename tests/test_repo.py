@@ -84,8 +84,8 @@ class TestRepositoryOperations(unittest.TestCase):
     
     @patch('chatd.repo.git.Repo')
     @patch('chatd.repo.os.path.exists')
-    @patch('chatd.repo.os.rmdir')
-    def test_handle_invalid_repo(self, mock_rmdir, mock_exists, mock_repo_class):
+    @patch('chatd.repo.shutil.rmtree')
+    def test_handle_invalid_repo(self, mock_rmtree, mock_exists, mock_repo_class):
         """Test handling invalid repository directory."""
         mock_exists.return_value = True
         
@@ -97,7 +97,8 @@ class TestRepositoryOperations(unittest.TestCase):
         result = clone_or_update_repo()
         
         self.assertTrue(result)
-        mock_rmdir.assert_called_once()
+        mock_rmtree.assert_called_once()
+        mock_repo_class.clone_from.assert_called_once()
         mock_repo_class.clone_from.assert_called_once()
     
     @patch('builtins.open', new_callable=mock_open, read_data='[{"test": "data"}]')

@@ -6,6 +6,7 @@ This module handles cloning, updating, and reading data from the GitHub reposito
 
 import json
 import os
+import shutil
 from typing import Dict, List, Any
 
 import git
@@ -54,8 +55,13 @@ def clone_or_update_repo() -> bool:
                 
         except git.exc.InvalidGitRepositoryError:
             logger.warning("Invalid git repository detected, re-cloning...")
-            import shutil
-            shutil.rmtree(config.local_repo_path)  # Remove entire directory tree
+            try:
+                shutil.rmtree(config.local_repo_path)  # Remove entire directory tree
+            except FileNotFoundError:
+                logger.debug("Directory already removed or doesn't exist")
+            except Exception as e:
+                logger.warning(f"Could not remove invalid repository directory: {e}")
+            
             repo = git.Repo.clone_from(config.repo_url, config.local_repo_path, kill_after_timeout=60)
             logger.info("Repository cloned fresh.")
             return True
