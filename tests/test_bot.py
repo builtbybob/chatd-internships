@@ -237,6 +237,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         
         mock_roles = [
             {
+                'id': 'test_role',
                 'company_name': 'Test Company',
                 'title': 'Software Engineer',
                 'url': 'https://example.com'
@@ -249,11 +250,10 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             mock_get_storage.return_value = mock_storage
             
             with patch('chatd.bot.read_json', return_value=mock_roles):
-                with patch('chatd.bot.normalize_role_key', return_value='test_role'):
-                    result = await get_role_data_by_message_id('12345')
-                    
-                    self.assertIsNotNone(result)
-                    self.assertEqual(result['company_name'], 'Test Company')
+                result = await get_role_data_by_message_id('12345')
+                
+                self.assertIsNotNone(result)
+                self.assertEqual(result['company_name'], 'Test Company')
     
     async def test_send_dm_with_job_info(self):
         """Test sending DM with job information."""

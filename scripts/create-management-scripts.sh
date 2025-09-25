@@ -10,14 +10,67 @@ create_chatd_build() {
 #!/bin/bash
 set -e
 
+# Show help if requested
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    echo "ChatD Bot Build Script"
+    echo "Usage: chatd-build [BRANCH]"
+    echo ""
+    echo "Arguments:"
+    echo "  BRANCH    Git branch to build from (optional)"
+    echo ""
+    echo "Environment Variables:"
+    echo "  CHATD_BRANCH    Default branch to use if no argument provided"
+    echo ""
+    echo "Branch Resolution Priority:"
+    echo "  1. Command line argument"
+    echo "  2. CHATD_BRANCH environment variable"
+    echo "  3. Default to 'main'"
+    echo ""
+    echo "Examples:"
+    echo "  chatd-build               # Uses main (or CHATD_BRANCH if set)"
+    echo "  chatd-build dev           # Uses dev branch"
+    echo "  CHATD_BRANCH=dev chatd-build  # Uses dev branch"
+    exit 0
+fi
+
+# Configuration
+REPO_URL="https://github.com/builtbybob/chatd-internships.git"
+BUILD_DIR="/tmp/chatd-build-$$"
+
+# Branch priority: command line arg -> environment variable -> default to main
+BRANCH="${1:-${CHATD_BRANCH:-main}}"
+
 echo "🔄 Building ChatD Internships Bot..."
+echo "📍 Repository: ${REPO_URL}"
+echo "🌿 Branch: ${BRANCH}"
 
-# Navigate to source directory
-cd /home/apathy/dev/chatd-internships
+# Show branch source for clarity
+if [[ -n "$1" ]]; then
+    echo "   (specified via command line)"
+elif [[ -n "$CHATD_BRANCH" ]]; then
+    echo "   (from CHATD_BRANCH environment variable)"
+else
+    echo "   (default branch)"
+fi
 
-# Pull latest changes
-echo "📡 Pulling latest changes from git..."
-git pull
+# Cleanup function
+cleanup() {
+    if [[ -d "$BUILD_DIR" ]]; then
+        echo "🧹 Cleaning up build directory..."
+        rm -rf "$BUILD_DIR"
+    fi
+}
+trap cleanup EXIT
+
+# Create clean build directory
+echo "� Creating build directory: ${BUILD_DIR}"
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+
+# Clone repository
+echo "📡 Cloning repository..."
+git clone --depth 1 --branch "$BRANCH" "$REPO_URL" chatd-source
+cd chatd-source
 
 # Get current git commit hash
 COMMIT_HASH=$(git rev-parse --short HEAD)
@@ -85,14 +138,44 @@ create_chatd_update() {
 #!/bin/bash
 set -e
 
+# Configuration
+REPO_URL="https://github.com/builtbybob/chatd-internships.git"
+BUILD_DIR="/tmp/chatd-build-$$"
+
+# Branch priority: command line arg -> environment variable -> default to main
+BRANCH="${1:-${CHATD_BRANCH:-main}}"
+
 echo "🔄 Updating ChatD Internships Bot (build + deploy)..."
+echo "📍 Repository: ${REPO_URL}"
+echo "🌿 Branch: ${BRANCH}"
 
-# Navigate to source directory
-cd /home/apathy/dev/chatd-internships
+# Show branch source for clarity
+if [[ -n "$1" ]]; then
+    echo "   (specified via command line)"
+elif [[ -n "$CHATD_BRANCH" ]]; then
+    echo "   (from CHATD_BRANCH environment variable)"
+else
+    echo "   (default branch)"
+fi
 
-# Pull latest changes
-echo "📡 Pulling latest changes from git..."
-git pull
+# Cleanup function
+cleanup() {
+    if [[ -d "$BUILD_DIR" ]]; then
+        echo "🧹 Cleaning up build directory..."
+        rm -rf "$BUILD_DIR"
+    fi
+}
+trap cleanup EXIT
+
+# Create clean build directory
+echo "� Creating build directory: ${BUILD_DIR}"
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+
+# Clone repository
+echo "📡 Cloning repository..."
+git clone --depth 1 --branch "$BRANCH" "$REPO_URL" chatd-source
+cd chatd-source
 
 # Get current git commit hash
 COMMIT_HASH=$(git rev-parse --short HEAD)
@@ -174,10 +257,12 @@ show_current_version() {
             COMMIT_HASH="${BASH_REMATCH[1]}"
             echo "🔗 Git Commit: $COMMIT_HASH"
             
-            # Show commit info if we're in the repo directory
-            if cd /home/apathy/dev/chatd-internships 2>/dev/null; then
-                if git show --oneline -s $COMMIT_HASH 2>/dev/null; then
-                    echo "📝 Commit Info: $(git show --oneline -s $COMMIT_HASH 2>/dev/null)"
+            # Try to show commit info from GitHub API (requires curl)
+            if command -v curl >/dev/null 2>&1; then
+                REPO_API="https://api.github.com/repos/builtbybob/chatd-internships/commits/$COMMIT_HASH"
+                COMMIT_INFO=$(curl -s "$REPO_API" 2>/dev/null | grep -o '"message":"[^"]*"' | cut -d'"' -f4 | head -1)
+                if [[ -n "$COMMIT_INFO" ]]; then
+                    echo "📝 Commit Info: $COMMIT_HASH $COMMIT_INFO"
                 fi
             fi
         fi
@@ -540,11 +625,16 @@ show_usage() {
     echo "Examples:"
     echo "  chatd start           # Start the bot"
     echo "  chatd build           # Build new image"
+    echo "  chatd build dev       # Build from specific branch"
     echo "  chatd deploy          # Deploy with existing image"
     echo "  chatd update          # Build and deploy together"
     echo "  chatd version         # Show current version"
     echo "  chatd logs -f         # Follow logs in real-time"
     echo "  chatd status          # Check if bot is running"
+    echo ""
+    echo "Environment Variables:"
+    echo "  CHATD_BRANCH          # Default branch for build/update commands"
+    echo "                        # Example: export CHATD_BRANCH=dev"
 }
 
 case "$1" in
