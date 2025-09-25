@@ -318,6 +318,14 @@ async def on_ready() -> None:
 
 
 @bot.event
+async def on_disconnect() -> None:
+    """
+    Event handler for when the bot disconnects.
+    """
+    logger.info("Bot is disconnecting...")
+
+
+@bot.event
 async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
     """
     Event handler for when a reaction is added to a message.
@@ -380,9 +388,18 @@ def run_bot() -> None:
     # Set up scheduler
     setup_scheduler()
     
-    # Run the bot
+    # Run the bot with proper cleanup
+    async def run_with_cleanup():
+        """Run bot with proper session cleanup."""
+        try:
+            await bot.start(config.discord_token)
+        finally:
+            await bot.close()
+    
     try:
-        bot.run(config.discord_token)
+        asyncio.run(run_with_cleanup())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
     except Exception as e:
-        logger.error(f"Error starting bot: {e}")
+        logger.error(f"Error running bot: {e}")
         raise
