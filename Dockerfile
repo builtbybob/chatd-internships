@@ -6,8 +6,9 @@ WORKDIR /app
 
 # Install build dependencies
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/*.bin || true
+    apt-get install -y --no-install-recommends git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file and install dependencies
 COPY requirements.txt .
@@ -21,8 +22,9 @@ WORKDIR /app
 
 # Install runtime dependencies
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/*.bin || true
+    apt-get install -y --no-install-recommends git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN useradd -m -u 1000 chatd
