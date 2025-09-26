@@ -1,3 +1,155 @@
+# Disk usage and image status script
+create_chatd_disk() {
+    cat > /usr/local/bin/chatd-disk << 'EOF'
+#!/bin/bash
+
+DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+AVAILABLE=$(df --output=avail / | tail -1)
+TOTAL=$(df --output=size / | tail -1)
+IMAGES=$(docker images chatd-internships --format "{{.Tag}} {{.Size}}" | grep -v latest)
+IMAGE_COUNT=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest | wc -l)
+IMAGE_SIZE=$(docker images chatd-internships --format "{{.Size}}" | grep -v latest | awk '{s+=$1} END {print s}')
+
+echo "💾 Disk Usage: ${DISK_USAGE}% used, $((AVAILABLE/1024)) MB free, $((TOTAL/1024)) MB total"
+echo "📦 ChatD images: $IMAGE_COUNT images"
+docker images chatd-internships --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
+
+if [ "$DISK_USAGE" -ge 90 ]; then
+    echo "🚨 ALERT: Disk usage above 90%! Emergency cleanup recommended."
+elif [ "$DISK_USAGE" -ge 80 ]; then
+    echo "⚠️ Warning: Disk usage at ${DISK_USAGE}%. Consider manual cleanup."
+fi
+
+# Prometheus-style metrics for future monitoring
+if [[ "$1" == "--metrics" ]]; then
+    echo "chatd_disk_free_bytes $((AVAILABLE*1024))"
+    echo "chatd_disk_used_percent $DISK_USAGE"
+    echo "chatd_image_count $IMAGE_COUNT"
+fi
+EOF
+    chmod +x /usr/local/bin/chatd-disk
+}
+# Manual Docker image cleanup script
+create_chatd_cleanup() {
+    cat > /usr/local/bin/chatd-cleanup << 'EOF'
+#!/bin/bash
+set -e
+
+RETENTION_COUNT=${CHATD_DOCKER_RETENTION:-3}
+DRY_RUN=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --count)
+            RETENTION_COUNT="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: chatd-cleanup [--count N] [--dry-run]"
+            echo "  --count N   Keep N images (default: 3)"
+            echo "  --dry-run   Preview images that would be deleted"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+echo "🧹 Manual Docker image cleanup..."
+echo "📊 Retention policy: keeping $RETENTION_COUNT images (current + rollback options)"
+
+IMAGE_TAGS=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest)
+TO_DELETE=$(echo "$IMAGE_TAGS" | tail -n +$((RETENTION_COUNT + 1)))
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    if [[ -z "$TO_DELETE" ]]; then
+        echo "✅ No images to delete."
+    else
+        echo "🗑️  Images that would be deleted:"
+        echo "$TO_DELETE" | while read tag; do
+            echo "  chatd-internships:$tag"
+        done
+    fi
+    exit 0
+fi
+
+# Disk space monitoring logic
+DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+AVAILABLE=$(df --output=avail / | tail -1)
+if [ "$DISK_USAGE" -ge 90 ]; then
+    echo "⚠️ Disk usage above 90%. Running emergency cleanup..."
+    sudo chatd-prune
+elif [ "$DISK_USAGE" -ge 80 ]; then
+    echo "⚠️ Warning: Disk usage at ${DISK_USAGE}%. Consider manual cleanup."
+fi
+if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
+    echo "❌ Not enough disk space to build new images. Aborting."
+    exit 1
+fi
+
+if [[ -z "$TO_DELETE" ]]; then
+    echo "✅ No images to delete."
+else
+    echo "$TO_DELETE" | while read tag; do
+        if [[ -n "$tag" ]]; then
+            echo "🗑️  Removing old image: chatd-internships:$tag"
+            docker rmi "chatd-internships:$tag" 2>/dev/null || true
+        fi
+    done
+fi
+
+echo "✅ Cleanup complete. Retained $RETENTION_COUNT images."
+EOF
+    chmod +x /usr/local/bin/chatd-cleanup
+}
+
+# List Docker images script
+create_chatd_images() {
+    cat > /usr/local/bin/chatd-images << 'EOF'
+#!/bin/bash
+echo "📋 ChatD Docker Images (chatd-internships)"
+docker images chatd-internships --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
+EOF
+    chmod +x /usr/local/bin/chatd-images
+}
+
+# Aggressive prune script (keep only latest)
+create_chatd_prune() {
+    cat > /usr/local/bin/chatd-prune << 'EOF'
+#!/bin/bash
+set -e
+
+echo "🧨 Aggressive Docker image prune: keeping only the latest image..."
+LATEST_TAG=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest | head -n 1)
+TO_DELETE=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest | tail -n +2)
+
+if [[ -z "$LATEST_TAG" ]]; then
+    echo "❌ No images found to retain."
+    exit 1
+fi
+
+if [[ -z "$TO_DELETE" ]]; then
+    echo "✅ Only the latest image exists. No images to delete."
+else
+    echo "$TO_DELETE" | while read tag; do
+        if [[ -n "$tag" ]]; then
+            echo "🗑️  Removing old image: chatd-internships:$tag"
+            docker rmi "chatd-internships:$tag" 2>/dev/null || true
+        fi
+    done
+fi
+
+echo "✅ Prune complete. Retained latest image: chatd-internships:$LATEST_TAG"
+EOF
+    chmod +x /usr/local/bin/chatd-prune
+}
 #!/bin/bash
 #
 # ChatD Bot Management Scripts
@@ -44,6 +196,7 @@ echo "🔄 Building ChatD Internships Bot..."
 echo "📍 Repository: ${REPO_URL}"
 echo "🌿 Branch: ${BRANCH}"
 
+
 # Show branch source for clarity
 if [[ -n "$1" ]]; then
     echo "   (specified via command line)"
@@ -51,6 +204,20 @@ elif [[ -n "$CHATD_BRANCH" ]]; then
     echo "   (from CHATD_BRANCH environment variable)"
 else
     echo "   (default branch)"
+fi
+
+# Disk space monitoring logic
+DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+AVAILABLE=$(df --output=avail / | tail -1)
+if [ "$DISK_USAGE" -ge 90 ]; then
+    echo "⚠️ Disk usage above 90%. Running emergency cleanup..."
+    sudo chatd-prune
+elif [ "$DISK_USAGE" -ge 80 ]; then
+    echo "⚠️ Warning: Disk usage at ${DISK_USAGE}%. Consider manual cleanup."
+fi
+if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
+    echo "❌ Not enough disk space to build and deploy new images. Aborting."
+    exit 1
 fi
 
 # Cleanup function
@@ -118,6 +285,21 @@ if ! docker image inspect chatd-internships:latest >/dev/null 2>&1; then
     exit 1
 fi
 
+
+# Disk space monitoring logic
+DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+AVAILABLE=$(df --output=avail / | tail -1)
+if [ "$DISK_USAGE" -ge 90 ]; then
+    echo "⚠️ Disk usage above 90%. Running emergency cleanup..."
+    sudo chatd-prune
+elif [ "$DISK_USAGE" -ge 80 ]; then
+    echo "⚠️ Warning: Disk usage at ${DISK_USAGE}%. Consider manual cleanup."
+fi
+if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
+    echo "❌ Not enough disk space to deploy new images. Aborting."
+    exit 1
+fi
+
 # Restart the service if it's running
 if systemctl is-active --quiet chatd-internships; then
     echo "🔄 Restarting service with new image..."
@@ -128,6 +310,25 @@ else
     systemctl start chatd-internships
     echo "✅ Bot started successfully!"
 fi
+
+# --- Docker Image Auto-Pruning ---
+echo "🧹 Cleaning up old Docker images..."
+RETENTION_COUNT=${CHATD_DOCKER_RETENTION:-3}
+
+echo "📊 Retention policy: keeping $RETENTION_COUNT images (current + 2 rollback options)"
+
+# Get all chatd-internships image tags sorted by creation date (newest first)
+IMAGE_TAGS=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest)
+
+# Remove images older than retention count
+echo "$IMAGE_TAGS" | tail -n +$((RETENTION_COUNT + 1)) | while read tag; do
+    if [[ -n "$tag" ]]; then
+        echo "🗑️  Removing old image: chatd-internships:$tag"
+        docker rmi "chatd-internships:$tag" 2>/dev/null || true
+    fi
+done
+
+echo "✅ Cleanup complete. Retained $RETENTION_COUNT images."
 EOF
     chmod +x /usr/local/bin/chatd-deploy
 }
@@ -213,6 +414,25 @@ else
     echo "✅ Bot built and started!"
     echo "📦 Running: ${IMAGE_TAG}"
 fi
+
+# --- Docker Image Auto-Pruning ---
+echo "🧹 Cleaning up old Docker images..."
+RETENTION_COUNT=${CHATD_DOCKER_RETENTION:-3}
+
+echo "📊 Retention policy: keeping $RETENTION_COUNT images (current + 2 rollback options)"
+
+# Get all chatd-internships image tags sorted by creation date (newest first)
+IMAGE_TAGS=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest)
+
+# Remove images older than retention count
+echo "$IMAGE_TAGS" | tail -n +$((RETENTION_COUNT + 1)) | while read tag; do
+    if [[ -n "$tag" ]]; then
+        echo "🗑️  Removing old image: chatd-internships:$tag"
+        docker rmi "chatd-internships:$tag" 2>/dev/null || true
+    fi
+done
+
+echo "✅ Cleanup complete. Retained $RETENTION_COUNT images."
 EOF
     chmod +x /usr/local/bin/chatd-update
 }
@@ -621,6 +841,10 @@ show_usage() {
     echo "  deploy     Deploy with existing image (alias for chatd-deploy)"
     echo "  update     Build and deploy together (alias for chatd-update)"
     echo "  version    Show version information (alias for chatd-version)"
+    echo "  cleanup    Manual image cleanup (alias for chatd-cleanup)"
+    echo "  images     List all ChatD images (alias for chatd-images)"
+    echo "  prune      Aggressive cleanup (alias for chatd-prune)"
+    echo "  disk       Show disk usage and image status (alias for chatd-disk)"
     echo ""
     echo "Examples:"
     echo "  chatd start           # Start the bot"
@@ -631,6 +855,10 @@ show_usage() {
     echo "  chatd version         # Show current version"
     echo "  chatd logs -f         # Follow logs in real-time"
     echo "  chatd status          # Check if bot is running"
+    echo "  chatd cleanup --dry-run   # Preview images to be deleted"
+    echo "  chatd cleanup --count 5   # Keep 5 images"
+    echo "  chatd images              # List images with sizes"
+    echo "  chatd prune               # Keep only latest image"
     echo ""
     echo "Environment Variables:"
     echo "  CHATD_BRANCH          # Default branch for build/update commands"
@@ -686,6 +914,20 @@ case "$1" in
         shift
         chatd-version "$@"
         ;;
+    cleanup)
+        shift
+        chatd-cleanup "$@"
+        ;;
+    images)
+        chatd-images
+        ;;
+    prune)
+        chatd-prune
+        ;;
+    disk)
+        shift
+        chatd-disk "$@"
+        ;;
     ""|help|-h|--help)
         show_usage
         ;;
@@ -730,16 +972,34 @@ echo "✅ Created chatd-data"
 create_chatd_control
 echo "✅ Created chatd (main control script)"
 
+create_chatd_cleanup
+echo "✅ Created chatd-cleanup"
+
+create_chatd_images
+echo "✅ Created chatd-images"
+
+create_chatd_prune
+echo "✅ Created chatd-prune"
+
+create_chatd_disk
+echo "✅ Created chatd-disk"
+
 echo ""
 echo "🎉 All management scripts created successfully!"
 echo ""
 echo "Available commands:"
 echo "  chatd start/stop/restart - Control the bot"
-echo "  chatd-logs -f           - Follow logs in real-time"
-echo "  chatd-data              - Check bot data status"
-echo "  chatd-backup            - Create data backup"
-echo "  chatd-build             - Build Docker image with smart detection"
-echo "  chatd-deploy            - Deploy with existing image"
-echo "  chatd-update            - Build and deploy together"
-echo "  chatd-version           - Show version and manage images"
+echo "  chatd status            - Show service status"
+echo "  chatd enable/disable    - Enable/disable auto-start on boot"
+echo "  chatd logs [-f|-n N|--docker|--system] - View logs"
+echo "  chatd data              - Check bot data status"
+echo "  chatd backup            - Create data backup"
+echo "  chatd build [BRANCH]    - Build Docker image with smart detection"
+echo "  chatd deploy            - Deploy with existing image"
+echo "  chatd update [BRANCH]   - Build and deploy together"
+echo "  chatd version           - Show version and manage images"
+echo "  chatd cleanup [--count N|--dry-run] - Manual image cleanup"
+echo "  chatd images            - List all ChatD images with sizes"
+echo "  chatd prune             - Aggressive cleanup (keep only latest)"
+echo "  chatd disk [--metrics]  - Show disk usage and image status"
 echo "  chatd-loglevel <level>  - Change log level without restart"
