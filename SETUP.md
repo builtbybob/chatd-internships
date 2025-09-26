@@ -21,7 +21,7 @@ Before starting, ensure you have:
 sudo apt update && sudo apt upgrade -y
 
 # Install essential packages
-sudo apt install -y git docker.io curl vim
+sudo apt install -y git docker.io curl
 
 # Add current user to docker group
 sudo usermod -aG docker $USER
@@ -112,17 +112,14 @@ LOG_BACKUP_COUNT=5
 ### Initial Repository Clone
 
 ```bash
-# Clone the internships repository to the correct location
-cd /var/lib/chatd/repo/
-sudo git clone https://github.com/SimplifyJobs/Summer2026-Internships.git temp_clone
-
-# Move contents to the correct structure (avoid nested directories)
-sudo mv temp_clone/* .
-sudo mv temp_clone/.* . 2>/dev/null || true
-sudo rmdir temp_clone
+# Clone the internships repository directly to the correct location
+cd /var/lib/chatd/
+sudo git clone https://github.com/SimplifyJobs/Summer2026-Internships.git repo
 
 # Set correct ownership
 sudo chown -R 1000:1000 /var/lib/chatd/repo/
+
+
 ```
 
 ### Prevent Message Replay
@@ -133,6 +130,11 @@ sudo chown -R 1000:1000 /var/lib/chatd/repo/
 # Use the provided sync script to set baseline
 cd ~/chatd-internships
 sudo ./scripts/sync-repo-data.sh
+
+# Note: If you later encounter an error: 
+#   fatal: Couldn't find remote ref main
+#   ❌ Failed to pull latest changes
+# re-run the chown command above to fix git repository permissions and try again
 ```
 
 This script:

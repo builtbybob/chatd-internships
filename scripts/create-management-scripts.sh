@@ -672,13 +672,15 @@ case "$1" in
         chatd-backup
         ;;
     build)
-        chatd-build
+        shift
+        chatd-build "$@"
         ;;
     deploy)
         chatd-deploy
         ;;
     update)
-        chatd-update
+        shift
+        chatd-update "$@"
         ;;
     version)
         shift

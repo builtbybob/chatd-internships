@@ -96,7 +96,7 @@ else
     # Sync to latest
     log_info "Syncing to latest version (git pull)..."
     
-    if ! git pull origin main; then
+    if ! git pull; then
         log_error "Failed to pull latest changes"
         exit 1
     fi
