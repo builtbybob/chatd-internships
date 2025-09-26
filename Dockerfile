@@ -1,5 +1,5 @@
 # Use a multi-stage build for a smaller image
-FROM python:3.11-slim-bookworm AS builder
+FROM python:3.11-slim AS builder
 
 # Set up work directory
 WORKDIR /app
@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Second stage - runtime image
-FROM python:3.11-slim-bookworm
+FROM python:3.11-slim
 
 # Set up work directory
 WORKDIR /app
