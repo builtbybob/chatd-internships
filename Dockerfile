@@ -1,5 +1,5 @@
 # Use a multi-stage build for a smaller image
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim-bookworm AS builder
 
 # Set up work directory
 WORKDIR /app
@@ -7,7 +7,6 @@ WORKDIR /app
 # Install build dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \
-    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file and install dependencies
@@ -15,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Second stage - runtime image
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # Set up work directory
 WORKDIR /app
@@ -23,7 +22,6 @@ WORKDIR /app
 # Install runtime dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \
-    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
