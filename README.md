@@ -1,22 +1,45 @@
-![ChatD Internships Banner](ChatdInternshipsBanner.png)
+![Ch@d Internships Banner](ChatdInternshipsBanner.png)
 
-# Ch@d Internships Bot
+# Ch@d Internships
 [![Tests](https://github.com/builtbybob/chatd-internships/actions/workflows/coverage.yml/badge.svg)](https://github.com/builtbybob/chatd-internships/actions)
 
 ## Overview
 
-This project is a Discord bot designed to monitor a GitHub repository for new internship postings and send formatted messages to a specified Discord channel. The bot performs the following tasks:
+Ch@d Internships is an automated Discord bot that continuously monitors a public GitHub repository for new internship postings and delivers real-time updates to one or more Discord channels. Designed for reliability and ease of management, the bot is production-ready and supports Docker and systemd deployment.
 
-1. Clones or updates the specified GitHub repository.
-2. Reads a JSON file containing internship listings.
-3. Compares the new listings with previously stored data.
-4. Sends formatted messages to a Discord channel for any new visible and active roles.
-5. Adds reactions to messages for user interaction (configurable via `ENABLE_REACTIONS`).
-6. Sends detailed job information DMs when users react to a message (when enabled).
+**Key Features:**
+- Automated repository sync and change detection
+- Efficient comparison of new and previous listings to avoid duplicate posts
+- Richly formatted Discord messages for new, visible, and active roles
+- Optional reaction support for interactive user engagement
+- Direct messaging of detailed job information when users react (if enabled)
+- Robust error handling, retry logic, and channel health tracking
+- Dynamic log level control for live debugging and monitoring
+- Disk space and image management for safe operation on resource-constrained systems
+- Modular architecture for easy extension and maintenance
+
+The bot operates in a loop: it periodically pulls the latest data from the internships repository, processes new roles, sends notifications, and waits for the next interval. All operational commands and management scripts are exposed for easy control and monitoring.
+
+### Bot Loop Overview
+
+```mermaid
+flowchart TD
+   A[Start Bot] --> B[Clone/Update GitHub Repo]
+   B --> C[Read listings.json]
+   C --> D[Compare with previous_data.json]
+   D --> E{New Visible & Active Roles?}
+   E -- Yes --> F[Send formatted messages to Discord channels]
+   E -- No --> K[Sleep until next check interval]
+   F --> L{Reactions enabled?}
+   L -- Yes --> G[Add reactions]
+   G --> K
+   L -- No --> K
+   K --> B
+```
 
 ## � Quick Start
 
-**For initial setup and installation, see [SETUP.md](SETUP.md) for the complete step-by-step guide.**
+**For initial setup and installation, see [SETUP.md](docs/SETUP.md) for the complete step-by-step guide.**
 
 ### Prerequisites for Development
 
@@ -73,15 +96,20 @@ LOG_MAX_BYTES=10485760
 LOG_BACKUP_COUNT=5
 ```
 
-### Production Deployment
 
-**Production deployment uses Docker + systemd.** See [SETUP.md](SETUP.md) for complete instructions.
+### Operations Quick Reference
 
-#### Deployment Workflow
 
-**Making Changes:**
-1. Push changes to GitHub repository
-2. Deploy to production server:
+#### Most Common Operations
+
+**Start/Stop Bot**
+
+```bash
+chatd start   # Start the bot service (systemd)
+chatd stop    # Stop the bot service
+```
+
+**Update Bot**
 
 ```bash
 # Full update (auto git pull + smart rebuild + deploy)
@@ -92,50 +120,34 @@ sudo chatd build              # Auto git pull + smart build (skips if no changes
 sudo chatd deploy             # Restart service with latest image (fast ~8 seconds)
 ```
 
-**Smart Build System:**
-- `chatd build` and `chatd update` automatically run `git pull`
-- Images are tagged with commit hashes for version tracking
-- Builds are skipped if image for current commit already exists
-- Uses `chatd-internships:latest` tag for deployment
-
-#### Service Management
+**Check Status**
 
 ```bash
-# Service status and control
-chatd status                    # Check service status
-sudo systemctl start chatd-internships    # Start service
-sudo systemctl stop chatd-internships     # Stop service
-sudo systemctl restart chatd-internships  # Restart service
-
-# Log monitoring
-chatd logs -f                   # View logs in real-time
-chatd logs -n 100              # Show last 100 lines
-chatd-loglevel debug           # Enable debug logging (no restart needed)
-chatd-loglevel info            # Return to normal logging
+chatd status  # Show bot/service status (active, running, errors)
 ```
 
-#### Repository Synchronization
+**View Logs**
 
 ```bash
-# Sync repository data (prevents message replay)
-sudo ./scripts/sync-repo-data.sh              # Sync to latest
-sudo ./scripts/sync-repo-data.sh abc123def    # Sync to specific commit
-
-# Use after major repository updates to set new baseline
+chatd logs -f   # View logs in real-time
+chatd logs -n 100  # Show last 100 log lines
 ```
 
-#### Maintenance Commands
+**Change Log Level**
 
 ```bash
-# Docker management
-sudo chatd build              # Build Docker image only
-sudo chatd deploy             # Deploy with existing image (fast ~8 seconds)
-sudo chatd update             # Full update: build + deploy
-
-# System maintenance
-docker system prune -f        # Clean up unused Docker resources
-sudo journalctl --vacuum-size=100M  # Clean system logs
+chatd-loglevel debug    # Enable debug logging (no restart needed)
+chatd-loglevel info     # Return to normal logging
+chatd-loglevel warning  # Show only warnings/errors
 ```
+
+For full details and advanced management, see:
+
+👉 [OPERATIONS.md - Operations Guide](docs/OPERATIONS.md)
+
+---
+
+---
 
 ## Development
 
@@ -233,7 +245,7 @@ sudo chatd-loglevel info
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GPL License - see the [LICENSE](LICENSE) file for details.
 
 ### Core Functions
 
