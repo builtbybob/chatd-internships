@@ -175,8 +175,8 @@ def get_database_url(config) -> str:
     Returns:
         PostgreSQL connection URL
     """
-    return (f"postgresql://{config.DB_USER}:{config.DB_PASSWORD}"
-            f"@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}")
+    return (f"postgresql://{config.db_user}:{config.db_password}"
+            f"@{config.db_host}:{config.db_port}/{config.db_name}")
 
 
 def create_database_manager(config, echo: bool = False) -> DatabaseManager:

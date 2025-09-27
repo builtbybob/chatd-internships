@@ -790,7 +790,8 @@ class DataStorage:
             'updated_count': len(changes['updated']),
             'removed_count': len(changes['removed']),
             'update_failures': [],
-            'success': True
+            'success': True,
+            'changes_for_discord': changes  # Store change detection results for Discord processing
         }
         
         # Process updates efficiently

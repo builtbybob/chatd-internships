@@ -176,6 +176,10 @@ async def check_for_new_roles() -> None:
             logger.warning(f"Some updates failed: {len(results.get('update_failures', []))} failures")
             for failure in results.get('update_failures', []):
                 logger.warning(f"Update failed for job {failure['job_id']}: {failure['reason']}")
+                
+        # Store the change detection results for Discord processing
+        changes_for_discord = results.get('changes_for_discord')
+        
     except Exception as e:
         logger.error(f"Error processing job changes: {e}")
         return
@@ -184,9 +188,8 @@ async def check_for_new_roles() -> None:
     if results['added_count'] > 0:
         logger.debug(f"Processing {results['added_count']} new roles for Discord notifications")
         
-        # Get added roles from the change detection
-        changes = storage.detect_job_changes(new_data)
-        new_roles = changes.get('added', [])
+        # Get added roles from the stored change detection results
+        new_roles = changes_for_discord.get('added', []) if changes_for_discord else []
         
         # Initialize a priority queue for new roles
         new_roles_heap = []
