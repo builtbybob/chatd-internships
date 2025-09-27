@@ -112,7 +112,7 @@ class Config:
         self.discord_token = os.getenv('DISCORD_TOKEN')
         
         # Set database password (required for database connection)
-        self.db_password = os.getenv('DB_PASSWORD', os.getenv('POSTGRES_PASSWORD'))
+        self.db_password = os.getenv('DB_PASSWORD')
         
         # Set timezone (empty string means use system default)
         self.timezone = os.getenv('TIMEZONE', '').strip()
@@ -433,7 +433,7 @@ class Config:
         
         # Check required database configuration
         if not self.db_password:
-            logger.error("❌ DB_PASSWORD or POSTGRES_PASSWORD is required for database connection")
+            logger.error("❌ DB_PASSWORD is required for database connection")
             logger.error("   Please set DB_PASSWORD in your environment variables")
             return False
         

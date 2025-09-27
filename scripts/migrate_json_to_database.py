@@ -20,7 +20,7 @@ from typing import Dict, List, Any, Optional, Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from chatd.config import config
-from chatd.database import DatabaseManager, job_posting_from_dict, MessageTracking
+from chatd.database import DatabaseManager, job_posting_from_dict, MessageTracking, JobPosting
 from chatd.storage_abstraction import DataStorage, JsonStorageBackend
 
 # Set up logging
@@ -206,7 +206,7 @@ class DataMigrator:
                     # Save to database
                     with self.db_manager.session_scope() as session:
                         # Check if job already exists (by URL)
-                        existing_job = session.query(self.db_manager.JobPosting).filter_by(url=job['url']).first()
+                        existing_job = session.query(JobPosting).filter_by(url=job['url']).first()
                         if existing_job:
                             logger.warning(f"⚠️  Job {i} already exists (URL: {job['url']}), skipping")
                             continue
@@ -313,7 +313,7 @@ class DataMigrator:
         try:
             # Count database records
             with self.db_manager.session_scope() as session:
-                db_jobs_count = session.query(self.db_manager.JobPosting).count()
+                db_jobs_count = session.query(JobPosting).count()
                 db_messages_count = session.query(MessageTracking).count()
             
             logger.info(f"Database contains: {db_jobs_count} jobs, {db_messages_count} message tracking entries")

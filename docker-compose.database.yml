@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: chatd
       POSTGRES_USER: chatd
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatd_dev_password}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-chatd_dev_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/init:/docker-entrypoint-initdb.d:ro

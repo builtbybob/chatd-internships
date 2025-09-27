@@ -57,68 +57,7 @@ sudo mkdir -p /var/lib/chatd/data /var/lib/chatd/repo /var/lib/chatd/logs
 sudo chown -R 1000:1000 /var/lib/chatd/
 ```
 
-## Step 3: Database Setup (PostgreSQL)
-
-The ChatD bot supports both JSON file storage (legacy) and PostgreSQL database storage. PostgreSQL provides better data integrity, querying capabilities, and scalability.
-
-### Option A: PostgreSQL Database (Recommended)
-
-#### Setup PostgreSQL with Docker
-
-```bash
-# Navigate to the repository
-cd ~/chatd-internships
-
-# Generate a secure database password
-POSTGRES_PASSWORD=$(openssl rand -base64 32)
-echo "Generated PostgreSQL password: $POSTGRES_PASSWORD"
-
-# Create PostgreSQL environment file
-sudo mkdir -p /etc/chatd
-echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" | sudo tee /etc/chatd/.env.postgres
-sudo chmod 600 /etc/chatd/.env.postgres
-
-# Start PostgreSQL container
-docker compose -f docker-compose.database.yml up -d
-
-# Wait for database to be ready (may take 30-60 seconds)
-echo "Waiting for PostgreSQL to be ready..."
-sleep 30
-
-# Verify database connection
-docker exec chatd-postgres pg_isready -U chatd
-```
-
-#### Verify Database Setup
-
-```bash
-# Check container status
-docker ps | grep chatd-postgres
-
-# Test database connection and schema
-docker exec -it chatd-postgres psql -U chatd -d chatd -c "\dt"
-
-# You should see the following tables:
-# - job_postings
-# - job_locations  
-# - job_terms
-# - message_tracking
-# - jobs_with_details (view)
-```
-
-#### Database Migration Options
-
-The bot supports three migration modes:
-
-1. **`json_only`** - Legacy JSON file storage (default)
-2. **`dual_write`** - Write to both JSON and database (migration phase)
-3. **`database_only`** - PostgreSQL only (recommended for new deployments)
-
-### Option B: JSON File Storage (Legacy)
-
-If you prefer to use JSON file storage or are upgrading an existing installation, you can skip the database setup and use the default configuration.
-
-## Step 4: Discord Bot Configuration
+## Step 3: Discord Bot Configuration
 
 ### Create Configuration File
 
@@ -145,19 +84,6 @@ Edit `/etc/chatd/.env` with your settings:
 DISCORD_TOKEN=your_discord_bot_token_here
 CHANNEL_IDS=123456789012345678,987654321098765432
 
-# Database Configuration (PostgreSQL)
-DB_TYPE=postgresql
-DB_HOST=chatd-postgres
-DB_PORT=5432
-DB_NAME=chatd
-DB_USER=chatd
-DB_PASSWORD=your_postgres_password_from_step_3
-
-# Migration Mode (choose one)
-MIGRATION_MODE=database_only      # For new installations with PostgreSQL
-# MIGRATION_MODE=json_only        # For legacy JSON file storage
-# MIGRATION_MODE=dual_write       # For gradual migration from JSON to PostgreSQL
-
 # Logging Configuration
 LOG_LEVEL=INFO
 
@@ -177,21 +103,122 @@ LOG_BACKUP_COUNT=5
 - `DISCORD_TOKEN`: Your Discord bot token from the [Discord Developer Portal](https://discord.com/developers/applications)
 - `CHANNEL_IDS`: Comma-separated list of Discord channel IDs where the bot should send messages
 
-**Database Settings (if using PostgreSQL):**
-- `DB_PASSWORD`: Use the password generated in Step 3 (found in `/etc/chatd/.env.postgres`)
+**How to get Discord Channel ID:**
+1. Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)
+2. Right-click on the channel → Copy ID
+
+## Step 4: Database Setup (PostgreSQL)
+
+The ChatD bot supports both JSON file storage (legacy) and PostgreSQL database storage. PostgreSQL provides better data integrity, querying capabilities, and scalability.
+
+### Option A: PostgreSQL Database (Recommended)
+
+#### Configure Environment Variables
+
+```bash
+# Generate a secure database password
+DB_PASSWORD=$(openssl rand -base64 32)
+echo "Generated PostgreSQL password: $DB_PASSWORD"
+
+# Example output:
+# Generated PostgreSQL password: SHuGgJyt4LTjpQ/s7BUjWR+GcjYY2qM6HWIXmGUIYDM=
+
+# Edit .env to use PostgreSQL file
+sudo nano /etc/chatd/.env
+```
+
+Edit `/etc/chatd/.env` with your settings:
+
+```ini
+# Database password for PostgreSQL (required for database mode)
+# This should match the password set in docker-compose.database.yml
+DB_PASSWORD=your_postgres_password_here
+
+# Database migration mode: json_only|dual_write|database_only
+MIGRATION_MODE=database_only
+
+# Database connection settings (advanced)
+#DB_TYPE=postgresql
+#DB_HOST=chatd-postgres
+#DB_PORT=5432
+#DB_NAME=chatd
+#DB_USER=chatd
+#DB_CONNECTION_POOL_SIZE=5
+#DB_AUTO_VACUUM=true
+#DB_HEALTH_CHECK_INTERVAL=300
+#DB_MIGRATION_BATCH_SIZE=100
+#DB_BACKUP_RETENTION_DAYS=30
+```
+
+**Required Settings:**
+- `DB_PASSWORD`: Use the password generated in `DB_PASSWORD` (include `=`)
 - `MIGRATION_MODE`: Choose based on your setup:
   - `database_only`: New installations with PostgreSQL (recommended)
   - `json_only`: Legacy JSON file storage
   - `dual_write`: Migration phase (writes to both JSON and database)
 
-**How to get Discord Channel ID:**
-1. Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)
-2. Right-click on the channel → Copy ID
-
 **How to get Database Password:**
 ```bash
 # View the generated PostgreSQL password
-sudo cat /etc/chatd/.env.postgres
+echo "Generated PostgreSQL password: $DB_PASSWORD"
+```
+
+#### Setup PostgreSQL with Docker
+
+``` bash
+# Start PostgreSQL container, passing PostgreSQL password to Docker
+DB_PASSWORD=$DB_PASSWORD docker-compose -f docker-compose.database.yml up -d
+
+# Wait for database to be ready (may take 30-60 seconds)
+echo "Waiting for PostgreSQL to be ready..."
+sleep 30
+
+# Verify database connection
+docker exec chatd-postgres pg_isready -U chatd
+
+# Example successful response:
+# /var/run/postgresql:5432 - accepting connections
+```
+
+#### Verify Database Setup
+
+```bash
+# Check container status
+docker ps | grep chatd-postgres
+
+# Test database connection and schema
+docker exec -it chatd-postgres psql -U chatd -d chatd -c "\dt"
+
+# You should see the following tables:
+# - job_postings
+# - job_locations  
+# - job_terms
+# - message_tracking
+
+# Test database view(s) were created
+docker exec -it chatd-postgres psql -U chatd -d chatd -c "\dv"
+
+# You should see the following views:
+# - job_postings_readable (view)
+```
+
+### Option B: JSON File Storage (Legacy)
+
+If you prefer to use JSON file storage or are upgrading an existing installation, you can skip the database setup and use the default configuration.
+
+### Setup .env to use JSON file
+```bash
+# Edit configuration
+sudo nano /etc/chatd/.env
+```
+
+#### Configure Environment Variables
+
+Edit `/etc/chatd/.env` with your settings:
+
+```ini
+# Database migration mode: json_only|dual_write|database_only
+MIGRATION_MODE=json_only        # For legacy JSON file storage
 ```
 
 ## Step 5: Repository Data Setup
@@ -235,10 +262,30 @@ docker ps | grep chatd-postgres
 
 # Step 2: Run migration with dry-run to preview
 cd ~/chatd-internships
+
+# (Recommended) Create and activate a Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install required dependencies
+pip install -r requirements.txt
+
+# Ensure DB_PASSWORD is set, required for migration script
+# Check if variable is set
+echo $DB_PASSWORD
+# If not set, get password from .env file
+DB_PASSWORD=$(sudo grep DB_PASSWORD /etc/chatd/.env | sed 's/DB_PASSWORD=//')
+
+# Run migration with dry-run to preview
 python scripts/migrate_json_to_database.py --dry-run --verbose
 
 # Step 3: Execute the actual migration
-python scripts/migrate_json_to_database.py --verify
+python scripts/migrate_json_to_database.py --verbose
+> **Note:** If you encounter an error like `'DatabaseManager' object has no attribute 'JobPosting'`, edit `scripts/migrate_json_to_database.py` to import model classes directly:
+> ```python
+> from chatd.database import JobPosting, MessageTracking, JobLocation, JobTerm
+> ```
+> Then use these classes directly in your queries (e.g., `JobPosting`, not `self.db_manager.JobPosting`).
 
 # Step 4: Update configuration to use database
 sudo nano /etc/chatd/.env
