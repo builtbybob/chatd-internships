@@ -235,73 +235,82 @@ class DataMigrator:
             logger.error(f"❌ Job migration failed: {e}")
             return False
     
-    def migrate_message_tracking(self, messages_data: Dict[str, Dict[str, Any]], dry_run: bool = False) -> bool:
-        """Migrate message tracking data to database."""
+    def migrate_message_tracking(self, messages_data: Dict[str, Any], dry_run: bool = False) -> bool:
+        """Migrate message tracking data to database. Handles both dict and list-of-dict formats."""
         if not messages_data:
             logger.info("No message tracking data to migrate")
             return True
-            
+
         logger.info(f"🔄 Migrating {len(messages_data)} message tracking entries...")
         self.migration_stats['messages_total'] = len(messages_data)
-        
+
         success_count = 0
         failed_count = 0
-        
+
         try:
             for job_id, message_info in messages_data.items():
-                try:
-                    # Validate message tracking data
-                    if not isinstance(message_info, dict):
-                        logger.error(f"❌ Invalid message data for job {job_id}")
-                        failed_count += 1
-                        continue
-                    
-                    if 'message_id' not in message_info or 'channel_id' not in message_info:
-                        logger.error(f"❌ Missing message_id or channel_id for job {job_id}")
-                        failed_count += 1
-                        continue
-                    
-                    if dry_run:
-                        logger.info(f"✅ Message tracking for job {job_id} (DRY RUN)")
-                        success_count += 1
-                        continue
-                    
-                    # Create message tracking entry
-                    posted_at = datetime.fromtimestamp(message_info.get('posted_at', datetime.now().timestamp()))
-                    
-                    message_tracking = MessageTracking(
-                        id=job_id,
-                        message_id=message_info['message_id'],
-                        channel_id=message_info['channel_id'],
-                        posted_at=posted_at
-                    )
-                    
-                    # Save to database
-                    with self.db_manager.session_scope() as session:
-                        # Check if entry already exists
-                        existing_entry = session.query(MessageTracking).filter_by(id=job_id).first()
-                        if existing_entry:
-                            logger.warning(f"⚠️  Message tracking for job {job_id} already exists, skipping")
-                            continue
-                        
-                        session.add(message_tracking)
-                    
-                    success_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"❌ Failed to migrate message tracking for job {job_id}: {e}")
+                # Accept both dict and list-of-dict formats
+                message_objs = []
+                if isinstance(message_info, dict):
+                    message_objs = [message_info]
+                elif isinstance(message_info, list):
+                    message_objs = message_info
+                else:
+                    logger.error(f"❌ Invalid message data for job {job_id}")
                     failed_count += 1
-            
+                    continue
+
+                for msg in message_objs:
+                    try:
+                        if not isinstance(msg, dict):
+                            logger.error(f"❌ Invalid message object for job {job_id}")
+                            failed_count += 1
+                            continue
+
+                        if 'message_id' not in msg or 'channel_id' not in msg:
+                            logger.error(f"❌ Missing message_id or channel_id for job {job_id}")
+                            failed_count += 1
+                            continue
+
+                        if dry_run:
+                            logger.info(f"✅ Message tracking for job {job_id} (DRY RUN)")
+                            success_count += 1
+                            continue
+
+                        posted_at = datetime.fromtimestamp(msg.get('posted_at', datetime.now().timestamp()))
+
+                        message_tracking = MessageTracking(
+                            id=job_id,
+                            message_id=msg['message_id'],
+                            channel_id=msg['channel_id'],
+                            posted_at=posted_at
+                        )
+
+                        with self.db_manager.session_scope() as session:
+                            # Check if entry already exists
+                            existing_entry = session.query(MessageTracking).filter_by(id=job_id).first()
+                            if existing_entry:
+                                logger.warning(f"⚠️  Message tracking for job {job_id} already exists, skipping")
+                                continue
+
+                            session.add(message_tracking)
+
+                        success_count += 1
+
+                    except Exception as e:
+                        logger.error(f"❌ Failed to migrate message tracking for job {job_id}: {e}")
+                        failed_count += 1
+
             self.migration_stats['messages_migrated'] = success_count
             self.migration_stats['messages_failed'] = failed_count
-            
+
             if dry_run:
                 logger.info(f"✅ Message tracking migration dry run completed: {success_count} valid, {failed_count} invalid")
             else:
                 logger.info(f"✅ Message tracking migration completed: {success_count} successful, {failed_count} failed")
-            
+
             return failed_count == 0
-            
+
         except Exception as e:
             logger.error(f"❌ Message tracking migration failed: {e}")
             return False
