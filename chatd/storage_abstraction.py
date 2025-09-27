@@ -63,6 +63,39 @@ class StorageBackend(ABC):
     def health_check(self) -> bool:
         """Check if the storage backend is healthy."""
         pass
+    
+    @abstractmethod
+    def detect_job_changes(self, current_jobs: List[Dict[str, Any]], previous_jobs: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """
+        Detect changes between current and previous job postings.
+        
+        Args:
+            current_jobs: New job postings data
+            previous_jobs: Previous job postings data
+            
+        Returns:
+            Dictionary with change detection results:
+            {
+                'added': [job_dict, ...],
+                'updated': [{'job': job_dict, 'changes': {'field': {'old': val, 'new': val}}}, ...],
+                'removed': [job_dict, ...]
+            }
+        """
+        pass
+    
+    @abstractmethod
+    def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
+        """
+        Update specific fields of a job posting.
+        
+        Args:
+            job_id: ID of the job posting to update
+            updates: Dictionary of field updates {field_name: new_value}
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        pass
 
 
 class JsonStorageBackend(StorageBackend):
@@ -183,6 +216,96 @@ class JsonStorageBackend(StorageBackend):
             return True
         except Exception as e:
             logger.error(f"JSON storage health check failed: {e}")
+            return False
+    
+    def detect_job_changes(self, current_jobs: List[Dict[str, Any]], previous_jobs: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """Detect changes between current and previous job postings."""
+        # Create lookup dictionaries by job ID
+        current_by_id = {job['id']: job for job in current_jobs}
+        previous_by_id = {job['id']: job for job in previous_jobs}
+        
+        # Track changes
+        changes = {
+            'added': [],
+            'updated': [],
+            'removed': []
+        }
+        
+        # Find added jobs
+        for job_id, job in current_by_id.items():
+            if job_id not in previous_by_id:
+                changes['added'].append(job)
+        
+        # Find removed jobs
+        for job_id, job in previous_by_id.items():
+            if job_id not in current_by_id:
+                changes['removed'].append(job)
+        
+        # Find updated jobs (focus on key fields)
+        key_fields = ['active', 'is_visible', 'date_updated']
+        for job_id, current_job in current_by_id.items():
+            if job_id in previous_by_id:
+                previous_job = previous_by_id[job_id]
+                job_changes = {}
+                
+                # Check key fields for changes
+                for field in key_fields:
+                    current_value = current_job.get(field)
+                    previous_value = previous_job.get(field)
+                    if current_value != previous_value:
+                        job_changes[field] = {
+                            'old': previous_value,
+                            'new': current_value
+                        }
+                
+                # If date_updated changed, it indicates content was corrected, check all fields
+                if 'date_updated' in job_changes:
+                    all_fields = ['url', 'company_name', 'title', 'sponsorship', 'source', 
+                                 'date_posted', 'company_url', 'locations', 'terms']
+                    for field in all_fields:
+                        current_value = current_job.get(field)
+                        previous_value = previous_job.get(field)
+                        if current_value != previous_value:
+                            job_changes[field] = {
+                                'old': previous_value,
+                                'new': current_value
+                            }
+                
+                if job_changes:
+                    changes['updated'].append({
+                        'job': current_job,
+                        'changes': job_changes
+                    })
+        
+        logger.debug(f"Change detection: {len(changes['added'])} added, "
+                    f"{len(changes['updated'])} updated, {len(changes['removed'])} removed")
+        
+        return changes
+    
+    def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
+        """Update specific fields of a job posting in JSON storage."""
+        try:
+            job_postings = self.get_job_postings()
+            
+            # Find the job to update
+            job_found = False
+            for job in job_postings:
+                if job.get('id') == job_id:
+                    # Apply updates
+                    for field, value in updates.items():
+                        job[field] = value
+                    job_found = True
+                    break
+            
+            if not job_found:
+                logger.error(f"Job posting {job_id} not found for update")
+                return False
+            
+            # Save updated data
+            return self.save_job_postings(job_postings)
+            
+        except Exception as e:
+            logger.error(f"Failed to update job posting {job_id} in JSON: {e}")
             return False
 
 
@@ -317,6 +440,111 @@ class DatabaseStorageBackend(StorageBackend):
     def health_check(self) -> bool:
         """Check if database storage is healthy."""
         return self.db_manager.test_connection()
+    
+    def detect_job_changes(self, current_jobs: List[Dict[str, Any]], previous_jobs: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """Detect changes between current and previous job postings (database implementation)."""
+        # Use the same logic as JSON backend for consistency
+        current_by_id = {job['id']: job for job in current_jobs}
+        previous_by_id = {job['id']: job for job in previous_jobs}
+        
+        changes = {
+            'added': [],
+            'updated': [],
+            'removed': []
+        }
+        
+        # Find added jobs
+        for job_id, job in current_by_id.items():
+            if job_id not in previous_by_id:
+                changes['added'].append(job)
+        
+        # Find removed jobs
+        for job_id, job in previous_by_id.items():
+            if job_id not in current_by_id:
+                changes['removed'].append(job)
+        
+        # Find updated jobs (focus on key fields)
+        key_fields = ['active', 'is_visible', 'date_updated']
+        for job_id, current_job in current_by_id.items():
+            if job_id in previous_by_id:
+                previous_job = previous_by_id[job_id]
+                job_changes = {}
+                
+                # Check key fields for changes
+                for field in key_fields:
+                    current_value = current_job.get(field)
+                    previous_value = previous_job.get(field)
+                    if current_value != previous_value:
+                        job_changes[field] = {
+                            'old': previous_value,
+                            'new': current_value
+                        }
+                
+                # If date_updated changed, it indicates content was corrected, check all fields
+                if 'date_updated' in job_changes:
+                    all_fields = ['url', 'company_name', 'title', 'sponsorship', 'source', 
+                                 'date_posted', 'company_url', 'locations', 'terms']
+                    for field in all_fields:
+                        current_value = current_job.get(field)
+                        previous_value = previous_job.get(field)
+                        if current_value != previous_value:
+                            job_changes[field] = {
+                                'old': previous_value,
+                                'new': current_value
+                            }
+                
+                if job_changes:
+                    changes['updated'].append({
+                        'job': current_job,
+                        'changes': job_changes
+                    })
+        
+        logger.debug(f"Database change detection: {len(changes['added'])} added, "
+                    f"{len(changes['updated'])} updated, {len(changes['removed'])} removed")
+        
+        return changes
+    
+    def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
+        """Update specific fields of a job posting in database."""
+        try:
+            with self.db_manager.session_scope() as session:
+                # Find the job posting
+                job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
+                if not job_posting:
+                    logger.error(f"Job posting {job_id} not found for update")
+                    return False
+                
+                # Update the job posting fields
+                for field, value in updates.items():
+                    if field in ['locations', 'terms']:
+                        # Handle relationship updates
+                        if field == 'locations':
+                            # Remove existing locations
+                            session.query(JobLocation).filter(JobLocation.id == job_id).delete()
+                            # Add new locations
+                            for location in value:
+                                job_location = JobLocation(id=job_id, location=location)
+                                session.add(job_location)
+                        elif field == 'terms':
+                            # Remove existing terms
+                            session.query(JobTerm).filter(JobTerm.id == job_id).delete()
+                            # Add new terms
+                            for term in value:
+                                job_term = JobTerm(id=job_id, term=term)
+                                session.add(job_term)
+                    else:
+                        # Handle scalar field updates
+                        if hasattr(job_posting, field):
+                            setattr(job_posting, field, value)
+                        else:
+                            logger.warning(f"Unknown field {field} in job posting update")
+                
+                logger.debug(f"Updated job posting {job_id} with fields: {list(updates.keys())}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to update job posting {job_id} in database: {e}")
+            return False
 
 
 class DataStorage:
@@ -487,3 +715,142 @@ class DataStorage:
             }
         
         return status
+    
+    def detect_job_changes(self, current_jobs: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """
+        Detect changes between current job data and stored data.
+        
+        Args:
+            current_jobs: New job postings data from repository
+            
+        Returns:
+            Dictionary with change detection results
+        """
+        # Get previous job data from storage
+        previous_jobs = self.get_job_postings()
+        
+        # Use the primary backend for change detection
+        if self.migration_mode == 'database_only':
+            return self.database_backend.detect_job_changes(current_jobs, previous_jobs)
+        else:
+            # json_only and dual_write both use JSON as primary
+            return self.json_backend.detect_job_changes(current_jobs, previous_jobs)
+    
+    def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
+        """
+        Update specific fields of a job posting using the appropriate backend(s).
+        
+        Args:
+            job_id: ID of the job posting to update
+            updates: Dictionary of field updates {field_name: new_value}
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        success = True
+        
+        if self.migration_mode in ['json_only', 'dual_write']:
+            json_success = self.json_backend.update_job_posting(job_id, updates)
+            if not json_success:
+                logger.error(f"Failed to update job posting {job_id} in JSON backend")
+                success = False
+            else:
+                logger.debug(f"Successfully updated job posting {job_id} in JSON backend")
+        
+        if self.migration_mode in ['dual_write', 'database_only']:
+            db_success = self.database_backend.update_job_posting(job_id, updates)
+            if not db_success:
+                logger.error(f"Failed to update job posting {job_id} in database backend")
+                success = False
+            else:
+                logger.debug(f"Successfully updated job posting {job_id} in database backend")
+        
+        return success
+    
+    def process_job_changes(self, current_jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Process job changes with intelligent update handling.
+        
+        This method detects changes and applies updates efficiently:
+        - active/is_visible changes: Update only those fields
+        - date_updated changes: Update entire job posting (content correction)
+        - Ensures idempotency and handles concurrent changes gracefully
+        
+        Args:
+            current_jobs: New job postings data
+            
+        Returns:
+            Dictionary with processing results and statistics
+        """
+        # Detect changes
+        changes = self.detect_job_changes(current_jobs)
+        
+        results = {
+            'added_count': len(changes['added']),
+            'updated_count': len(changes['updated']),
+            'removed_count': len(changes['removed']),
+            'update_failures': [],
+            'success': True
+        }
+        
+        # Process updates efficiently
+        for update_info in changes['updated']:
+            job = update_info['job']
+            job_changes = update_info['changes']
+            job_id = job['id']
+            
+            try:
+                # Determine update strategy based on changes
+                if 'date_updated' in job_changes:
+                    # Content correction: update entire job posting
+                    logger.info(f"Content correction detected for job {job_id}, updating entire posting")
+                    if not self.update_job_posting(job_id, job):
+                        results['update_failures'].append({'job_id': job_id, 'reason': 'full_update_failed'})
+                        results['success'] = False
+                else:
+                    # Selective update: only changed fields
+                    updates = {field: change_info['new'] for field, change_info in job_changes.items()}
+                    logger.info(f"Selective update for job {job_id}, fields: {list(updates.keys())}")
+                    if not self.update_job_posting(job_id, updates):
+                        results['update_failures'].append({'job_id': job_id, 'reason': 'selective_update_failed'})
+                        results['success'] = False
+                
+            except Exception as e:
+                logger.error(f"Failed to process updates for job {job_id}: {e}")
+                results['update_failures'].append({'job_id': job_id, 'reason': str(e)})
+                results['success'] = False
+        
+        # Handle new jobs (add them to storage)
+        if changes['added']:
+            try:
+                # Get current stored jobs and add the new ones
+                all_jobs = self.get_job_postings()
+                all_jobs.extend(changes['added'])
+                if not self.save_job_postings(all_jobs):
+                    logger.error("Failed to save new job postings")
+                    results['success'] = False
+                else:
+                    logger.info(f"Added {len(changes['added'])} new job postings")
+            except Exception as e:
+                logger.error(f"Failed to add new job postings: {e}")
+                results['success'] = False
+        
+        # Handle removed jobs (remove from storage)
+        if changes['removed']:
+            try:
+                current_stored_jobs = self.get_job_postings()
+                removed_ids = {job['id'] for job in changes['removed']}
+                filtered_jobs = [job for job in current_stored_jobs if job['id'] not in removed_ids]
+                if not self.save_job_postings(filtered_jobs):
+                    logger.error("Failed to remove deleted job postings")
+                    results['success'] = False
+                else:
+                    logger.info(f"Removed {len(changes['removed'])} deleted job postings")
+            except Exception as e:
+                logger.error(f"Failed to remove deleted job postings: {e}")
+                results['success'] = False
+        
+        logger.info(f"Change processing completed: {results['added_count']} added, "
+                   f"{results['updated_count']} updated, {results['removed_count']} removed")
+        
+        return results

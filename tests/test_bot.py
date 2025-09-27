@@ -291,29 +291,17 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Software Engineer', call_args)
     
     async def test_check_for_new_roles(self):
-        """Test checking for new roles with DataStorage."""
+        """Test checking for new roles with DataStorage and new update support."""
         from chatd.bot import check_for_new_roles
         
         # Use a recent timestamp for testing (current time - 1 day)
         current_time = int(time.time())
         one_day_ago = current_time - (24 * 60 * 60)
         
-        # Mock old data (what's currently stored)
-        old_data = [
-            {
-                'id': 'existing_role_id',
-                'company_name': 'Existing Company',
-                'title': 'Existing Role',
-                'date_posted': one_day_ago,
-                'active': True,
-                'is_visible': True
-            }
-        ]
-        
         # Mock new data (what's fetched from repo)
         new_data = [
             {
-                'id': 'existing_role_id',  # This should be skipped
+                'id': 'existing_role_id',  # This should be detected as no change
                 'company_name': 'Existing Company',
                 'title': 'Existing Role',
                 'date_posted': one_day_ago,
@@ -321,7 +309,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
                 'is_visible': True
             },
             {
-                'id': 'new_role_id',  # This should be processed
+                'id': 'new_role_id',  # This should be processed as new
                 'company_name': 'New Company',
                 'title': 'New Role',
                 'date_posted': one_day_ago,  # Within the 5-day limit
@@ -331,6 +319,22 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             }
         ]
         
+        # Mock the change processing results
+        mock_process_results = {
+            'added_count': 1,
+            'updated_count': 0,
+            'removed_count': 0,
+            'update_failures': [],
+            'success': True
+        }
+        
+        # Mock the change detection results for new roles
+        mock_changes = {
+            'added': [new_data[1]],  # Only the new role
+            'updated': [],
+            'removed': []
+        }
+        
         with patch('chatd.bot.storage') as mock_storage, \
              patch('chatd.bot.read_json', return_value=new_data), \
              patch('chatd.bot.send_messages_to_channels') as mock_send_messages, \
@@ -338,15 +342,15 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
              patch('chatd.bot.config') as mock_config:
             
             # Configure mocks
-            mock_storage.get_job_postings.return_value = old_data
-            mock_storage.save_job_postings.return_value = True
+            mock_storage.process_job_changes.return_value = mock_process_results
+            mock_storage.detect_job_changes.return_value = mock_changes
             mock_config.max_post_age_days = 5
             
             await check_for_new_roles()
             
-            # Verify storage operations
-            mock_storage.get_job_postings.assert_called_once()
-            mock_storage.save_job_postings.assert_called_once_with(new_data)
+            # Verify new update support methods were called
+            mock_storage.process_job_changes.assert_called_once_with(new_data)
+            mock_storage.detect_job_changes.assert_called_once_with(new_data)
             
             # Verify message sending was called for new role
             mock_send_messages.assert_called_once()
