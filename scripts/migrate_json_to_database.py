@@ -34,6 +34,26 @@ class MigrationError(Exception):
 
 
 class DataMigrator:
+    def load_messages_json_data(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """Load and validate message tracking JSON data from file (expects dict)."""
+        if not os.path.exists(file_path):
+            logger.warning(f"JSON file doesn't exist: {file_path}")
+            return {}
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            if not isinstance(data, dict):
+                raise MigrationError(f"Expected dict of message tracking, got {type(data)}")
+
+            logger.info(f"✅ Loaded {len(data)} message tracking records from {file_path}")
+            return data
+
+        except json.JSONDecodeError as e:
+            raise MigrationError(f"Invalid JSON format in {file_path}: {e}")
+        except Exception as e:
+            raise MigrationError(f"Failed to load JSON data: {e}")
     """Handles migration of JSON data to PostgreSQL database."""
     
     def __init__(self, json_data_path: str = None, json_messages_path: str = None):
@@ -42,21 +62,33 @@ class DataMigrator:
         self.json_data_path = json_data_path or config.data_file
         self.json_messages_path = json_messages_path or config.messages_file
         
-        # Handle the actual production path
+        # Handle the actual production path for job data
         if json_data_path and not os.path.exists(json_data_path):
-            # Try the production path
             prod_data_path = "/var/lib/chatd/data/previous_data.json"
             if os.path.exists(prod_data_path):
                 self.json_data_path = prod_data_path
                 logger.info(f"Using production data file: {prod_data_path}")
         elif not json_data_path:
-            # Default to production path if no path provided
             prod_data_path = "/var/lib/chatd/data/previous_data.json"
             if os.path.exists(prod_data_path):
                 self.json_data_path = prod_data_path
                 logger.info(f"Using production data file: {prod_data_path}")
             else:
                 logger.info(f"Production data file not found, using config default: {self.json_data_path}")
+
+        # Handle the actual production path for message tracking
+        if json_messages_path and not os.path.exists(json_messages_path):
+            prod_messages_path = "/var/lib/chatd/data/message_tracking.json"
+            if os.path.exists(prod_messages_path):
+                self.json_messages_path = prod_messages_path
+                logger.info(f"Using production message tracking file: {prod_messages_path}")
+        elif not json_messages_path:
+            prod_messages_path = "/var/lib/chatd/data/message_tracking.json"
+            if os.path.exists(prod_messages_path):
+                self.json_messages_path = prod_messages_path
+                logger.info(f"Using production message tracking file: {prod_messages_path}")
+            else:
+                logger.info(f"Production message tracking file not found, using config default: {self.json_messages_path}")
         
         # Initialize database manager
         self.db_manager = None
@@ -375,11 +407,10 @@ class DataMigrator:
             
             messages_data = {}
             if os.path.exists(self.json_messages_path):
-                messages_raw = self.load_json_data(self.json_messages_path)
-                if messages_raw and isinstance(messages_raw, dict):
-                    messages_data = messages_raw
-                elif messages_raw:
-                    logger.warning("Message data is not in expected format, skipping message migration")
+                try:
+                    messages_data = self.load_messages_json_data(self.json_messages_path)
+                except MigrationError as e:
+                    logger.warning(f"Message data is not in expected format, skipping message migration: {e}")
             
             # Step 4: Migrate job postings
             if job_data:
