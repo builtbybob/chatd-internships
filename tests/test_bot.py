@@ -10,6 +10,15 @@ from unittest.mock import Mock, patch, AsyncMock, MagicMock
 import discord
 from discord.ext import commands
 
+# Mock storage-related classes before any imports that might trigger storage initialization
+@patch('chatd.storage_abstraction.JsonStorageBackend')
+@patch('chatd.storage_abstraction.DataStorage')
+def _mock_storage_initialization(*args):
+    """Mock storage initialization to prevent file system operations during testing."""
+    pass
+
+_mock_storage_initialization()
+
 
 class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
     """Test cases for Discord bot operations."""
