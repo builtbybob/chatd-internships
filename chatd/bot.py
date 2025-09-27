@@ -17,10 +17,13 @@ from chatd.config import config
 from chatd.logging_utils import get_logger
 from chatd.messages import format_message
 from chatd.repo import clone_or_update_repo, read_json
-from chatd.storage import get_storage
+from chatd.storage_abstraction import DataStorage
 
 # Get logger
 logger = get_logger()
+
+# Initialize storage
+storage = DataStorage(config)
 
 # Initialize Discord bot
 intents = discord.Intents.default()
@@ -83,10 +86,7 @@ async def send_message(message: str, channel_id: str, role_key: Optional[str] = 
         
         # Store message info if we have a role key
         if role_key:
-            storage = get_storage('file', 
-                                data_file=config.data_file, 
-                                messages_file=config.messages_file)
-            storage.save_message_info(str(sent_message.id), channel_id, role_key)
+            storage.add_message_tracking(role_key, str(sent_message.id), channel_id)
         
         # Reset failure count on success
         if channel_id in channel_failure_counts:
@@ -147,9 +147,9 @@ async def send_messages_to_channels(message: str, role_key: Optional[str] = None
 
 async def check_for_new_roles() -> None:
     """
-    Check for new roles in the repository and send notifications.
+    Check for new roles in the repository and process all changes including updates.
     """
-    logger.debug("Checking for new roles...")
+    logger.debug("Checking for new roles and updates...")
     
     # Run git operations in a thread pool to avoid blocking the event loop
     import asyncio
@@ -166,55 +166,67 @@ async def check_for_new_roles() -> None:
         
     new_data = read_json()
     
-    # Get storage and load previous data
-    storage = get_storage('file', 
-                        data_file=config.data_file, 
-                        messages_file=config.messages_file)
-    old_data = storage.load_data()
-    
-    if old_data:
-        logger.debug("Previous data loaded.")
-    else:
-        logger.debug("No previous data found.")
-
-    # Initialize a priority queue for new roles
-    new_roles_heap = []
-    
-    # Create a dictionary for quick lookup of old roles using role IDs
-    old_roles_dict = { role['id']: role for role in old_data }
-
-    for new_role in new_data:
-        old_role = old_roles_dict.get(new_role['id'])
-
-        # Get boolean values directly since they are stored as proper booleans
-        new_active = new_role.get('active', False)
-        new_is_visible = new_role.get('is_visible', True)  # Default to True since all existing entries use True
+    # Process changes using the new update support
+    try:
+        results = storage.process_job_changes(new_data)
+        logger.info(f"Change processing completed: {results['added_count']} added, "
+                   f"{results['updated_count']} updated, {results['removed_count']} removed")
         
-        # Check for new, visible, and active roles only
-        if not old_role and new_is_visible and new_active:
-            # Check if the role was updated within the configured time period
-            days_since_posted = (datetime.now().timestamp() - new_role['date_posted']) / (24 * 60 * 60)
-            if days_since_posted <= config.max_post_age_days:
-                # Add to priority queue in chronological order (oldest first)
-                # Using (timestamp, counter) as the key to ensure unique ordering
-                counter = len(new_roles_heap)  # Use length as a unique secondary key
-                heapq.heappush(new_roles_heap, (new_role['date_posted'], counter, new_role))
-                logger.debug(f"New role found: {new_role['title']} at {new_role['company_name']}")
-            else:
-                logger.debug(f"Skipping old role: {new_role['title']} at {new_role['company_name']} (posted {days_since_posted:.1f} days ago, max age: {config.max_post_age_days} days)")
+        if not results['success']:
+            logger.warning(f"Some updates failed: {len(results.get('update_failures', []))} failures")
+            for failure in results.get('update_failures', []):
+                logger.warning(f"Update failed for job {failure['job_id']}: {failure['reason']}")
+                
+        # Store the change detection results for Discord processing
+        changes_for_discord = results.get('changes_for_discord')
+        
+    except Exception as e:
+        logger.error(f"Error processing job changes: {e}")
+        return
+    
+    # Process new roles for Discord notifications
+    if results['added_count'] > 0:
+        logger.debug(f"Processing {results['added_count']} new roles for Discord notifications")
+        
+        # Get added roles from the stored change detection results
+        new_roles = changes_for_discord.get('added', []) if changes_for_discord else []
+        
+        # Initialize a priority queue for new roles
+        new_roles_heap = []
+        
+        for new_role in new_roles:
+            # Get boolean values directly since they are stored as proper booleans
+            new_active = new_role.get('active', False)
+            new_is_visible = new_role.get('is_visible', True)  # Default to True since all existing entries use True
+            
+            # Check for visible and active roles only
+            if new_is_visible and new_active:
+                # Check if the role was updated within the configured time period
+                days_since_posted = (datetime.now().timestamp() - new_role['date_posted']) / (24 * 60 * 60)
+                if days_since_posted <= config.max_post_age_days:
+                    # Add to priority queue in chronological order (oldest first)
+                    # Using (timestamp, counter) as the key to ensure unique ordering
+                    counter = len(new_roles_heap)  # Use length as a unique secondary key
+                    heapq.heappush(new_roles_heap, (new_role['date_posted'], counter, new_role))
+                    logger.debug(f"New role found: {new_role['title']} at {new_role['company_name']}")
+                else:
+                    logger.debug(f"Skipping old role: {new_role['title']} at {new_role['company_name']} (posted {days_since_posted:.1f} days ago, max age: {config.max_post_age_days} days)")
 
-    logger.debug(f"Found {len(new_roles_heap)} new roles, processing in chronological order")
+        logger.debug(f"Found {len(new_roles_heap)} new roles for Discord notifications, processing in chronological order")
 
-    # Process roles in order (oldest first)
-    while new_roles_heap:
-        _, _, role = heapq.heappop(new_roles_heap)  # Unpack timestamp, counter, and role
-        role_key = role['id']
-        message = format_message(role)
-        await send_messages_to_channels(message, role_key)
-
-    # Update previous data
-    storage.save_data(new_data)
-    logger.debug("Updated previous data with new data.")
+        # Process roles in order (oldest first)
+        while new_roles_heap:
+            _, _, role = heapq.heappop(new_roles_heap)  # Unpack timestamp, counter, and role
+            role_key = role['id']
+            message = format_message(role)
+            await send_messages_to_channels(message, role_key)
+    
+    # TODO: Process updated roles for Discord message updates (Phase 17)
+    # This will be implemented when section 17 (Discord Message Update Integration) is developed
+    if results['updated_count'] > 0:
+        logger.debug(f"Detected {results['updated_count']} job updates. Discord message updates will be implemented in Phase 17.")
+    
+    logger.debug("Job processing completed successfully.")
 
 
 async def send_dm_with_job_info(user: discord.Member, role_data: Dict[str, Any]) -> None:
@@ -283,19 +295,18 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
         Optional[Dict[str, Any]]: The role data if found, None otherwise
     """
     # Load all data
-    storage = get_storage('file', 
-                        data_file=config.data_file, 
-                        messages_file=config.messages_file)
     all_data = read_json()
     
-    # For each role key in storage, check if the message ID matches
-    for role in all_data:
-        role_key = role['id']
-        messages = storage.get_messages_for_role(role_key)
-        
-        for message_info in messages:
-            if message_info.get('message_id') == message_id:
-                return role
+    # Get message tracking data
+    message_tracking = storage.get_message_tracking()
+    
+    # For each job in message tracking, check if the message ID matches
+    for job_id, tracking_info in message_tracking.items():
+        if tracking_info.get('message_id') == message_id:
+            # Find the corresponding role data
+            for role in all_data:
+                if role['id'] == job_id:
+                    return role
     
     return None
 

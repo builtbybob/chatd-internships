@@ -1,0 +1,32 @@
+version: '3.8'
+services:
+  chatd-postgres:
+    image: postgres:15-alpine
+    container_name: chatd-postgres
+    environment:
+      POSTGRES_DB: chatd
+      POSTGRES_USER: chatd
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-chatd_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Only expose port for development/debugging - remove in production
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatd -d chatd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - chatd-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  chatd-network:
+    driver: bridge

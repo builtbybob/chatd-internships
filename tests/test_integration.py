@@ -17,6 +17,15 @@ from pathlib import Path
 import discord
 from discord.ext import commands
 
+# Mock storage-related classes before any imports that might trigger storage initialization
+@patch('chatd.storage_abstraction.JsonStorageBackend')
+@patch('chatd.storage_abstraction.DataStorage')
+def _mock_storage_initialization(*args):
+    """Mock storage initialization to prevent file system operations during testing."""
+    pass
+
+_mock_storage_initialization()
+
 
 class TestIntegration(unittest.TestCase):
     """Integration test cases for the bot modules."""
@@ -225,10 +234,8 @@ class TestAsyncIntegration(unittest.IsolatedAsyncioTestCase):
             mock_bot.get_channel.return_value = mock_channel
             
             # Mock storage
-            with patch('chatd.bot.get_storage') as mock_get_storage:
-                mock_storage = MagicMock()
-                mock_storage.save_message_info.return_value = True
-                mock_get_storage.return_value = mock_storage
+            with patch('chatd.bot.storage') as mock_storage:
+                mock_storage.add_message_tracking.return_value = True
                 
                 message = format_message(self.sample_role)
                 result = await send_message(message, '123456789', 'test_role_key')
