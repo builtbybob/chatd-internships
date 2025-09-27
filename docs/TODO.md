@@ -70,11 +70,11 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 **Files modified**: `chatd-internships.service`, `scripts/create-management-scripts.sh`
 
-### 3. Docker Image Auto-Pruning 🧹 **(Quick Win - High Priority)**
+### 3. Docker Image Auto-Pruning ✅ **COMPLETED**
 **Goal**: Automatically clean up old Docker images to prevent disk space issues
 
-**Current Issue**: Multiple Docker images accumulate (386MB each), consuming limited disk space
-**Current State**: 3 images = ~1.1GB, only 505MB free space remaining
+**Current Issue**: ~~Multiple Docker images accumulate (386MB each), consuming limited disk space~~ **RESOLVED**
+**Current State**: ~~3 images = ~1.1GB, only 505MB free space remaining~~ **MANAGED**
 
 **Implementation Plan**: ✅ **COMPLETED**
 - [x] **3.1** Add auto-pruning to deployment workflow
@@ -146,6 +146,8 @@ sudo chatd disk --alert              # Check if cleanup needed
 - **Emergency cleanup** - automatic recovery from space issues
 - **Better visibility** - commands to monitor image usage
 
+**Files Modified**: `scripts/create-management-scripts.sh`
+
 ### 4. Asynchronous Message Reactions
 **Goal**: Improve reaction performance through async processing
 
@@ -203,16 +205,16 @@ sudo chatd disk --alert              # Check if cleanup needed
 **Target**: Environment variable configuration ✅ **ACHIEVED**
 
 **Implementation Plan**:
-- [x] **5.1** Add configuration variable ✅ **COMPLETED**
+- [x] **6.1** Add configuration variable ✅ **COMPLETED**
   - [x] `MAX_POST_AGE_DAYS=5` in `.env`
   - [x] Update `config.py` to load this setting
-- [x] **5.2** Update filtering logic ✅ **COMPLETED**
+- [x] **6.2** Update filtering logic ✅ **COMPLETED**
   - [x] Replace hardcoded values in message processing
   - [x] Apply consistently across all date checks
-- [x] **5.3** Add validation ✅ **COMPLETED**
+- [x] **6.3** Add validation ✅ **COMPLETED**
   - [x] Ensure positive integer values
   - [x] Reasonable bounds (1-30 days)
-- [x] **5.4** Document in README ✅ **COMPLETED**
+- [x] **6.4** Document in README ✅ **COMPLETED**
   - [x] Explain impact of different values
   - [x] Added to .env.example
 
@@ -235,17 +237,17 @@ sudo chatd disk --alert              # Check if cleanup needed
 **Status**: **COMPLETED** ✅ - ID-based tracking implementation eliminates matching complexity
 
 **Implementation Results**:
-- [x] **7.1** Critical architectural improvement ✅ **COMPLETED**
+- [x] **7.1** Critical architectural improvement
   - [x] Migrated from composite key matching to direct UUID-based tracking
   - [x] Eliminated complex `get_role_id()` and `normalize_role_key()` functions
   - [x] Now uses direct `role['id']` access from listings.json (100% unique coverage)
   - [x] Production data migration completed (319/325 messages migrated successfully)
-- [x] **7.2** Enhanced system reliability ✅ **COMPLETED**  
+- [x] **7.2** Enhanced system reliability
   - [x] Removed over-matching issues that prevented re-opening detection
   - [x] Simplified codebase from complex matching logic to straightforward ID lookups
   - [x] Validated 9,747 unique IDs in listings.json with 100% uniqueness
   - [x] Updated unit tests and removed obsolete matching test cases
-- [x] **7.3** Production deployment ✅ **COMPLETED**
+- [x] **7.3** Production deployment
   - [x] Successful migration script execution with comprehensive backup
   - [x] Enhanced management scripts with user-agnostic build process
   - [x] Docker build verification and deployment to production
@@ -277,23 +279,23 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 **Target**: Git diff-based change detection
 
 **Implementation Plan**:
-- [ ] **7.1** Git diff integration
+- [ ] **8.1** Git diff integration
   - [ ] Use `git diff HEAD~1 HEAD -- .github/scripts/listings.json`
   - [ ] Parse diff output to identify changed entries
   - [ ] Only process modified/added/removed entries
-- [ ] **7.2** Change type detection
+- [ ] **8.2** Change type detection
   - [ ] Identify additions, modifications, deletions
   - [ ] Handle role status changes (active -> inactive)
   - [ ] Track position changes within file
-- [ ] **7.3** Incremental processing
+- [ ] **8.3** Incremental processing
   - [ ] Cache current state more efficiently
   - [ ] Only update Discord for actual changes
   - [ ] Reduce memory usage for large datasets
-- [ ] **7.4** Performance monitoring
+- [ ] **8.4** Performance monitoring
   - [ ] Add timing metrics for processing phases
   - [ ] Monitor memory usage improvements
   - [ ] Log statistics about change volumes
-- [ ] **7.5** Fallback mechanism
+- [ ] **8.5** Fallback mechanism
   - [ ] Full processing mode for edge cases
   - [ ] Recovery from delta processing errors
 
@@ -306,52 +308,343 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 **Target**: Update/modify past messages when roles change status
 
 **Implementation Plan**:
-- [ ] **8.1** Message tracking enhancement
+- [ ] **9.1** Message tracking enhancement
   - [ ] Store Discord message IDs with role keys
   - [ ] Track message-to-role mapping in storage
   - [ ] Add message update capabilities
-- [ ] **8.2** Status change detection
+- [ ] **9.2** Status change detection
   - [ ] Compare `visible` and `active` flags between updates
   - [ ] Identify roles that changed from active to inactive
   - [ ] Track roles that became hidden/invisible
-- [ ] **8.3** Message modification strategies
+- [ ] **9.3** Message modification strategies
   - [ ] **Option A**: Edit original message with strikethrough text
   - [ ] **Option B**: Add reaction (❌) to indicate closure
   - [ ] **Option C**: Reply with update status
   - [ ] **Option D**: Delete message entirely
-- [ ] **8.4** Configuration options
+- [ ] **9.4** Configuration options
   - [ ] `HANDLE_DEACTIVATIONS=true`
   - [ ] `DEACTIVATION_STRATEGY=edit|react|reply|delete`
   - [ ] `DEACTIVATION_MESSAGE="🚫 This position is no longer available"`
-- [ ] **8.5** Bulk status processing
+- [ ] **9.5** Bulk status processing
   - [ ] Handle multiple simultaneous status changes
   - [ ] Rate limit message updates to avoid API limits
   - [ ] Error handling for messages that can't be modified
 
 **Files to modify**: `chatd/storage.py`, `chatd/bot.py`, `chatd/messages.py`, `chatd/config.py`
 
-### 10. Enhanced Monitoring & Observability
+### 10. Database Implementation (PostgreSQL + Docker) 🗄️ **(High Priority)**
+**Goal**: Replace JSON file storage with PostgreSQL database for improved data management, querying, and scalability
+
+**Current State**: Job postings stored in `previous_data.json` (~500KB), message tracking in `message_tracking.json` (~100KB)
+**Target**: Normalized PostgreSQL database with cloud-agnostic Docker deployment
+
+**Benefits**: 
+- **Improved data integrity**: ACID compliance, foreign key constraints, data validation
+- **Better querying**: SQL queries for analytics, filtering, and reporting
+- **Normalized storage**: Separate tables for locations, terms, and message tracking
+- **Universal deployment**: Works identically on AWS, Google Cloud, Azure, on-premises
+- **Backup/restore**: Standard PostgreSQL tools for data migration
+- **Scalability**: Handle growing dataset more efficiently than JSON files
+
+**Storage Requirements**:
+- **PostgreSQL Docker image**: ~80MB (postgres:15-alpine)
+- **Initial database**: ~50MB + data growth (~8-12MB per 10k job postings)
+- **Total baseline**: ~130-140MB + data growth (fits current disk constraints)
+
+**Implementation Plan**:
+- [x] **Phase 1: Database Infrastructure Setup** ✅ **COMPLETED**
+  - [x] Created `docker-compose.database.yml` with PostgreSQL 15 Alpine service
+  - [x] Designed normalized schema with 4 tables + 1 readable view  
+  - [x] Implemented database initialization with `sql/init/001_initial_schema.sql`
+  - [x] Added database validation script `scripts/test-database-setup.sh`
+  - [x] Successfully deployed PostgreSQL container with health checks
+  - [x] Verified schema creation and test data insertion
+- [x] **Phase 2: Database Models & ORM** ✅ **COMPLETED**
+  - [x] Created SQLAlchemy ORM models for type-safe database operations
+  - [x] Implemented database factory pattern for connection management
+  - [x] Added database configuration to `chatd/config.py`
+  - [x] Created database abstraction layer in `chatd/database.py`
+  - [x] Added PostgreSQL dependencies to `requirements.txt`
+  - [x] Verified complete ORM functionality with test script
+- [x] **Phase 3: Dual-write migration system** ✅ **COMPLETED**
+  - [x] Implemented storage abstraction layer supporting both JSON and PostgreSQL
+  - [x] Created `DataStorage` class with pluggable backends (JSON/PostgreSQL)
+  - [x] Added `MIGRATION_MODE` configuration: `json_only|dual_write|database_only`
+  - [x] Ensured backward compatibility during transition period
+  - [x] Comprehensive error handling with fallback to JSON if database fails
+- [x] **Phase 4: Historical data migration** ✅ **COMPLETED**
+  - [x] Create migration script to convert existing JSON files to database
+  - [x] Implement data validation and integrity checks during migration
+  - [x] Create timestamped backups of existing JSON files before migration
+  - [x] Progress tracking and logging for large dataset migrations
+  - [x] Verification system to ensure migration completeness and accuracy
+
+**Phase 1 Results Achieved**:
+- **PostgreSQL 15 Alpine**: Successfully deployed in Docker container with health checks
+- **Normalized Database Schema**: 4 tables (job_postings, job_locations, job_terms, message_tracking) + readable view
+- **Schema Validation**: Test data successfully inserted and retrievable
+- **Database Infrastructure**: Ready for Python ORM integration
+- **Storage Requirements Met**: ~130-140MB baseline within current disk constraints
+
+**Phase 2 Results Achieved**:
+- **SQLAlchemy ORM Models**: Complete type-safe models for all database tables with relationships
+- **Database Connection Management**: Factory pattern with session scope and connection pooling
+- **Configuration Integration**: Database settings fully integrated into config system
+- **CRUD Operations**: Full Create, Read, Update, Delete functionality verified
+- **Data Conversion**: Seamless conversion between ORM objects and dictionary format
+- **Test Coverage**: Comprehensive test script validates all ORM functionality
+
+**Phase 4 Results Achieved**:
+- **Comprehensive migration script**: Full migration system with CLI interface and production support
+- **Data validation**: Complete integrity checks with mismatch detection and reporting  
+- **Backup system**: Automatic timestamped backups with rollback capabilities
+- **Progress tracking**: Real-time progress with detailed logging (9,884 jobs processed)
+- **Error handling**: Robust error management with transaction rollback and cleanup
+- **Test coverage**: 27 comprehensive test cases covering all migration scenarios (100% pass rate)
+- **Production ready**: Correct file paths and validation for deployment environment
+
+**Migration Script Features**:
+```python
+class DataMigrator:
+    # Complete migration system with validation, backups, progress tracking
+    def migrate_data(self, dry_run=False, verify=True):
+        # Production path: /var/lib/chatd/data/previous_data.json
+        # Features: validation, backup, verification, progress tracking
+```
+
+**Test Coverage**:
+- 27 test cases in `tests/test_migration.py`
+- Comprehensive error handling and edge case testing
+- Mock-based testing with proper fixtures and parametrization
+- Integration testing with temporary file systems
+
+**Files Created**: `scripts/migrate_json_to_database.py`, `tests/test_migration.py`
+- **Storage Abstraction Layer**: Unified interface supporting JSON, PostgreSQL, and dual-write modes
+- **Backend Architecture**: Pluggable storage backends with health checking and status monitoring
+- **Migration Mode Support**: Three distinct modes (json_only, dual_write, database_only) for gradual migration
+- **Error Resilience**: Automatic fallback to JSON storage when database operations fail
+- **Configuration Integration**: MIGRATION_MODE setting integrated into environment configuration
+- **Test Coverage**: Comprehensive pytest test suite with proper mocking for all migration modes
+
+**Files Created**: `docker-compose.database.yml`, `sql/init/001_initial_schema.sql`, `scripts/test_database_setup.sh`, `chatd/database.py`, `tests/test_database_models.py`, `chatd/storage_abstraction.py`, `tests/test_storage_abstraction.py`
+**Files Modified**: `chatd/config.py`, `requirements.txt`, `.env`, `.env.example`
+
+**Database Schema Design**:
+```sql
+-- Main job postings table
+CREATE TABLE job_postings (
+    id UUID PRIMARY KEY,
+    date_updated BIGINT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    company_name TEXT NOT NULL,
+    title TEXT NOT NULL,
+    sponsorship TEXT,
+    active BOOLEAN DEFAULT true,
+    source TEXT,
+    date_posted BIGINT,
+    company_url TEXT,
+    is_visible BOOLEAN DEFAULT true
+);
+
+-- Normalized locations table (one-to-many)
+CREATE TABLE job_locations (
+    id UUID REFERENCES job_postings(id) ON DELETE CASCADE,
+    location TEXT NOT NULL,
+    PRIMARY KEY (id, location)
+);
+
+-- Normalized terms table (one-to-many)
+CREATE TABLE job_terms (
+    id UUID REFERENCES job_postings(id) ON DELETE CASCADE,
+    term TEXT NOT NULL,
+    PRIMARY KEY (id, term)
+);
+
+-- Message tracking table (one-to-one)
+CREATE TABLE message_tracking (
+    id UUID PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(message_id, channel_id)
+);
+
+-- Performance indexes
+CREATE INDEX idx_job_postings_company ON job_postings(company_name);
+CREATE INDEX idx_job_postings_active ON job_postings(active, is_visible);
+CREATE INDEX idx_job_postings_date_posted ON job_postings(date_posted DESC);
+CREATE INDEX idx_message_tracking_message_id ON message_tracking(message_id);
+```
+
+**Docker Deployment Configuration**:
+```yaml
+# docker-compose.database.yml
+version: '3.8'
+services:
+  chatd-postgres:
+    image: postgres:15-alpine
+    container_name: chatd-postgres
+    environment:
+      POSTGRES_DB: chatd
+      POSTGRES_USER: chatd
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"  # Only for development/debugging
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+```
+
+**Migration Process**:
+```bash
+# Phase 1: Deploy database infrastructure
+sudo chatd db setup --init-schema
+
+# Phase 2: Preview migration (dry run)  
+sudo chatd db migrate --dry-run
+
+# Phase 3: Execute migration with verification
+sudo chatd db migrate --verify
+
+# Phase 4: Switch to dual-write mode
+echo "MIGRATION_MODE=dual_write" >> /etc/chatd/.env
+sudo chatd restart
+
+# Phase 5: Monitor and switch to database-only
+echo "MIGRATION_MODE=database_only" >> /etc/chatd/.env
+sudo chatd restart
+
+# Phase 6: Verify and cleanup
+sudo chatd db verify --integrity-check
+sudo chatd db backup --compress
+```
+
+**New Management Commands**:
+```bash
+# Database management
+sudo chatd db status                 # Show database connection and health
+sudo chatd db setup                  # Initialize database schema
+sudo chatd db migrate                # Migrate JSON data to database
+sudo chatd db backup                 # Create compressed database backup
+sudo chatd db restore backup.sql     # Restore from backup file
+sudo chatd db verify                 # Verify data integrity
+sudo chatd db cleanup               # Vacuum and optimize database
+sudo chatd db query "SELECT COUNT(*) FROM job_postings"  # Execute SQL
+
+# Migration management  
+sudo chatd migrate status            # Show current migration mode
+sudo chatd migrate preview           # Preview migration without changes
+sudo chatd migrate execute           # Execute migration with verification
+sudo chatd migrate rollback          # Emergency rollback to JSON-only mode
+```
+
+**Example Query Improvements**:
+```python
+# Before: Complex JSON iteration and filtering
+def find_company_jobs(company_name, days=7):
+    jobs = []
+    for job in json_data:
+        if (job['company_name'].lower() == company_name.lower() and 
+            job['date_posted'] > (time.time() - days*24*3600)):
+            jobs.append(job)
+    return jobs
+
+# After: Simple SQL query with database indexes
+def find_company_jobs(company_name, days=7):
+    cutoff_date = int(time.time() - days*24*3600)
+    return session.query(JobPosting)\
+        .filter(JobPosting.company_name.ilike(f'%{company_name}%'))\
+        .filter(JobPosting.date_posted > cutoff_date)\
+        .order_by(JobPosting.date_posted.desc())\
+        .all()
+```
+
+**Configuration Options**:
+```bash
+# Database connection settings
+DB_TYPE=postgresql                    # postgresql or sqlite (fallback)
+DB_HOST=chatd-postgres               # Docker service name or hostname
+DB_PORT=5432                         # Database port
+DB_NAME=chatd                        # Database name
+DB_USER=chatd                        # Database username
+DB_PASSWORD=${POSTGRES_PASSWORD}     # Database password (from secrets)
+
+# Migration settings
+MIGRATION_MODE=json_only             # json_only|dual_write|database_only
+DB_MIGRATION_BATCH_SIZE=100          # Records to migrate per batch
+DB_BACKUP_RETENTION_DAYS=30          # Days to keep database backups
+DB_CONNECTION_POOL_SIZE=5            # Connection pool size for performance
+
+# Database maintenance
+DB_AUTO_VACUUM=true                  # Enable automatic database maintenance
+DB_BACKUP_SCHEDULE=daily             # Backup frequency (daily/weekly)
+DB_HEALTH_CHECK_INTERVAL=300         # Health check interval in seconds
+```
+
+**Rollback Strategy**:
+```bash
+# Emergency rollback procedures
+# 1. Switch back to JSON-only mode
+echo "MIGRATION_MODE=json_only" >> /etc/chatd/.env
+sudo chatd restart
+
+# 2. Restore JSON files from backup if needed
+sudo cp /var/lib/chatd/data/previous_data.json.backup.TIMESTAMP \
+        /var/lib/chatd/data/previous_data.json
+sudo cp /var/lib/chatd/data/message_tracking.json.backup.TIMESTAMP \
+        /var/lib/chatd/data/message_tracking.json
+
+# 3. Restart service
+sudo chatd restart
+```
+
+**Files to create**:
+- `chatd/database.py` (database abstraction layer and ORM models)
+- `chatd/migrations.py` (data migration utilities)
+- `sql/init/001_initial_schema.sql` (database schema initialization)
+- `scripts/migrate-to-database.py` (comprehensive migration script)
+- `docker-compose.database.yml` (PostgreSQL container configuration)
+
+**Files to modify**:
+- `chatd/storage.py` (add database backend support)
+- `chatd/config.py` (database configuration options)
+- `chatd/bot.py` (use database storage layer)
+- `requirements.txt` (add psycopg2, SQLAlchemy dependencies)
+- `scripts/create-management-scripts.sh` (database management commands)
+- `Dockerfile` (database connectivity and initialization)
+
+### 11. Enhanced Monitoring & Observability
 **Goal**: Better visibility into bot performance and health
 
 **Benefits**: Proactive issue detection, performance optimization insights, operational visibility
 
 **Implementation Plan**:
-- [ ] **9.1** Add metrics collection
+- [ ] **11.1** Add metrics collection
   - [ ] Track messages processed per minute
   - [ ] Monitor Discord API rate limits and usage
   - [ ] Count successful vs failed operations
   - [ ] Memory and CPU usage tracking
-- [ ] **9.2** Health check endpoint
+- [ ] **11.2** Health check endpoint
   - [ ] Simple HTTP server for container health checks
   - [ ] Validate Discord connection status
   - [ ] Check git repository accessibility
   - [ ] Verify data directory write permissions
-- [ ] **9.3** Alert system
+- [ ] **11.3** Alert system
   - [ ] Discord webhook for bot errors/failures
   - [ ] Email notifications for critical issues
   - [ ] Rate limit warnings
   - [ ] Repository sync failure alerts
-- [ ] **9.4** Performance dashboards
+- [ ] **11.4** Performance dashboards
   - [ ] Log parsing and visualization
   - [ ] Historical trend analysis
   - [ ] Repository processing time metrics
@@ -359,24 +652,24 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 
 **Files to modify**: `chatd/bot.py`, `chatd/config.py`, `main.py`, `requirements.txt`
 
-### 11. Configuration Validation & Safety ✅ **COMPLETED**
+### 12. Configuration Validation & Safety ✅ **COMPLETED**
 **Goal**: Prevent misconfigurations and provide better error messages
 
 **Benefits**: Faster debugging, prevents runtime failures, improves user experience
 
 **Implementation Plan**:
-- [x] **10.1** Startup validation ✅ **COMPLETED**
+- [x] **12.1** Startup validation
   - [x] Verify Discord token format and validity before starting
   - [x] Test channel access permissions and format validation
   - [x] Validate repository URL accessibility
   - [x] Check required environment variables
   - [x] Validate file system permissions for data directories
-- [x] **10.2** Enhanced error reporting ✅ **COMPLETED**
+- [x] **12.2** Enhanced error reporting
   - [x] User-friendly error messages with emoji indicators
   - [x] Actionable troubleshooting advice in error messages
   - [x] Clear validation progress reporting
   - [x] Graceful startup failure with helpful guidance
-- [x] **10.3** Comprehensive validation checks ✅ **COMPLETED**
+- [x] **12.3** Comprehensive validation checks
   - [x] Discord token format validation (length and structure)
   - [x] Channel ID format and Discord snowflake validation
   - [x] Numeric configuration range validation (intervals, retries, etc.)
@@ -406,32 +699,32 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 
 **Files modified**: `chatd/config.py`, `main.py`
 
-### 12. Backup & Recovery System 🎯 **(Stretch Goal)**
+### 13. Backup & Recovery System 🎯 **(Stretch Goal)**
 **Goal**: Automated backup and disaster recovery procedures
 
 **Note**: Limited by device storage constraints - requires external storage solution
 
 **Implementation Plan**:
-- [ ] **11.1** Lightweight backup strategy
+- [ ] **13.1** Lightweight backup strategy
   - [ ] Configuration and critical data backup only
   - [ ] Compressed backup to external storage/cloud
   - [ ] Exclude logs and temporary files
-- [ ] **11.2** Recovery procedures
+- [ ] **13.2** Recovery procedures
   - [ ] One-command restore from backup
   - [ ] Database corruption recovery
   - [ ] Configuration restoration
-- [ ] **11.3** External storage integration
+- [ ] **13.3** External storage integration
   - [ ] Cloud storage backup (S3, Google Drive, etc.)
   - [ ] Remote server backup via SSH
   - [ ] USB/external drive backup support
-- [ ] **11.4** Backup validation
+- [ ] **13.4** Backup validation
   - [ ] Backup integrity checks
   - [ ] Minimal test restore procedures
   - [ ] Backup retention policies
 
 **Files to modify**: `scripts/chatd-backup`, `chatd/config.py`, `scripts/recovery.sh`
 
-### 13. Multi-Environment Support 🎯 **(Requires Larger Disk)**
+### 14. Multi-Environment Support 🎯 **(Requires Larger Disk)**
 **Goal**: Support for development, staging, and production environments
 
 **Benefits**: Safe testing, isolated development, professional deployment workflow, separate Discord bots for testing
@@ -442,44 +735,44 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 - **Environment isolation** to prevent dev changes affecting production
 
 **Implementation Plan**:
-- [ ] **12.1** Environment configuration structure
+- [ ] **14.1** Environment configuration structure
   - [ ] Separate Discord bots and tokens for dev/prod environments
   - [ ] Environment-specific Discord channels for testing
   - [ ] Environment-specific repository branches (dev/staging/main)
   - [ ] Isolated data storage per environment (`/var/lib/chatd-dev/`, `/var/lib/chatd-prod/`)
   - [ ] Environment-aware logging and monitoring
-- [ ] **12.2** Configuration management
+- [ ] **14.2** Configuration management
   - [ ] `.env.dev`, `.env.staging`, `.env.prod` configuration files
   - [ ] Environment inheritance (dev inherits from base, overrides specific values)
   - [ ] Separate Discord bot tokens and channel IDs per environment
   - [ ] Environment-specific repository URLs or branches
   - [ ] Configurable data directories and log files per environment
-- [ ] **12.3** Development workflow improvements
+- [ ] **14.3** Development workflow improvements
   - [ ] Local development with test data and separate Discord bot
   - [ ] Development environment for testing changes safely
   - [ ] Environment promotion procedures (dev → staging → prod)
   - [ ] Configuration validation per environment
   - [ ] Isolated Docker containers per environment
-- [ ] **12.4** Deployment strategies
+- [ ] **14.4** Deployment strategies
   - [ ] Environment-specific systemd services (`chatd-dev`, `chatd-prod`)
   - [ ] Blue-green deployment support for production
   - [ ] Environment-specific Docker images and tags
   - [ ] Automated environment provisioning scripts
   - [ ] Environment health checks and monitoring
-- [ ] **12.5** Environment management tools
+- [ ] **14.5** Environment management tools
   - [ ] `chatd env list` - Show available environments and their status
   - [ ] `chatd env switch <env>` - Switch active environment for operations
   - [ ] `chatd env status <env>` - Show specific environment status
   - [ ] `chatd env deploy <env>` - Deploy to specific environment
   - [ ] `chatd env logs <env>` - View logs for specific environment
   - [ ] Environment-specific configuration validation
-- [ ] **12.6** Testing and promotion workflow
+- [ ] **14.6** Testing and promotion workflow
   - [ ] Deploy changes to dev environment first
   - [ ] Automated testing in dev environment
   - [ ] Manual approval process for production deployment
   - [ ] Rollback procedures for failed deployments
   - [ ] Configuration drift detection between environments
-- [ ] **12.7** Environment-aware test simulation
+- [ ] **14.7** Environment-aware test simulation
   - [ ] Migrate existing `setup_test_update.sh` to support multiple environments
   - [ ] Environment-specific test data simulation (dev/staging/prod)
   - [ ] Safe testing of message replay functionality per environment
@@ -582,14 +875,14 @@ sudo chatd env promote staging prod    # Promote staging to prod
 - `chatd-internships.service` (production-specific service)
 - `Dockerfile` (environment-aware builds)
 
-### 14. Enhanced Test Simulation Framework 🧪 **(Depends on Multi-Environment)**
+### 15. Enhanced Test Simulation Framework 🧪 **(Depends on Multi-Environment)**
 **Goal**: Migrate and enhance existing test simulation script for multi-environment support
 
 **Current State**: `setup_test_update.sh` allows replaying message updates by resetting to older commits
 **Target**: Environment-aware testing with isolated test data per environment
 
 **Implementation Plan**:
-- [ ] **13.1** Migrate existing test script to multi-environment
+- [ ] **15.1** Migrate existing test script to multi-environment
   - [ ] Create `setup-test-update-multi-env.sh` to replace current script
   - [ ] Environment parameter support: `./setup-test-update-multi-env.sh dev 3`
   - [ ] Support both commit count and specific commit hash: `./setup-test-update-multi-env.sh dev abc123f`
@@ -597,19 +890,19 @@ sudo chatd env promote staging prod    # Promote staging to prod
   - [ ] Environment-specific data paths and repository locations
   - [ ] Isolated test data per environment (no cross-contamination)
   - [ ] Environment-aware restoration procedures
-- [ ] **13.2** Enhanced testing capabilities
+- [ ] **15.2** Enhanced testing capabilities
   - [ ] Predefined test scenarios (small update, large batch, edge cases)
   - [ ] Test scenario library with known expected outcomes
   - [ ] Automated verification of bot responses to test data
   - [ ] Performance benchmarking during test runs
   - [ ] Test result logging and comparison
-- [ ] **13.3** Development workflow integration
+- [ ] **15.3** Development workflow integration
   - [ ] Quick test commands: `chatd test replay dev 5` (replay 5 commits in dev)
   - [ ] Integration with environment deployment workflow
   - [ ] Automated testing as part of promotion pipeline
   - [ ] Test data reset and cleanup procedures
   - [ ] Safe testing isolation (never affect production data)
-- [ ] **13.4** Test data management
+- [ ] **15.4** Test data management
   - [ ] Environment-specific previous_data.json files
   - [ ] Test scenario snapshots and restoration points
   - [ ] Automated test data generation from real data
@@ -716,7 +1009,7 @@ git reset --hard "$RESET_TARGET"
 **Files to modify**:
 - `setup_test_update.sh` (mark as deprecated, reference new script)
 
-### 15. Monitoring Dashboard & Alerting System 📊 **(High Priority)**
+### 16. Monitoring Dashboard & Alerting System 📊 **(High Priority)**
 **Goal**: Comprehensive monitoring dashboard with real-time metrics, alerts, and historical analytics
 
 **Benefits**: Proactive issue detection, performance insights, usage analytics, operational visibility
@@ -730,31 +1023,31 @@ git reset --hard "$RESET_TARGET"
 **Recommended Stack**: **Grafana + Prometheus + AlertManager** (industry standard, excellent Docker support)
 
 **Implementation Plan**:
-- [ ] **14.1** Metrics collection and export
+- [ ] **16.1** Metrics collection and export
   - [ ] Add Prometheus metrics endpoint to ChatD bot (`/metrics`)
   - [ ] Custom metrics for job postings, reactions, errors, response times
   - [ ] Discord API rate limit monitoring and usage tracking
   - [ ] System resource metrics (CPU, memory, disk, network)
   - [ ] Git repository sync metrics and timing
-- [ ] **14.2** Prometheus setup and configuration
+- [ ] **16.2** Prometheus setup and configuration
   - [ ] Prometheus server Docker container configuration
   - [ ] Metrics scraping configuration for ChatD bot
   - [ ] System metrics collection with node_exporter
   - [ ] Docker metrics collection with cadvisor
   - [ ] Retention policies and storage optimization
-- [ ] **14.3** Grafana dashboard development
+- [ ] **16.3** Grafana dashboard development
   - [ ] Real-time operations dashboard (job posts, errors, performance)
   - [ ] Historical analytics dashboard (trends, usage patterns)
   - [ ] System health dashboard (resources, uptime, alerts)
   - [ ] Business metrics dashboard (job posting statistics, engagement)
   - [ ] Alert status and incident management dashboard
-- [ ] **14.4** AlertManager configuration
+- [ ] **16.4** AlertManager configuration
   - [ ] Error rate alerts (service failures, Discord API errors)
   - [ ] Performance alerts (slow response times, high memory usage)
   - [ ] Business logic alerts (no job posts for X hours, repo sync failures)
   - [ ] System alerts (disk space, high CPU, container restarts)
   - [ ] Alert routing and notification channels (Discord webhooks, email)
-- [ ] **14.5** Integration and automation
+- [ ] **16.5** Integration and automation
   - [ ] Environment-specific monitoring (dev/staging/prod dashboards)
   - [ ] Automated dashboard provisioning and backup
   - [ ] Monitoring stack deployment automation
@@ -1061,6 +1354,52 @@ sudo chatd-loglevel critical  # Critical failures only
 
 **Files Modified**: `chatd/repo.py`, `chatd/bot.py`, `scripts/migrate-to-id-keys.py`, `scripts/create-management-scripts.sh`
 
+### **Database Implementation (PostgreSQL + Docker)** *(September 26, 2025)*
+**Problem**: JSON file storage limitations for growing dataset and complex queries
+- Limited querying capabilities with flat JSON file storage
+- No data integrity constraints or validation at storage level
+- Scalability concerns with growing internship dataset
+- Complex backup and recovery procedures with file-based storage
+
+**Solution**: Complete PostgreSQL database implementation with migration system
+- **Implemented** full PostgreSQL + Docker stack with normalized schema
+- **Created** SQLAlchemy ORM models with relationships and type safety
+- **Built** comprehensive migration system with dual-write capabilities
+- **Designed** storage abstraction layer supporting JSON, PostgreSQL, and dual-write modes
+
+**Implementation Phases**:
+1. **Phase 1**: Database infrastructure setup with Docker and schema design ✅
+2. **Phase 2**: SQLAlchemy ORM models with complete CRUD operations ✅
+3. **Phase 3**: Storage abstraction layer with migration mode support ✅
+4. **Phase 4**: Historical data migration script with validation and backup ✅
+
+**Impact**:
+- [x] **Improved data integrity**: ACID compliance with foreign key constraints
+- [x] **Better querying**: SQL queries for analytics, filtering, and reporting
+- [x] **Normalized storage**: Separate tables for locations, terms, and message tracking
+- [x] **Universal deployment**: Docker-based solution works on any cloud platform
+- [x] **Migration safety**: Comprehensive backup and rollback capabilities
+- [x] **Test coverage**: 27 test cases with 100% pass rate for all migration scenarios
+
+**Migration Results**:
+```
+✅ Phase 4 (Historical Data Migration) completed successfully!
+   • Jobs migrated: 9,884/9,884 (100% success rate)
+   • Messages migrated: 0/0 (no existing messages to migrate)  
+   • Migration time: 0:00:01.670746
+   • Validation: All data integrity checks passed
+```
+
+**Database Schema**:
+- **job_postings**: Main table with normalized job data and UUID keys
+- **job_locations**: One-to-many locations with proper referential integrity
+- **job_terms**: One-to-many employment terms (internship, co-op, etc.)
+- **message_tracking**: One-to-one message tracking with cascade deletion
+- **jobs_with_details**: Readable view combining all related data
+
+**Files Created**: `docker-compose.database.yml`, `sql/init/001_initial_schema.sql`, `chatd/database.py`, `chatd/storage_abstraction.py`, `scripts/migrate_json_to_database.py`, `tests/test_migration.py`, `tests/test_database_models.py`, `tests/test_storage_abstraction.py`
+**Files Modified**: `chatd/config.py`, `requirements.txt`, `.env.example`
+
 ---
 
 ## 📊 Progress Tracking
@@ -1069,10 +1408,10 @@ sudo chatd-loglevel critical  # Critical failures only
 - [x] **Performance Improvements**: 1/1 ✅ (Docker build optimization) 
 - [x] **Configuration Enhancements**: 2/2 ✅ (Configurable date filtering, configuration validation)
 - [x] **Operational Improvements**: 1/1 ✅ (Dynamic log level control)
-- [ ] **Infrastructure Projects**: 0/4 (Docker auto-pruning, multi-environment support, enhanced test simulation, monitoring dashboard)
+- [x] **Infrastructure Projects**: 1/4 ✅ (Database implementation complete; Docker auto-pruning, multi-environment support, enhanced test simulation, monitoring dashboard pending)
 - [ ] **Feature Enhancements**: 0/4 (Async reactions, smart reactions, role status management, enhanced monitoring)
-- [x] **Items Completed**: 5/15 ✅ (Docker optimization, date filtering, log level control, config validation, ID-based tracking)
-- [ ] **Total Sub-tasks**: 35/70+ completed
+- [x] **Items Completed**: 6/15 ✅ (Docker optimization, date filtering, log level control, config validation, ID-based tracking, database implementation)
+- [ ] **Total Sub-tasks**: 40/75+ completed
 
 **Immediate Quick Wins** 🚀:
 - Docker Image Auto-Pruning (can be implemented now, will free up disk space immediately)
