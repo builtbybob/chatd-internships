@@ -76,8 +76,8 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         from chatd.config import Config
         Config._instance = None
         
-        # Mock the DataStorage initialization to avoid file system operations
-        self.storage_patcher = patch('chatd.bot.storage')
+        # Mock the get_storage function to avoid file system operations
+        self.storage_patcher = patch('chatd.bot.get_storage')
         self.storage_patcher.start()
         
         # Clear global bot state
@@ -111,13 +111,15 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         
         with patch('chatd.bot.bot') as mock_bot, \
              patch('chatd.bot.config') as mock_config, \
-             patch('chatd.bot.storage') as mock_storage:
+             patch('chatd.bot.get_storage') as mock_get_storage:
             
             mock_bot.get_channel.return_value = mock_channel
             mock_config.enable_reactions = False
             
             # Mock storage
+            mock_storage = Mock()
             mock_storage.add_message_tracking.return_value = True
+            mock_get_storage.return_value = mock_storage
             
             result = await send_message('Test message', '123456789', self.sample_role_key)
             
@@ -193,13 +195,16 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         
         with patch('chatd.bot.bot') as mock_bot, \
              patch('chatd.bot.config') as mock_config, \
-             patch('chatd.bot.storage') as mock_storage:
+             patch('chatd.bot.get_storage') as mock_get_storage:
             
             mock_config.channel_ids = ['123456789', '987654321']
             mock_config.enable_reactions = False
             mock_bot.get_channel.side_effect = get_channel_side_effect
             
             # Mock storage
+            mock_storage = Mock()
+            mock_storage.add_message_tracking.return_value = True
+            mock_get_storage.return_value = mock_storage
             mock_storage.add_message_tracking.return_value = True
             
             results = await send_messages_to_channels('Test message', self.sample_role_key)
@@ -302,8 +307,10 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             }
         ]
         
-        with patch('chatd.bot.storage') as mock_storage:
+        with patch('chatd.bot.get_storage') as mock_get_storage:
+            mock_storage = Mock()
             mock_storage.get_message_tracking.return_value = mock_message_tracking
+            mock_get_storage.return_value = mock_storage
             
             with patch('chatd.bot.read_json', return_value=mock_roles):
                 result = await get_role_data_by_message_id('12345')
@@ -380,14 +387,16 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             'changes_for_discord': mock_changes  # This is what the bot now uses
         }
         
-        with patch('chatd.bot.storage') as mock_storage, \
+        with patch('chatd.bot.get_storage') as mock_get_storage, \
              patch('chatd.bot.read_json', return_value=new_data), \
              patch('chatd.bot.send_messages_to_channels') as mock_send_messages, \
              patch('chatd.bot.clone_or_update_repo', return_value=True), \
              patch('chatd.bot.config') as mock_config:
             
             # Configure mocks
+            mock_storage = Mock()
             mock_storage.process_job_changes.return_value = mock_process_results
+            mock_get_storage.return_value = mock_storage
             mock_config.max_post_age_days = 5
             
             await check_for_new_roles()
@@ -420,8 +429,8 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
         from chatd.config import Config
         Config._instance = None
         
-        # Mock the DataStorage initialization to avoid file system operations
-        self.storage_patcher = patch('chatd.bot.storage')
+        # Mock the get_storage function to avoid file system operations
+        self.storage_patcher = patch('chatd.bot.get_storage')
         self.storage_patcher.start()
         
         # Clear global bot state

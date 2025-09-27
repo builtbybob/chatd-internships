@@ -22,8 +22,15 @@ from chatd.storage_abstraction import DataStorage
 # Get logger
 logger = get_logger()
 
-# Initialize storage
-storage = DataStorage(config)
+# Storage will be initialized lazily to avoid import-time directory creation
+storage = None
+
+def get_storage():
+    """Get or initialize the storage instance."""
+    global storage
+    if storage is None:
+        storage = DataStorage(config)
+    return storage
 
 # Initialize Discord bot
 intents = discord.Intents.default()
@@ -86,7 +93,7 @@ async def send_message(message: str, channel_id: str, role_key: Optional[str] = 
         
         # Store message info if we have a role key
         if role_key:
-            storage.add_message_tracking(role_key, str(sent_message.id), channel_id)
+            get_storage().add_message_tracking(role_key, str(sent_message.id), channel_id)
         
         # Reset failure count on success
         if channel_id in channel_failure_counts:
@@ -168,7 +175,7 @@ async def check_for_new_roles() -> None:
     
     # Process changes using the new update support
     try:
-        results = storage.process_job_changes(new_data)
+        results = get_storage().process_job_changes(new_data)
         logger.info(f"Change processing completed: {results['added_count']} added, "
                    f"{results['updated_count']} updated, {results['removed_count']} removed")
         
@@ -298,7 +305,7 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
     all_data = read_json()
     
     # Get message tracking data
-    message_tracking = storage.get_message_tracking()
+    message_tracking = get_storage().get_message_tracking()
     
     # For each job in message tracking, check if the message ID matches
     for job_id, tracking_info in message_tracking.items():

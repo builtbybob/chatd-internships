@@ -112,7 +112,9 @@ class TestDataMigrator:
 
     def test_migrator_initialization(self):
         """Test DataMigrator initialization."""
-        migrator = DataMigrator('/path/to/data.json', '/path/to/messages.json')
+        # Mock os.path.exists to prevent using production paths
+        with patch('scripts.migrate_json_to_database.os.path.exists', return_value=False):
+            migrator = DataMigrator('/path/to/data.json', '/path/to/messages.json')
         
         assert migrator.json_data_path == '/path/to/data.json'
         assert migrator.json_messages_path == '/path/to/messages.json'
