@@ -352,33 +352,40 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 - **Total baseline**: ~130-140MB + data growth (fits current disk constraints)
 
 **Implementation Plan**:
-- [x] **Phase 1: Database Infrastructure Setup**
+- [x] **10.1: Database Infrastructure Setup**
   - [x] Created `docker-compose.database.yml` with PostgreSQL 15 Alpine service
   - [x] Designed normalized schema with 4 tables + 1 readable view  
   - [x] Implemented database initialization with `sql/init/001_initial_schema.sql`
   - [x] Added database validation script `scripts/test-database-setup.sh`
   - [x] Successfully deployed PostgreSQL container with health checks
   - [x] Verified schema creation and test data insertion
-- [x] **Phase 2: Database Models & ORM**
+- [x] **10.2: Database Models & ORM**
   - [x] Created SQLAlchemy ORM models for type-safe database operations
   - [x] Implemented database factory pattern for connection management
   - [x] Added database configuration to `chatd/config.py`
   - [x] Created database abstraction layer in `chatd/database.py`
   - [x] Added PostgreSQL dependencies to `requirements.txt`
   - [x] Verified complete ORM functionality with test script
-- [x] **Phase 3: Dual-write migration system**
+- [x] **10.3: Dual-write migration system**
   - [x] Implemented storage abstraction layer supporting both JSON and PostgreSQL
   - [x] Created `DataStorage` class with pluggable backends (JSON/PostgreSQL)
   - [x] Added `MIGRATION_MODE` configuration: `json_only|dual_write|database_only`
   - [x] Ensured backward compatibility during transition period
   - [x] Comprehensive error handling with fallback to JSON if database fails
-- [x] **Phase 4: Historical data migration**
+- [x] **10.4: Historical data migration**
   - [x] Create migration script to convert existing JSON files to database
   - [x] Implement data validation and integrity checks during migration
   - [x] Create timestamped backups of existing JSON files before migration
   - [x] Progress tracking and logging for large dataset migrations
   - [x] Verification system to ensure migration completeness and accuracy
-- [ ] **Phase 5: Update support**
+- [x] **10.5: Bot Integration**
+  - [x] Refactor main bot to use DataStorage instead of FileStorage from chatd/storage.py
+  - [x] Update all storage access points in chatd/bot.py to use unified DataStorage interface
+  - [x] Replace get_storage() calls with DataStorage instantiation
+  - [x] Update method calls to match DataStorage interface (get_job_postings, save_job_postings, etc.)
+  - [x] Test dual_write mode functionality in production environment
+  - [x] Update all bot tests to work with new DataStorage interface with proper mocking
+- [ ] **10.6: Update support**
   - [ ] Check if values have changed on previous posts
   - [ ] Optimize by checking key fields only: active, is_visible, date_updated
     - [ ] active changed: update value only
@@ -411,6 +418,17 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 - **Test coverage**: 27 comprehensive test cases covering all migration scenarios (100% pass rate)
 - **Production ready**: Correct file paths and validation for deployment environment
 
+**Phase 5 Results Achieved**:
+- **Complete bot refactoring**: Main bot now uses DataStorage instead of legacy FileStorage
+- **Method mapping**: Updated all storage calls to use new DataStorage interface methods
+  - `save_message_info` → `add_message_tracking`
+  - `load_data` → `get_job_postings`
+  - `save_data` → `save_job_postings`
+  - `get_messages_for_role` → `get_message_tracking` (with updated logic)
+- **Comprehensive test updates**: All 15 bot tests updated and passing with proper DataStorage mocking
+- **New functionality test**: Added test for `check_for_new_roles` function covering the main bot workflow
+- **Ready for dual-write**: Bot now fully compatible with json_only, dual_write, and database_only modes
+
 **Migration Script Features**:
 ```python
 class DataMigrator:
@@ -435,7 +453,7 @@ class DataMigrator:
 - **Test Coverage**: Comprehensive pytest test suite with proper mocking for all migration modes
 
 **Files Created**: `docker-compose.database.yml`, `sql/init/001_initial_schema.sql`, `scripts/test_database_setup.sh`, `chatd/database.py`, `tests/test_database_models.py`, `chatd/storage_abstraction.py`, `tests/test_storage_abstraction.py`
-**Files Modified**: `chatd/config.py`, `requirements.txt`, `.env`, `.env.example`
+**Files Modified**: `chatd/config.py`, `requirements.txt`, `.env`, `.env.example`,  `chatd/bot.py`, `tests/test_bot.py`
 
 **Database Schema Design**:
 ```sql
@@ -1232,6 +1250,102 @@ start_http_server(8000)  # Metrics available at http://localhost:8000/metrics
 - `requirements.txt` (add prometheus_client)
 - `Dockerfile` (expose metrics port)
 - `README.md` (monitoring setup documentation)
+
+
+### 17. Discord Message Update Integration
+**Goal**: Update previously sent Discord messages based on database changes to job postings
+
+**Dependencies**: Requires Phase 6 (Database Update Support) to be completed first
+
+**Benefits**: Make the Discord chat reliably searchable, with up-to-date information that reflects current job status
+
+**Behavior**: Discord messages will be managed as follows:
+- **Hidden posts** (`is_visible = false`): Delete Discord message entirely
+- **Inactive posts** (`active = false`): Apply strikethrough formatting to indicate closure
+- **Updated information** (`date_updated` change): Edit message content and add "Updated on [date]" footer
+
+**Implementation Plan**:
+- [ ] **17.1: Change Detection Integration**
+  - [ ] Integrate with Phase 6 change detection to identify Discord message updates needed
+  - [ ] Subscribe to database change events from DataStorage layer
+  - [ ] Queue Discord message updates asynchronously to avoid blocking database operations
+  - [ ] Handle bulk change scenarios (multiple jobs updated simultaneously)
+- [ ] **17.2: Discord Message Management**
+  - [ ] Implement message deletion for hidden posts (`is_visible = false`)
+  - [ ] Implement strikethrough formatting for inactive posts (`active = false`)
+  - [ ] Implement message content updates for changed job information (`date_updated`)
+  - [ ] Add "Updated on [date]" footer for modified job postings
+  - [ ] Handle Discord API rate limits and retry logic for message operations
+- [ ] **17.3: Message Operation Safety**
+  - [ ] Verify message still exists before attempting updates (handle deleted messages gracefully)
+  - [ ] Implement idempotent message operations (avoid duplicate updates)
+  - [ ] Handle permissions errors (bot may lose message edit permissions)
+  - [ ] Add fallback strategies when message updates fail
+  - [ ] Track message update status in database for auditing
+- [ ] **17.4: Integration with Bot Logic**
+  - [ ] Modify main bot sync loop to process both new jobs and message updates
+  - [ ] Separate processing queues for new messages vs. updates to existing messages
+  - [ ] Ensure message updates don't interfere with new job posting workflow
+  - [ ] Add configuration options for enabling/disabling message updates
+  - [ ] Implement dry-run mode for testing message update logic
+- [ ] **17.5: Error Handling and Resilience**
+  - [ ] Graceful degradation when Discord API is unavailable
+  - [ ] Retry logic with exponential backoff for failed message operations
+  - [ ] Dead letter queue for message updates that repeatedly fail
+  - [ ] Logging and monitoring for message update success/failure rates
+  - [ ] Alert system for high message update failure rates
+- [ ] **17.6: Testing and Validation**
+  - [ ] Comprehensive test suite for all message update scenarios
+  - [ ] Integration tests with mock Discord API
+  - [ ] Test rate limit handling and retry logic
+  - [ ] Validate message formatting (strikethrough, update footers)
+  - [ ] Performance testing for bulk message update scenarios
+
+**Configuration Options**:
+```bash
+# Discord message update settings
+ENABLE_MESSAGE_UPDATES=true               # Enable/disable message update feature
+MESSAGE_UPDATE_STRATEGY=edit              # edit|delete|strikethrough for inactive jobs
+MESSAGE_UPDATE_BATCH_SIZE=10              # Process updates in batches
+MESSAGE_UPDATE_RETRY_COUNT=3              # Retry failed updates
+MESSAGE_UPDATE_RATE_LIMIT_DELAY=1000      # Delay between updates (ms)
+MESSAGE_UPDATE_DRY_RUN=false              # Test mode without actual Discord operations
+
+# Update formatting options
+STRIKETHROUGH_INACTIVE_JOBS=true          # Apply strikethrough to inactive jobs
+DELETE_HIDDEN_JOBS=true                   # Delete messages for hidden jobs  
+ADD_UPDATE_FOOTER=true                    # Add "Updated on" footer for changes
+UPDATE_FOOTER_FORMAT="Updated on {date}"  # Customizable update footer text
+```
+
+**Example Message Update Behaviors**:
+```markdown
+# Original job posting
+🆕 **Software Engineering Intern** at **TechCorp**
+📍 San Francisco, CA | Remote
+💼 Summer 2025 Internship
+🔗 Apply: https://techcorp.com/jobs/123
+
+# After job becomes inactive (active = false)
+~~🆕 **Software Engineering Intern** at **TechCorp**~~
+~~📍 San Francisco, CA | Remote~~
+~~💼 Summer 2025 Internship~~
+~~🔗 Apply: https://techcorp.com/jobs/123~~
+
+# After job information is updated (date_updated changed)
+🆕 **Senior Software Engineering Intern** at **TechCorp** 
+📍 San Francisco, CA | Remote | New York, NY
+💼 Summer 2025 Internship | Fall 2025 Co-op
+🔗 Apply: https://techcorp.com/jobs/123
+
+*Updated on September 27, 2025*
+
+# After job becomes hidden (is_visible = false)
+[Message deleted from Discord]
+```
+
+**Files to modify**: `chatd/bot.py`, `chatd/messages.py`, `chatd/storage_abstraction.py`, `chatd/config.py`
+**Files to create**: `tests/test_message_updates.py`
 
 ## 📋 Implementation Notes
 

@@ -17,10 +17,13 @@ from chatd.config import config
 from chatd.logging_utils import get_logger
 from chatd.messages import format_message
 from chatd.repo import clone_or_update_repo, read_json
-from chatd.storage import get_storage
+from chatd.storage_abstraction import DataStorage
 
 # Get logger
 logger = get_logger()
+
+# Initialize storage
+storage = DataStorage(config)
 
 # Initialize Discord bot
 intents = discord.Intents.default()
@@ -83,10 +86,7 @@ async def send_message(message: str, channel_id: str, role_key: Optional[str] = 
         
         # Store message info if we have a role key
         if role_key:
-            storage = get_storage('file', 
-                                data_file=config.data_file, 
-                                messages_file=config.messages_file)
-            storage.save_message_info(str(sent_message.id), channel_id, role_key)
+            storage.add_message_tracking(role_key, str(sent_message.id), channel_id)
         
         # Reset failure count on success
         if channel_id in channel_failure_counts:
@@ -166,11 +166,8 @@ async def check_for_new_roles() -> None:
         
     new_data = read_json()
     
-    # Get storage and load previous data
-    storage = get_storage('file', 
-                        data_file=config.data_file, 
-                        messages_file=config.messages_file)
-    old_data = storage.load_data()
+    # Get previous data
+    old_data = storage.get_job_postings()
     
     if old_data:
         logger.debug("Previous data loaded.")
@@ -213,7 +210,7 @@ async def check_for_new_roles() -> None:
         await send_messages_to_channels(message, role_key)
 
     # Update previous data
-    storage.save_data(new_data)
+    storage.save_job_postings(new_data)
     logger.debug("Updated previous data with new data.")
 
 
@@ -283,19 +280,18 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
         Optional[Dict[str, Any]]: The role data if found, None otherwise
     """
     # Load all data
-    storage = get_storage('file', 
-                        data_file=config.data_file, 
-                        messages_file=config.messages_file)
     all_data = read_json()
     
-    # For each role key in storage, check if the message ID matches
-    for role in all_data:
-        role_key = role['id']
-        messages = storage.get_messages_for_role(role_key)
-        
-        for message_info in messages:
-            if message_info.get('message_id') == message_id:
-                return role
+    # Get message tracking data
+    message_tracking = storage.get_message_tracking()
+    
+    # For each job in message tracking, check if the message ID matches
+    for job_id, tracking_info in message_tracking.items():
+        if tracking_info.get('message_id') == message_id:
+            # Find the corresponding role data
+            for role in all_data:
+                if role['id'] == job_id:
+                    return role
     
     return None
 
