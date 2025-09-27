@@ -10,14 +10,50 @@ from unittest.mock import Mock, patch, AsyncMock, MagicMock
 import discord
 from discord.ext import commands
 
-# Mock storage-related classes before any imports that might trigger storage initialization
-@patch('chatd.storage_abstraction.JsonStorageBackend')
-@patch('chatd.storage_abstraction.DataStorage')
-def _mock_storage_initialization(*args):
-    """Mock storage initialization to prevent file system operations during testing."""
-    pass
+# Mock storage initialization at module level to prevent file system operations
+# This must happen before importing bot module
+import sys
+from pathlib import Path
 
-_mock_storage_initialization()
+# Create a comprehensive mock for JsonStorageBackend that doesn't create directories
+class MockJsonStorageBackend:
+    def __init__(self, *args, **kwargs):
+        pass  # Don't create any directories or files
+
+# Create a comprehensive mock for DataStorage 
+class MockDataStorage:
+    def __init__(self, *args, **kwargs):
+        pass  # Don't create any backends
+
+# Patch the classes at the module level before any imports
+original_JsonStorageBackend = None
+original_DataStorage = None
+
+def setup_storage_mocks():
+    global original_JsonStorageBackend, original_DataStorage
+    if 'chatd.storage_abstraction' in sys.modules:
+        storage_module = sys.modules['chatd.storage_abstraction']
+        original_JsonStorageBackend = getattr(storage_module, 'JsonStorageBackend', None)
+        original_DataStorage = getattr(storage_module, 'DataStorage', None)
+        storage_module.JsonStorageBackend = MockJsonStorageBackend
+        storage_module.DataStorage = MockDataStorage
+    else:
+        # Patch before import
+        import chatd.storage_abstraction
+        original_JsonStorageBackend = chatd.storage_abstraction.JsonStorageBackend
+        original_DataStorage = chatd.storage_abstraction.DataStorage
+        chatd.storage_abstraction.JsonStorageBackend = MockJsonStorageBackend
+        chatd.storage_abstraction.DataStorage = MockDataStorage
+
+def teardown_storage_mocks():
+    global original_JsonStorageBackend, original_DataStorage
+    if 'chatd.storage_abstraction' in sys.modules and original_JsonStorageBackend and original_DataStorage:
+        storage_module = sys.modules['chatd.storage_abstraction']
+        storage_module.JsonStorageBackend = original_JsonStorageBackend
+        storage_module.DataStorage = original_DataStorage
+
+# Apply the mocks immediately
+setup_storage_mocks()
 
 
 class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
@@ -328,20 +364,20 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             }
         ]
         
-        # Mock the change processing results
+        # Mock the change processing results that now include changes_for_discord
+        mock_changes = {
+            'added': [new_data[1]],  # Only the new role
+            'updated': [],
+            'removed': []
+        }
+        
         mock_process_results = {
             'added_count': 1,
             'updated_count': 0,
             'removed_count': 0,
             'update_failures': [],
-            'success': True
-        }
-        
-        # Mock the change detection results for new roles
-        mock_changes = {
-            'added': [new_data[1]],  # Only the new role
-            'updated': [],
-            'removed': []
+            'success': True,
+            'changes_for_discord': mock_changes  # This is what the bot now uses
         }
         
         with patch('chatd.bot.storage') as mock_storage, \
@@ -352,14 +388,13 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             
             # Configure mocks
             mock_storage.process_job_changes.return_value = mock_process_results
-            mock_storage.detect_job_changes.return_value = mock_changes
             mock_config.max_post_age_days = 5
             
             await check_for_new_roles()
             
             # Verify new update support methods were called
             mock_storage.process_job_changes.assert_called_once_with(new_data)
-            mock_storage.detect_job_changes.assert_called_once_with(new_data)
+            # Note: detect_job_changes is no longer called separately - it's part of process_job_changes
             
             # Verify message sending was called for new role
             mock_send_messages.assert_called_once()
