@@ -352,32 +352,40 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 - **Total baseline**: ~130-140MB + data growth (fits current disk constraints)
 
 **Implementation Plan**:
-- [x] **Phase 1: Database Infrastructure Setup** ✅ **COMPLETED**
+- [x] **Phase 1: Database Infrastructure Setup**
   - [x] Created `docker-compose.database.yml` with PostgreSQL 15 Alpine service
   - [x] Designed normalized schema with 4 tables + 1 readable view  
   - [x] Implemented database initialization with `sql/init/001_initial_schema.sql`
   - [x] Added database validation script `scripts/test-database-setup.sh`
   - [x] Successfully deployed PostgreSQL container with health checks
   - [x] Verified schema creation and test data insertion
-- [x] **Phase 2: Database Models & ORM** ✅ **COMPLETED**
+- [x] **Phase 2: Database Models & ORM**
   - [x] Created SQLAlchemy ORM models for type-safe database operations
   - [x] Implemented database factory pattern for connection management
   - [x] Added database configuration to `chatd/config.py`
   - [x] Created database abstraction layer in `chatd/database.py`
   - [x] Added PostgreSQL dependencies to `requirements.txt`
   - [x] Verified complete ORM functionality with test script
-- [x] **Phase 3: Dual-write migration system** ✅ **COMPLETED**
+- [x] **Phase 3: Dual-write migration system**
   - [x] Implemented storage abstraction layer supporting both JSON and PostgreSQL
   - [x] Created `DataStorage` class with pluggable backends (JSON/PostgreSQL)
   - [x] Added `MIGRATION_MODE` configuration: `json_only|dual_write|database_only`
   - [x] Ensured backward compatibility during transition period
   - [x] Comprehensive error handling with fallback to JSON if database fails
-- [x] **Phase 4: Historical data migration** ✅ **COMPLETED**
+- [x] **Phase 4: Historical data migration**
   - [x] Create migration script to convert existing JSON files to database
   - [x] Implement data validation and integrity checks during migration
   - [x] Create timestamped backups of existing JSON files before migration
   - [x] Progress tracking and logging for large dataset migrations
   - [x] Verification system to ensure migration completeness and accuracy
+- [ ] **Phase 5: Update support**
+  - [ ] Check if values have changed on previous posts
+  - [ ] Optimize by checking key fields only: active, is_visible, date_updated
+    - [ ] active changed: update value only
+    - [ ] is_visible changed: update value only
+    - [ ] date_updated changed: indicates posting is being corrected, update entire JobPosting
+  - [ ] Ensure that the update logic is idempotent and handles concurrent changes gracefully
+  - [ ] Apply same changes to data migration script, including dry-run mode
 
 **Phase 1 Results Achieved**:
 - **PostgreSQL 15 Alpine**: Successfully deployed in Docker container with health checks
@@ -1421,4 +1429,4 @@ sudo chatd-loglevel critical  # Critical failures only
 - Enhanced Test Simulation Framework (depends on multi-environment setup)
 - Monitoring Dashboard & Alerting System (requires ~3-5GB additional space for monitoring stack)
 
-*Last Updated: September 25, 2025*
+*Last Updated: September 27, 2025*
