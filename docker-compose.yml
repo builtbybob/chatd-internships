@@ -46,6 +46,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./Summer2026-Internships:/app/Summer2026-Internships
     depends_on:
       chatd-postgres:
         condition: service_healthy
