@@ -396,15 +396,24 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
   - [x] Add selective update methods for efficient field-level updates
   - [x] Add comprehensive test coverage for all update scenarios
   - [x] Integrate update processing into main bot workflow
+- [x] **10.7: Directory Structure Simplification**
+  - [x] Consolidate deployment files in single `/opt/chatd/` directory
+  - [x] Replace complex multi-directory search logic with single working directory
+  - [x] Use git-based workflow: clone to `/opt/chatd/` on first run, pull for updates
+  - [x] Eliminate temporary build directories (`/tmp/chatd-build-$$`) and static file copies
+  - [x] Ensure docker-compose finds all required files (Dockerfile, .env, source code)
+  - [x] Update management scripts to use consistent `/opt/chatd/` path
+  - [x] Always use latest docker-compose.yml and Dockerfile from git repository
+  - [x] Preserve .env configuration across git pulls (git-ignored file)
 
-**Phase 1 Results Achieved**:
+**10.2 Results Achieved**:
 - **PostgreSQL 15 Alpine**: Successfully deployed in Docker container with health checks
 - **Normalized Database Schema**: 4 tables (job_postings, job_locations, job_terms, message_tracking) + readable view
 - **Schema Validation**: Test data successfully inserted and retrievable
 - **Database Infrastructure**: Ready for Python ORM integration
 - **Storage Requirements Met**: ~130-140MB baseline within current disk constraints
 
-**Phase 2 Results Achieved**:
+**10.3 Results Achieved**:
 - **SQLAlchemy ORM Models**: Complete type-safe models for all database tables with relationships
 - **Database Connection Management**: Factory pattern with session scope and connection pooling
 - **Configuration Integration**: Database settings fully integrated into config system
@@ -412,7 +421,7 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 - **Data Conversion**: Seamless conversion between ORM objects and dictionary format
 - **Test Coverage**: Comprehensive test script validates all ORM functionality
 
-**Phase 4 Results Achieved**:
+**10.4 Results Achieved**:
 - **Comprehensive migration script**: Full migration system with CLI interface and production support
 - **Data validation**: Complete integrity checks with mismatch detection and reporting  
 - **Backup system**: Automatic timestamped backups with rollback capabilities
@@ -421,7 +430,7 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 - **Test coverage**: 27 comprehensive test cases covering all migration scenarios (100% pass rate)
 - **Production ready**: Correct file paths and validation for deployment environment
 
-**Phase 5 Results Achieved**:
+**10.5 Results Achieved**:
 - **Complete bot refactoring**: Main bot now uses DataStorage instead of legacy FileStorage
 - **Method mapping**: Updated all storage calls to use new DataStorage interface methods
   - `save_message_info` → `add_message_tracking`
@@ -432,7 +441,7 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 - **New functionality test**: Added test for `check_for_new_roles` function covering the main bot workflow
 - **Ready for dual-write**: Bot now fully compatible with json_only, dual_write, and database_only modes
 
-**Phase 6 Results Achieved**:
+**10.6 Results Achieved**:
 - **Intelligent change detection**: Added detect_job_changes() method that focuses on key fields (active, is_visible, date_updated)
 - **Selective update operations**: Added update_job_posting() method for efficient field-level updates
 - **Smart update strategy**: Content corrections (date_updated changes) trigger full updates, while status changes update only specific fields
