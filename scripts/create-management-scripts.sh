@@ -300,15 +300,62 @@ if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
     exit 1
 fi
 
-# Restart the service if it's running
-if systemctl is-active --quiet chatd-internships; then
-    echo "🔄 Restarting service with new image..."
-    systemctl restart chatd-internships
-    echo "✅ Bot deployed successfully!"
+# Deploy using docker-compose (which handles networking properly)
+echo "🔄 Deploying bot with docker-compose..."
+
+# Change to the repository directory where docker-compose.yml is located
+REPO_DIR="/opt/chatd-internships"
+if [[ -d "$REPO_DIR" ]]; then
+    cd "$REPO_DIR"
+elif [[ -f "/opt/chatd-internships/docker-compose.yml" ]]; then
+    cd "/opt/chatd-internships"
+elif [[ -f "./docker-compose.yml" ]]; then
+    # Already in the right directory
+    echo "🐳 Using docker-compose.yml in current directory"
 else
-    echo "🚀 Starting bot service..."
-    systemctl start chatd-internships
-    echo "✅ Bot started successfully!"
+    echo "❌ Error: Could not find docker-compose.yml"
+    echo "   Looked in: /opt/chatd-internships, current directory"
+    echo "   Falling back to systemctl for compatibility..."
+    if systemctl is-active --quiet chatd-internships; then
+        echo "🔄 Restarting service with new image..."
+        systemctl restart chatd-internships
+        echo "✅ Bot deployed successfully!"
+    else
+        echo "🚀 Starting bot service..."
+        systemctl start chatd-internships
+        echo "✅ Bot started successfully!"
+    fi
+    exit 0
+fi
+
+# Stop any existing containers
+echo "🛑 Stopping existing containers..."
+docker-compose down --remove-orphans 2>/dev/null || true
+
+# Start services with docker-compose
+echo "🚀 Starting services with docker-compose..."
+if docker-compose up -d; then
+    echo "✅ Bot deployed successfully via docker-compose!"
+    
+    # Wait a moment for containers to start
+    sleep 3
+    
+    # Show status
+    echo ""
+    echo "📊 Container Status:"
+    docker-compose ps
+else
+    echo "❌ Error: docker-compose deployment failed"
+    echo "   Falling back to systemctl for compatibility..."
+    if systemctl is-active --quiet chatd-internships; then
+        echo "🔄 Restarting service with new image..."
+        systemctl restart chatd-internships
+        echo "✅ Bot deployed successfully!"
+    else
+        echo "🚀 Starting bot service..."
+        systemctl start chatd-internships
+        echo "✅ Bot started successfully!"
+    fi
 fi
 
 # --- Docker Image Auto-Pruning ---
@@ -402,17 +449,67 @@ else
     echo "✅ Bot image built successfully!"
 fi
 
-# Restart the service if it's running
-if systemctl is-active --quiet chatd-internships; then
-    echo "🔄 Restarting service..."
-    systemctl restart chatd-internships
-    echo "✅ Bot updated and deployed!"
-    echo "📦 Running: ${IMAGE_TAG}"
+# Deploy using docker-compose (which handles networking properly)
+echo "🔄 Deploying bot with docker-compose..."
+
+# Change to the repository directory where docker-compose.yml is located
+REPO_DIR="/opt/chatd-internships"
+if [[ -d "$REPO_DIR" ]]; then
+    cd "$REPO_DIR"
+elif [[ -f "/opt/chatd-internships/docker-compose.yml" ]]; then
+    cd "/opt/chatd-internships"
+elif [[ -f "./docker-compose.yml" ]]; then
+    # Already in the right directory
+    echo "🐳 Using docker-compose.yml in current directory"
 else
-    echo "🚀 Starting bot service..."
-    systemctl start chatd-internships
-    echo "✅ Bot built and started!"
+    echo "❌ Error: Could not find docker-compose.yml"
+    echo "   Looked in: /opt/chatd-internships, current directory"
+    echo "   Falling back to systemctl for compatibility..."
+    if systemctl is-active --quiet chatd-internships; then
+        echo "🔄 Restarting service..."
+        systemctl restart chatd-internships
+        echo "✅ Bot updated and deployed!"
+        echo "📦 Running: ${IMAGE_TAG}"
+    else
+        echo "🚀 Starting bot service..."
+        systemctl start chatd-internships
+        echo "✅ Bot built and started!"
+        echo "📦 Running: ${IMAGE_TAG}"
+    fi
+    exit 0
+fi
+
+# Stop any existing containers
+echo "🛑 Stopping existing containers..."
+docker-compose down --remove-orphans 2>/dev/null || true
+
+# Start services with docker-compose
+echo "� Starting services with docker-compose..."
+if docker-compose up -d; then
+    echo "✅ Bot updated and deployed via docker-compose!"
     echo "📦 Running: ${IMAGE_TAG}"
+    
+    # Wait a moment for containers to start
+    sleep 3
+    
+    # Show status
+    echo ""
+    echo "📊 Container Status:"
+    docker-compose ps
+else
+    echo "❌ Error: docker-compose deployment failed"
+    echo "   Falling back to systemctl for compatibility..."
+    if systemctl is-active --quiet chatd-internships; then
+        echo "🔄 Restarting service..."
+        systemctl restart chatd-internships
+        echo "✅ Bot updated and deployed!"
+        echo "📦 Running: ${IMAGE_TAG}"
+    else
+        echo "🚀 Starting bot service..."
+        systemctl start chatd-internships
+        echo "✅ Bot built and started!"
+        echo "📦 Running: ${IMAGE_TAG}"
+    fi
 fi
 
 # --- Docker Image Auto-Pruning ---
@@ -846,6 +943,12 @@ show_usage() {
     echo "  prune      Aggressive cleanup (alias for chatd-prune)"
     echo "  disk       Show disk usage and image status (alias for chatd-disk)"
     echo ""
+    echo "Docker Compose Commands:"
+    echo "  compose-up     Start services with docker-compose"
+    echo "  compose-down   Stop services with docker-compose"
+    echo "  compose-ps     Show docker-compose service status"
+    echo "  compose-logs   Show docker-compose logs"
+    echo ""
     echo "Examples:"
     echo "  chatd start           # Start the bot"
     echo "  chatd build           # Build new image"
@@ -927,6 +1030,45 @@ case "$1" in
     disk)
         shift
         chatd-disk "$@"
+        ;;
+    compose-up)
+        echo "🐳 Starting services with docker-compose..."
+        cd /opt/chatd-internships 2>/dev/null || cd .
+        if [[ -f "docker-compose.yml" ]]; then
+            docker-compose up -d
+            echo "📊 Container Status:"
+            docker-compose ps
+        else
+            echo "❌ docker-compose.yml not found in current directory"
+        fi
+        ;;
+    compose-down)
+        echo "🛑 Stopping services with docker-compose..."
+        cd /opt/chatd-internships 2>/dev/null || cd .
+        if [[ -f "docker-compose.yml" ]]; then
+            docker-compose down --remove-orphans
+        else
+            echo "❌ docker-compose.yml not found in current directory"
+        fi
+        ;;
+    compose-ps)
+        echo "📊 Docker Compose Service Status:"
+        cd /opt/chatd-internships 2>/dev/null || cd .
+        if [[ -f "docker-compose.yml" ]]; then
+            docker-compose ps
+        else
+            echo "❌ docker-compose.yml not found in current directory"
+        fi
+        ;;
+    compose-logs)
+        echo "📋 Docker Compose Logs:"
+        cd /opt/chatd-internships 2>/dev/null || cd .
+        if [[ -f "docker-compose.yml" ]]; then
+            shift
+            docker-compose logs "$@"
+        else
+            echo "❌ docker-compose.yml not found in current directory"
+        fi
         ;;
     ""|help|-h|--help)
         show_usage
