@@ -272,6 +272,25 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 
 **Files modified**: `chatd/repo.py`, `chatd/bot.py`, `scripts/migrate-to-id-keys.py`
 
+### **Excessive Backup File Cleanup** *(September 28, 2025)*
+**Problem**: JSON storage backend created backup files on every save operation
+- 400+ backup files consuming 1.7GB on dev machine (95% disk usage)
+- Bot was creating 2-3 backup files per minute during operation
+- No cleanup mechanism, unlimited accumulation of unnecessary files
+
+**Solution**: Eliminated automatic backup creation entirely
+- **Removed** backup creation from `save_job_postings()` and `save_message_tracking()` 
+- **Added** data comparison to skip saves when data hasn't changed
+- **Justified**: Data is already backed up via git history and database migration
+
+**Impact**:
+- [x] **Immediate disk recovery**: ~1.7GB freed up on dev machine
+- [x] **Performance improvement**: Skip unnecessary file writes when data unchanged
+- [x] **Simplified code**: Removed complex backup retention logic
+- [x] **No data loss risk**: Git and database provide adequate backup coverage
+
+**Files Modified**: `chatd/storage_abstraction.py`
+
 ### 8. Efficient Delta Processing
 **Goal**: Process only changes instead of full file comparison
 
@@ -405,6 +424,11 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
   - [x] Update management scripts to use consistent `/opt/chatd/` path
   - [x] Always use latest docker-compose.yml and Dockerfile from git repository
   - [x] Preserve .env configuration across git pulls (git-ignored file)
+- [x] **10.8: Eliminate Excessive Backup File Creation** ✅ **COMPLETED**
+  - [x] Remove automatic backup creation from JSON storage backend (every save was creating backups)
+  - [x] Identified root cause: 400+ backup files consuming 1.7GB on dev machine
+  - [x] Implement data change detection to skip unnecessary saves
+  - [x] Eliminate backup files entirely (data is backed up via git and database migration)
 
 **10.2 Results Achieved**:
 - **PostgreSQL 15 Alpine**: Successfully deployed in Docker container with health checks

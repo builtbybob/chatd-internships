@@ -127,13 +127,17 @@ class JsonStorageBackend(StorageBackend):
     def save_job_postings(self, job_postings: List[Dict[str, Any]]) -> bool:
         """Save job postings to JSON file."""
         try:
-            # Create backup of existing file
+            # Skip save if data hasn't changed (optimization)
             if self.data_file.exists():
-                backup_file = f"{self.data_file}.backup.{int(time.time())}"
-                self.data_file.rename(backup_file)
-                logger.debug(f"Created backup: {backup_file}")
+                try:
+                    existing_data = self.get_job_postings()
+                    if existing_data == job_postings:
+                        logger.debug("Job postings data unchanged, skipping save")
+                        return True
+                except Exception as e:
+                    logger.debug(f"Could not compare existing data: {e}")
             
-            # Save new data
+            # Save new data (no backup creation)
             with open(self.data_file, 'w', encoding='utf-8') as f:
                 json.dump(job_postings, f, indent=2, ensure_ascii=False)
             
@@ -162,13 +166,17 @@ class JsonStorageBackend(StorageBackend):
     def save_message_tracking(self, message_tracking: Dict[str, Dict[str, Any]]) -> bool:
         """Save message tracking data to JSON file."""
         try:
-            # Create backup of existing file
+            # Skip save if data hasn't changed (optimization)
             if self.messages_file.exists():
-                backup_file = f"{self.messages_file}.backup.{int(time.time())}"
-                self.messages_file.rename(backup_file)
-                logger.debug(f"Created backup: {backup_file}")
+                try:
+                    existing_data = self.get_message_tracking()
+                    if existing_data == message_tracking:
+                        logger.debug("Message tracking data unchanged, skipping save")
+                        return True
+                except Exception as e:
+                    logger.debug(f"Could not compare existing message tracking: {e}")
             
-            # Save new data
+            # Save new data (no backup creation)
             with open(self.messages_file, 'w', encoding='utf-8') as f:
                 json.dump(message_tracking, f, indent=2, ensure_ascii=False)
             
