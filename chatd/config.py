@@ -72,6 +72,11 @@ class Config:
         # Load environment variables from .env file
         load_dotenv()
         
+        # Debug: Check if load_dotenv found the file and loaded our values
+        logger.info(f"🔍 After load_dotenv() - DB_PASSWORD: {'SET' if os.getenv('DB_PASSWORD') else 'NOT SET'}")
+        logger.info(f"🔍 After load_dotenv() - LOG_LEVEL: {repr(os.getenv('LOG_LEVEL'))}")
+        logger.info(f"🔍 After load_dotenv() - MIGRATION_MODE: {repr(os.getenv('MIGRATION_MODE'))}")
+        
         # Set default values, but don't let empty environment variables override defaults
         for key, default_value in DEFAULT_CONFIG.items():
             env_value = os.getenv(key)
@@ -119,8 +124,12 @@ class Config:
         
         # Set migration mode (override default if specified)
         migration_mode_env = os.getenv('MIGRATION_MODE')
+        logger.info(f"🔍 MIGRATION_MODE environment variable: {repr(migration_mode_env)}")
         if migration_mode_env and migration_mode_env.strip():
             self.migration_mode = migration_mode_env.strip().lower()
+            logger.info(f"🔍 MIGRATION_MODE set from environment: {self.migration_mode}")
+        else:
+            logger.info(f"🔍 MIGRATION_MODE using default: {self.migration_mode}")
         
         self._initialized = True
 
