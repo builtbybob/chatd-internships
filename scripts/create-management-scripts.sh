@@ -187,7 +187,7 @@ fi
 
 # Configuration
 REPO_URL="https://github.com/builtbybob/chatd-internships.git"
-BUILD_DIR="/tmp/chatd-build-$$"
+WORK_DIR="/opt/chatd"
 
 # Branch priority: command line arg -> environment variable -> default to main
 BRANCH="${1:-${CHATD_BRANCH:-main}}"
@@ -195,7 +195,7 @@ BRANCH="${1:-${CHATD_BRANCH:-main}}"
 echo "🔄 Building ChatD Internships Bot..."
 echo "📍 Repository: ${REPO_URL}"
 echo "🌿 Branch: ${BRANCH}"
-
+echo "📁 Working directory: ${WORK_DIR}"
 
 # Show branch source for clarity
 if [[ -n "$1" ]]; then
@@ -216,28 +216,30 @@ elif [ "$DISK_USAGE" -ge 80 ]; then
     echo "⚠️ Warning: Disk usage at ${DISK_USAGE}%. Consider manual cleanup."
 fi
 if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
-    echo "❌ Not enough disk space to build and deploy new images. Aborting."
+    echo "❌ Not enough disk space to build new images. Aborting."
     exit 1
 fi
 
-# Cleanup function
-cleanup() {
-    if [[ -d "$BUILD_DIR" ]]; then
-        echo "🧹 Cleaning up build directory..."
-        rm -rf "$BUILD_DIR"
+# Create or update working directory
+if [[ -d "$WORK_DIR" ]]; then
+    echo "📡 Updating existing repository..."
+    cd "$WORK_DIR"
+    
+    # Preserve .env file during git operations
+    if [[ -f ".env" ]]; then
+        echo "💾 Preserving existing .env configuration"
     fi
-}
-trap cleanup EXIT
-
-# Create clean build directory
-echo "� Creating build directory: ${BUILD_DIR}"
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-
-# Clone repository
-echo "📡 Cloning repository..."
-git clone --depth 1 --branch "$BRANCH" "$REPO_URL" chatd-source
-cd chatd-source
+    
+    # Update to latest code
+    git fetch origin
+    git checkout "$BRANCH"
+    git reset --hard "origin/$BRANCH"
+else
+    echo "📡 Cloning repository to working directory..."
+    mkdir -p "$(dirname "$WORK_DIR")"
+    git clone --branch "$BRANCH" "$REPO_URL" "$WORK_DIR"
+    cd "$WORK_DIR"
+fi
 
 # Get current git commit hash
 COMMIT_HASH=$(git rev-parse --short HEAD)
@@ -303,34 +305,33 @@ fi
 # Deploy using docker-compose (which handles networking properly)
 echo "🔄 Deploying bot with docker-compose..."
 
-# Change to the directory where docker-compose.yml is located
-COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
-FOUND_COMPOSE=false
+WORK_DIR="/opt/chatd"
 
-for dir in "${COMPOSE_DIRS[@]}"; do
-    if [[ -f "$dir/docker-compose.yml" ]]; then
-        cd "$dir"
-        FOUND_COMPOSE=true
-        echo "🐳 Using docker-compose.yml in $dir"
-        break
-    fi
-done
-
-if [[ "$FOUND_COMPOSE" == "false" ]]; then
-    echo "❌ Error: Could not find docker-compose.yml"
-    echo "   Looked in: ${COMPOSE_DIRS[*]}"
-    echo "   Falling back to systemctl for compatibility..."
-    if systemctl is-active --quiet chatd-internships; then
-        echo "🔄 Restarting service with new image..."
-        systemctl restart chatd-internships
-        echo "✅ Bot deployed successfully!"
-    else
-        echo "🚀 Starting bot service..."
-        systemctl start chatd-internships
-        echo "✅ Bot started successfully!"
-    fi
-    exit 0
+# Check if working directory exists
+if [[ ! -d "$WORK_DIR" ]]; then
+    echo "❌ Error: Working directory $WORK_DIR not found"
+    echo "   Run 'chatd build' first to set up the working directory"
+    exit 1
 fi
+
+# Change to working directory
+cd "$WORK_DIR"
+
+# Verify required files exist
+if [[ ! -f "docker-compose.yml" ]]; then
+    echo "❌ Error: docker-compose.yml not found in $WORK_DIR"
+    echo "   Run 'chatd build' to update the working directory"
+    exit 1
+fi
+
+if [[ ! -f ".env" ]]; then
+    echo "⚠️  Warning: .env file not found in $WORK_DIR"
+    echo "   Create .env file with your configuration before deployment"
+    echo "   Example: cp .env.example .env && nano .env"
+    exit 1
+fi
+
+echo "🐳 Using docker-compose.yml in $WORK_DIR"
 
 # Stop any existing containers
 echo "🛑 Stopping existing containers..."
@@ -392,7 +393,7 @@ set -e
 
 # Configuration
 REPO_URL="https://github.com/builtbybob/chatd-internships.git"
-BUILD_DIR="/tmp/chatd-build-$$"
+WORK_DIR="/opt/chatd"
 
 # Branch priority: command line arg -> environment variable -> default to main
 BRANCH="${1:-${CHATD_BRANCH:-main}}"
@@ -400,6 +401,7 @@ BRANCH="${1:-${CHATD_BRANCH:-main}}"
 echo "🔄 Updating ChatD Internships Bot (build + deploy)..."
 echo "📍 Repository: ${REPO_URL}"
 echo "🌿 Branch: ${BRANCH}"
+echo "📁 Working directory: ${WORK_DIR}"
 
 # Show branch source for clarity
 if [[ -n "$1" ]]; then
@@ -410,24 +412,26 @@ else
     echo "   (default branch)"
 fi
 
-# Cleanup function
-cleanup() {
-    if [[ -d "$BUILD_DIR" ]]; then
-        echo "🧹 Cleaning up build directory..."
-        rm -rf "$BUILD_DIR"
+# Create or update working directory
+if [[ -d "$WORK_DIR" ]]; then
+    echo "📡 Updating existing repository..."
+    cd "$WORK_DIR"
+    
+    # Preserve .env file during git operations
+    if [[ -f ".env" ]]; then
+        echo "💾 Preserving existing .env configuration"
     fi
-}
-trap cleanup EXIT
-
-# Create clean build directory
-echo "� Creating build directory: ${BUILD_DIR}"
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-
-# Clone repository
-echo "📡 Cloning repository..."
-git clone --depth 1 --branch "$BRANCH" "$REPO_URL" chatd-source
-cd chatd-source
+    
+    # Update to latest code
+    git fetch origin
+    git checkout "$BRANCH"
+    git reset --hard "origin/$BRANCH"
+else
+    echo "📡 Cloning repository to working directory..."
+    mkdir -p "$(dirname "$WORK_DIR")"
+    git clone --branch "$BRANCH" "$REPO_URL" "$WORK_DIR"
+    cd "$WORK_DIR"
+fi
 
 # Get current git commit hash
 COMMIT_HASH=$(git rev-parse --short HEAD)
@@ -456,36 +460,22 @@ fi
 # Deploy using docker-compose (which handles networking properly)
 echo "🔄 Deploying bot with docker-compose..."
 
-# Change to the directory where docker-compose.yml is located
-COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
-FOUND_COMPOSE=false
-
-for dir in "${COMPOSE_DIRS[@]}"; do
-    if [[ -f "$dir/docker-compose.yml" ]]; then
-        cd "$dir"
-        FOUND_COMPOSE=true
-        echo "🐳 Using docker-compose.yml in $dir"
-        break
-    fi
-done
-
-if [[ "$FOUND_COMPOSE" == "false" ]]; then
-    echo "❌ Error: Could not find docker-compose.yml"
-    echo "   Looked in: ${COMPOSE_DIRS[*]}"
-    echo "   Falling back to systemctl for compatibility..."
-    if systemctl is-active --quiet chatd-internships; then
-        echo "🔄 Restarting service..."
-        systemctl restart chatd-internships
-        echo "✅ Bot updated and deployed!"
-        echo "📦 Running: ${IMAGE_TAG}"
-    else
-        echo "🚀 Starting bot service..."
-        systemctl start chatd-internships
-        echo "✅ Bot built and started!"
-        echo "📦 Running: ${IMAGE_TAG}"
-    fi
-    exit 0
+# We're already in the working directory from the build step
+# Verify required files exist
+if [[ ! -f "docker-compose.yml" ]]; then
+    echo "❌ Error: docker-compose.yml not found in working directory"
+    echo "   This should not happen - check repository contents"
+    exit 1
 fi
+
+if [[ ! -f ".env" ]]; then
+    echo "⚠️  Warning: .env file not found"
+    echo "   Create .env file with your configuration before deployment"
+    echo "   Example: cp .env.example .env && nano .env"
+    exit 1
+fi
+
+echo "🐳 Using docker-compose.yml in $(pwd)"
 
 # Stop any existing containers
 echo "🛑 Stopping existing containers..."
@@ -974,6 +964,11 @@ show_usage() {
     echo "Environment Variables:"
     echo "  CHATD_BRANCH          # Default branch for build/update commands"
     echo "                        # Example: export CHATD_BRANCH=dev"
+    echo ""
+    echo "Directory Structure:"
+    echo "  /opt/chatd/           # Working directory containing source code,"
+    echo "                        # docker-compose.yml, and .env configuration"
+    echo "  Run 'chatd build' first to set up the working directory"
 }
 
 case "$1" in
@@ -1042,90 +1037,50 @@ case "$1" in
     compose-up)
         echo "🐳 Starting services with docker-compose..."
         
-        # Find docker-compose.yml in system directories
-        COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
-        FOUND_COMPOSE=false
-        
-        for dir in "${COMPOSE_DIRS[@]}"; do
-            if [[ -f "$dir/docker-compose.yml" ]]; then
-                cd "$dir"
-                FOUND_COMPOSE=true
-                echo "🐳 Using docker-compose.yml in $dir"
-                break
-            fi
-        done
-        
-        if [[ "$FOUND_COMPOSE" == "true" ]]; then
+        WORK_DIR="/opt/chatd"
+        if [[ -d "$WORK_DIR" && -f "$WORK_DIR/docker-compose.yml" ]]; then
+            cd "$WORK_DIR"
+            echo "🐳 Using docker-compose.yml in $WORK_DIR"
             docker-compose up -d
             echo "📊 Container Status:"
             docker-compose ps
         else
-            echo "❌ docker-compose.yml not found in: ${COMPOSE_DIRS[*]}"
-            echo "   Run the installation script first to copy docker-compose.yml"
+            echo "❌ Working directory $WORK_DIR not found or missing docker-compose.yml"
+            echo "   Run 'chatd build' first to set up the working directory"
         fi
         ;;
     compose-down)
         echo "🛑 Stopping services with docker-compose..."
         
-        # Find docker-compose.yml in system directories
-        COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
-        FOUND_COMPOSE=false
-        
-        for dir in "${COMPOSE_DIRS[@]}"; do
-            if [[ -f "$dir/docker-compose.yml" ]]; then
-                cd "$dir"
-                FOUND_COMPOSE=true
-                break
-            fi
-        done
-        
-        if [[ "$FOUND_COMPOSE" == "true" ]]; then
+        WORK_DIR="/opt/chatd"
+        if [[ -d "$WORK_DIR" && -f "$WORK_DIR/docker-compose.yml" ]]; then
+            cd "$WORK_DIR"
             docker-compose down --remove-orphans
         else
-            echo "❌ docker-compose.yml not found in: ${COMPOSE_DIRS[*]}"
+            echo "❌ Working directory $WORK_DIR not found or missing docker-compose.yml"
         fi
         ;;
     compose-ps)
         echo "📊 Docker Compose Service Status:"
         
-        # Find docker-compose.yml in system directories
-        COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
-        FOUND_COMPOSE=false
-        
-        for dir in "${COMPOSE_DIRS[@]}"; do
-            if [[ -f "$dir/docker-compose.yml" ]]; then
-                cd "$dir"
-                FOUND_COMPOSE=true
-                break
-            fi
-        done
-        
-        if [[ "$FOUND_COMPOSE" == "true" ]]; then
+        WORK_DIR="/opt/chatd"
+        if [[ -d "$WORK_DIR" && -f "$WORK_DIR/docker-compose.yml" ]]; then
+            cd "$WORK_DIR"
             docker-compose ps
         else
-            echo "❌ docker-compose.yml not found in: ${COMPOSE_DIRS[*]}"
+            echo "❌ Working directory $WORK_DIR not found or missing docker-compose.yml"
         fi
         ;;
     compose-logs)
         echo "📋 Docker Compose Logs:"
         
-        # Find docker-compose.yml in system directories
-        COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
-        FOUND_COMPOSE=false
-        
-        for dir in "${COMPOSE_DIRS[@]}"; do
-            if [[ -f "$dir/docker-compose.yml" ]]; then
-                cd "$dir"
-                FOUND_COMPOSE=true
-                break
-            fi
-        done
-        
-        if [[ "$FOUND_COMPOSE" == "true" ]]; then
+        WORK_DIR="/opt/chatd"
+        if [[ -d "$WORK_DIR" && -f "$WORK_DIR/docker-compose.yml" ]]; then
+            cd "$WORK_DIR"
             shift
             docker-compose logs "$@"
         else
-            echo "❌ docker-compose.yml not found in: ${COMPOSE_DIRS[*]}"
+            echo "❌ Working directory $WORK_DIR not found or missing docker-compose.yml"
         fi
         ;;
     ""|help|-h|--help)
@@ -1184,34 +1139,13 @@ echo "✅ Created chatd-prune"
 create_chatd_disk
 echo "✅ Created chatd-disk"
 
-# Copy docker-compose.yml to system directory
-echo ""
-echo "📋 Installing docker-compose.yml to system directory..."
-
-# Create system directory for ChatD configuration
-mkdir -p /opt/chatd
-
-# Copy docker-compose.yml if it exists in current directory
-if [[ -f "./docker-compose.yml" ]]; then
-    cp ./docker-compose.yml /opt/chatd/docker-compose.yml
-    chmod 644 /opt/chatd/docker-compose.yml
-    echo "✅ Copied docker-compose.yml to /opt/chatd/"
-elif [[ -f "/home/*/chatd-internships/docker-compose.yml" ]]; then
-    # Try to find it in user directories
-    COMPOSE_FILE=$(find /home/*/chatd-internships/ -name "docker-compose.yml" -type f 2>/dev/null | head -n 1)
-    if [[ -n "$COMPOSE_FILE" ]]; then
-        cp "$COMPOSE_FILE" /opt/chatd/docker-compose.yml
-        chmod 644 /opt/chatd/docker-compose.yml
-        echo "✅ Copied docker-compose.yml from $COMPOSE_FILE to /opt/chatd/"
-    else
-        echo "⚠️  docker-compose.yml not found - docker-compose commands may not work"
-    fi
-else
-    echo "⚠️  docker-compose.yml not found - docker-compose commands may not work"
-fi
-
 echo ""
 echo "🎉 All management scripts created successfully!"
+echo ""
+echo "📋 Directory Structure Information:"
+echo "   Working directory: /opt/chatd/"
+echo "   Run 'chatd build' to set up the working directory with latest source"
+echo "   The .env file should be placed in /opt/chatd/ alongside docker-compose.yml"
 echo ""
 echo "Available commands:"
 echo "  chatd start/stop/restart - Control the bot"
