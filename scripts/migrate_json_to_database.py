@@ -64,12 +64,12 @@ class DataMigrator:
         
         # Handle the actual production path for job data
         if json_data_path and not os.path.exists(json_data_path):
-            prod_data_path = "/var/lib/chatd/data/previous_data.json"
+            prod_data_path = "/opt/chatd/data/previous_data.json"
             if os.path.exists(prod_data_path):
                 self.json_data_path = prod_data_path
                 logger.info(f"Using production data file: {prod_data_path}")
         elif not json_data_path:
-            prod_data_path = "/var/lib/chatd/data/previous_data.json"
+            prod_data_path = "/opt/chatd/data/previous_data.json"
             if os.path.exists(prod_data_path):
                 self.json_data_path = prod_data_path
                 logger.info(f"Using production data file: {prod_data_path}")
@@ -78,12 +78,12 @@ class DataMigrator:
 
         # Handle the actual production path for message tracking
         if json_messages_path and not os.path.exists(json_messages_path):
-            prod_messages_path = "/var/lib/chatd/data/message_tracking.json"
+            prod_messages_path = "/opt/chatd/data/message_tracking.json"
             if os.path.exists(prod_messages_path):
                 self.json_messages_path = prod_messages_path
                 logger.info(f"Using production message tracking file: {prod_messages_path}")
         elif not json_messages_path:
-            prod_messages_path = "/var/lib/chatd/data/message_tracking.json"
+            prod_messages_path = "/opt/chatd/data/message_tracking.json"
             if os.path.exists(prod_messages_path):
                 self.json_messages_path = prod_messages_path
                 logger.info(f"Using production message tracking file: {prod_messages_path}")
@@ -446,7 +446,7 @@ class DataMigrator:
 def main():
     """Main entry point for the migration script."""
     parser = argparse.ArgumentParser(description='Migrate JSON data to PostgreSQL database')
-    parser.add_argument('--data-file', help='Path to JSON data file (default: use config or /var/lib/chatd/data/previous_results.json)')
+    parser.add_argument('--data-file', help='Path to JSON data file (default: use config or /opt/chatd/data/previous_data.json)')
     parser.add_argument('--messages-file', help='Path to message tracking JSON file (default: use config)')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without making actual changes')
     parser.add_argument('--no-backup', action='store_true', help='Skip creating backup files')
@@ -458,7 +458,7 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
     
     # Use production path as default
-    data_file = args.data_file or "/var/lib/chatd/data/previous_data.json"
+    data_file = args.data_file or "/opt/chatd/data/previous_data.json"
     
     migrator = DataMigrator(
         json_data_path=data_file,
