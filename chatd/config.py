@@ -117,6 +117,11 @@ class Config:
         # Set timezone (empty string means use system default)
         self.timezone = os.getenv('TIMEZONE', '').strip()
         
+        # Set migration mode (override default if specified)
+        migration_mode_env = os.getenv('MIGRATION_MODE')
+        if migration_mode_env and migration_mode_env.strip():
+            self.migration_mode = migration_mode_env.strip().lower()
+        
         self._initialized = True
 
     def validate(self) -> bool:
