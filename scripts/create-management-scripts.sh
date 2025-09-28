@@ -303,18 +303,22 @@ fi
 # Deploy using docker-compose (which handles networking properly)
 echo "🔄 Deploying bot with docker-compose..."
 
-# Change to the repository directory where docker-compose.yml is located
-REPO_DIR="/opt/chatd-internships"
-if [[ -d "$REPO_DIR" ]]; then
-    cd "$REPO_DIR"
-elif [[ -f "/opt/chatd-internships/docker-compose.yml" ]]; then
-    cd "/opt/chatd-internships"
-elif [[ -f "./docker-compose.yml" ]]; then
-    # Already in the right directory
-    echo "🐳 Using docker-compose.yml in current directory"
-else
+# Change to the directory where docker-compose.yml is located
+COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
+FOUND_COMPOSE=false
+
+for dir in "${COMPOSE_DIRS[@]}"; do
+    if [[ -f "$dir/docker-compose.yml" ]]; then
+        cd "$dir"
+        FOUND_COMPOSE=true
+        echo "🐳 Using docker-compose.yml in $dir"
+        break
+    fi
+done
+
+if [[ "$FOUND_COMPOSE" == "false" ]]; then
     echo "❌ Error: Could not find docker-compose.yml"
-    echo "   Looked in: /opt/chatd-internships, current directory"
+    echo "   Looked in: ${COMPOSE_DIRS[*]}"
     echo "   Falling back to systemctl for compatibility..."
     if systemctl is-active --quiet chatd-internships; then
         echo "🔄 Restarting service with new image..."
@@ -452,18 +456,22 @@ fi
 # Deploy using docker-compose (which handles networking properly)
 echo "🔄 Deploying bot with docker-compose..."
 
-# Change to the repository directory where docker-compose.yml is located
-REPO_DIR="/opt/chatd-internships"
-if [[ -d "$REPO_DIR" ]]; then
-    cd "$REPO_DIR"
-elif [[ -f "/opt/chatd-internships/docker-compose.yml" ]]; then
-    cd "/opt/chatd-internships"
-elif [[ -f "./docker-compose.yml" ]]; then
-    # Already in the right directory
-    echo "🐳 Using docker-compose.yml in current directory"
-else
+# Change to the directory where docker-compose.yml is located
+COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
+FOUND_COMPOSE=false
+
+for dir in "${COMPOSE_DIRS[@]}"; do
+    if [[ -f "$dir/docker-compose.yml" ]]; then
+        cd "$dir"
+        FOUND_COMPOSE=true
+        echo "🐳 Using docker-compose.yml in $dir"
+        break
+    fi
+done
+
+if [[ "$FOUND_COMPOSE" == "false" ]]; then
     echo "❌ Error: Could not find docker-compose.yml"
-    echo "   Looked in: /opt/chatd-internships, current directory"
+    echo "   Looked in: ${COMPOSE_DIRS[*]}"
     echo "   Falling back to systemctl for compatibility..."
     if systemctl is-active --quiet chatd-internships; then
         echo "🔄 Restarting service..."
@@ -1033,41 +1041,91 @@ case "$1" in
         ;;
     compose-up)
         echo "🐳 Starting services with docker-compose..."
-        cd /opt/chatd-internships 2>/dev/null || cd .
-        if [[ -f "docker-compose.yml" ]]; then
+        
+        # Find docker-compose.yml in system directories
+        COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
+        FOUND_COMPOSE=false
+        
+        for dir in "${COMPOSE_DIRS[@]}"; do
+            if [[ -f "$dir/docker-compose.yml" ]]; then
+                cd "$dir"
+                FOUND_COMPOSE=true
+                echo "🐳 Using docker-compose.yml in $dir"
+                break
+            fi
+        done
+        
+        if [[ "$FOUND_COMPOSE" == "true" ]]; then
             docker-compose up -d
             echo "📊 Container Status:"
             docker-compose ps
         else
-            echo "❌ docker-compose.yml not found in current directory"
+            echo "❌ docker-compose.yml not found in: ${COMPOSE_DIRS[*]}"
+            echo "   Run the installation script first to copy docker-compose.yml"
         fi
         ;;
     compose-down)
         echo "🛑 Stopping services with docker-compose..."
-        cd /opt/chatd-internships 2>/dev/null || cd .
-        if [[ -f "docker-compose.yml" ]]; then
+        
+        # Find docker-compose.yml in system directories
+        COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
+        FOUND_COMPOSE=false
+        
+        for dir in "${COMPOSE_DIRS[@]}"; do
+            if [[ -f "$dir/docker-compose.yml" ]]; then
+                cd "$dir"
+                FOUND_COMPOSE=true
+                break
+            fi
+        done
+        
+        if [[ "$FOUND_COMPOSE" == "true" ]]; then
             docker-compose down --remove-orphans
         else
-            echo "❌ docker-compose.yml not found in current directory"
+            echo "❌ docker-compose.yml not found in: ${COMPOSE_DIRS[*]}"
         fi
         ;;
     compose-ps)
         echo "📊 Docker Compose Service Status:"
-        cd /opt/chatd-internships 2>/dev/null || cd .
-        if [[ -f "docker-compose.yml" ]]; then
+        
+        # Find docker-compose.yml in system directories
+        COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
+        FOUND_COMPOSE=false
+        
+        for dir in "${COMPOSE_DIRS[@]}"; do
+            if [[ -f "$dir/docker-compose.yml" ]]; then
+                cd "$dir"
+                FOUND_COMPOSE=true
+                break
+            fi
+        done
+        
+        if [[ "$FOUND_COMPOSE" == "true" ]]; then
             docker-compose ps
         else
-            echo "❌ docker-compose.yml not found in current directory"
+            echo "❌ docker-compose.yml not found in: ${COMPOSE_DIRS[*]}"
         fi
         ;;
     compose-logs)
         echo "📋 Docker Compose Logs:"
-        cd /opt/chatd-internships 2>/dev/null || cd .
-        if [[ -f "docker-compose.yml" ]]; then
+        
+        # Find docker-compose.yml in system directories
+        COMPOSE_DIRS=("/opt/chatd" "/opt/chatd-internships" ".")
+        FOUND_COMPOSE=false
+        
+        for dir in "${COMPOSE_DIRS[@]}"; do
+            if [[ -f "$dir/docker-compose.yml" ]]; then
+                cd "$dir"
+                FOUND_COMPOSE=true
+                break
+            fi
+        done
+        
+        if [[ "$FOUND_COMPOSE" == "true" ]]; then
             shift
             docker-compose logs "$@"
         else
-            echo "❌ docker-compose.yml not found in current directory"
+            echo "❌ docker-compose.yml not found in: ${COMPOSE_DIRS[*]}"
         fi
         ;;
     ""|help|-h|--help)
@@ -1125,6 +1183,32 @@ echo "✅ Created chatd-prune"
 
 create_chatd_disk
 echo "✅ Created chatd-disk"
+
+# Copy docker-compose.yml to system directory
+echo ""
+echo "📋 Installing docker-compose.yml to system directory..."
+
+# Create system directory for ChatD configuration
+mkdir -p /opt/chatd
+
+# Copy docker-compose.yml if it exists in current directory
+if [[ -f "./docker-compose.yml" ]]; then
+    cp ./docker-compose.yml /opt/chatd/docker-compose.yml
+    chmod 644 /opt/chatd/docker-compose.yml
+    echo "✅ Copied docker-compose.yml to /opt/chatd/"
+elif [[ -f "/home/*/chatd-internships/docker-compose.yml" ]]; then
+    # Try to find it in user directories
+    COMPOSE_FILE=$(find /home/*/chatd-internships/ -name "docker-compose.yml" -type f 2>/dev/null | head -n 1)
+    if [[ -n "$COMPOSE_FILE" ]]; then
+        cp "$COMPOSE_FILE" /opt/chatd/docker-compose.yml
+        chmod 644 /opt/chatd/docker-compose.yml
+        echo "✅ Copied docker-compose.yml from $COMPOSE_FILE to /opt/chatd/"
+    else
+        echo "⚠️  docker-compose.yml not found - docker-compose commands may not work"
+    fi
+else
+    echo "⚠️  docker-compose.yml not found - docker-compose commands may not work"
+fi
 
 echo ""
 echo "🎉 All management scripts created successfully!"
