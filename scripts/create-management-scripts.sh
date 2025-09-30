@@ -784,10 +784,10 @@ case $LOG_TYPE in
     "app")
         if [[ "$FOLLOW" == "true" ]]; then
             echo "📋 Following application logs..."
-            tail -f /var/lib/chatd/logs/chatd.log 2>/dev/null || echo "❌ No application logs found"
+            tail -f /opt/chatd/logs/chatd.log 2>/dev/null || echo "❌ No application logs found"
         else
             echo "📋 Last $LINES lines of application logs:"
-            tail -n "$LINES" /var/lib/chatd/logs/chatd.log 2>/dev/null || echo "❌ No application logs found"
+            tail -n "$LINES" /opt/chatd/logs/chatd.log 2>/dev/null || echo "❌ No application logs found"
         fi
         ;;
     "docker")
@@ -827,8 +827,8 @@ echo "💾 Creating backup of ChatD bot data..."
 
 # Create compressed backup
 tar -czf "$BACKUP_FILE" \
-    -C /var/lib/chatd data \
-    -C /etc/chatd .env \
+    -C /opt/chatd data \
+    -C /opt/chatd .env \
     2>/dev/null || echo "⚠️  Some files may not exist yet"
 
 if [[ -f "$BACKUP_FILE" ]]; then
@@ -857,8 +857,8 @@ echo "========================"
 # Bot Data Files
 echo ""
 echo "📁 Bot Data Files:"
-if [[ -d "/var/lib/chatd/data" ]]; then
-    ls -la /var/lib/chatd/data/ 2>/dev/null || echo "   (empty)"
+if [[ -d "/opt/chatd/data" ]]; then
+    ls -la /opt/chatd/data/ 2>/dev/null || echo "   (empty)"
 else
     echo "   ❌ Data directory not found"
 fi
@@ -866,8 +866,8 @@ fi
 # Repository Status
 echo ""
 echo "📚 Repository Status:"
-if [[ -d "/var/lib/chatd/repo" ]]; then
-    cd /var/lib/chatd/repo 2>/dev/null && {
+if [[ -d "/opt/chatd/Summer2026-Internships" ]]; then
+    cd /opt/chatd/Summer2026-Internships 2>/dev/null && {
         if [[ -d ".git" ]]; then
             echo "   📍 Branch: $(git branch --show-current 2>/dev/null || echo 'unknown')"
             echo "   🔄 Last commit: $(git log -1 --pretty=format:'%h %s' 2>/dev/null || echo 'unknown')"
@@ -897,9 +897,9 @@ systemctl status chatd-internships --no-pager -l || echo "   ❌ Service status 
 # Recent Log Summary
 echo ""
 echo "📋 Recent Activity:"
-if [[ -f "/var/lib/chatd/logs/chatd.log" ]]; then
+if [[ -f "/opt/chatd/logs/chatd.log" ]]; then
     echo "   Last 5 log entries:"
-    tail -5 /var/lib/chatd/logs/chatd.log | sed 's/^/   /'
+    tail -5 /opt/chatd/logs/chatd.log | sed 's/^/   /'
 else
     echo "   ❌ No log file found"
 fi
@@ -907,8 +907,8 @@ fi
 # Disk Usage
 echo ""
 echo "💾 Disk Usage:"
-echo "   Data: $(du -sh /var/lib/chatd 2>/dev/null | cut -f1 || echo 'unknown')"
-echo "   Logs: $(du -sh /var/lib/chatd/logs 2>/dev/null | cut -f1 || echo 'unknown')"
+echo "   Data: $(du -sh /opt/chatd 2>/dev/null | cut -f1 || echo 'unknown')"
+echo "   Logs: $(du -sh /opt/chatd/logs 2>/dev/null | cut -f1 || echo 'unknown')"
 EOF
     chmod +x /usr/local/bin/chatd-data
 }
