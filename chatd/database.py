@@ -36,10 +36,12 @@ class JobPosting(Base):
     date_posted = Column(BigInteger, nullable=True, index=True)
     company_url = Column(Text, nullable=True)
     is_visible = Column(Boolean, default=True, index=True)
+    category = Column(Text, nullable=True, index=True)  # New field
     
     # Relationships
     locations = relationship("JobLocation", back_populates="job_posting", cascade="all, delete-orphan")
     terms = relationship("JobTerm", back_populates="job_posting", cascade="all, delete-orphan")
+    degrees = relationship("JobDegree", back_populates="job_posting", cascade="all, delete-orphan")
     message_tracking = relationship("MessageTracking", back_populates="job_posting", 
                                   uselist=False, cascade="all, delete-orphan")
     
@@ -55,6 +57,11 @@ class JobPosting(Base):
     def term_list(self) -> List[str]:
         """Get list of term strings."""
         return [term.term for term in self.terms]
+    
+    @property
+    def degree_list(self) -> List[str]:
+        """Get list of degree strings."""
+        return [degree.degree for degree in self.degrees]
 
 
 class JobLocation(Base):
@@ -85,6 +92,21 @@ class JobTerm(Base):
     
     def __repr__(self):
         return f"<JobTerm(id='{self.id}', term='{self.term}')>"
+
+
+class JobDegree(Base):
+    """Normalized degrees table (one-to-many with job postings)."""
+    
+    __tablename__ = 'job_degrees'
+    
+    id = Column(UUID(as_uuid=True), ForeignKey('job_postings.id', ondelete='CASCADE'), primary_key=True)
+    degree = Column(Text, nullable=False, primary_key=True)
+    
+    # Relationship
+    job_posting = relationship("JobPosting", back_populates="degrees")
+    
+    def __repr__(self):
+        return f"<JobDegree(id='{self.id}', degree='{self.degree}')>"
 
 
 class MessageTracking(Base):
@@ -218,7 +240,8 @@ def job_posting_from_dict(job_data: Dict[str, Any]) -> JobPosting:
         source=job_data.get('source'),
         date_posted=job_data.get('date_posted'),
         company_url=job_data.get('company_url'),
-        is_visible=job_data.get('is_visible', True)
+        is_visible=job_data.get('is_visible', True),
+        category=job_data.get('category')
     )
     
     # Add locations
@@ -236,6 +259,14 @@ def job_posting_from_dict(job_data: Dict[str, Any]) -> JobPosting:
             term=term
         )
         job_posting.terms.append(job_term)
+    
+    # Add degrees
+    for degree in job_data.get('degrees', []):
+        job_degree = JobDegree(
+            id=job_posting.id,
+            degree=degree
+        )
+        job_posting.degrees.append(job_degree)
     
     return job_posting
 
@@ -262,6 +293,8 @@ def job_posting_to_dict(job_posting: JobPosting) -> Dict[str, Any]:
         'date_posted': job_posting.date_posted,
         'company_url': job_posting.company_url,
         'is_visible': job_posting.is_visible,
+        'category': job_posting.category,
         'locations': job_posting.location_list,
-        'terms': job_posting.term_list
+        'terms': job_posting.term_list,
+        'degrees': job_posting.degree_list
     }

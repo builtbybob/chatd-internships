@@ -16,7 +16,8 @@ CREATE TABLE job_postings (
     source TEXT,
     date_posted BIGINT,
     company_url TEXT,
-    is_visible BOOLEAN DEFAULT true
+    is_visible BOOLEAN DEFAULT true,
+    category TEXT
 );
 
 -- Normalized locations table (one-to-many relationship)
@@ -33,6 +34,13 @@ CREATE TABLE job_terms (
     PRIMARY KEY (id, term)
 );
 
+-- Normalized degrees table (one-to-many relationship)
+CREATE TABLE job_degrees (
+    id UUID REFERENCES job_postings(id) ON DELETE CASCADE,
+    degree TEXT NOT NULL,
+    PRIMARY KEY (id, degree)
+);
+
 -- Message tracking table (one-to-one relationship)
 CREATE TABLE message_tracking (
     id UUID PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
@@ -47,9 +55,11 @@ CREATE INDEX idx_job_postings_company ON job_postings(company_name);
 CREATE INDEX idx_job_postings_active ON job_postings(active, is_visible);
 CREATE INDEX idx_job_postings_date_posted ON job_postings(date_posted DESC);
 CREATE INDEX idx_job_postings_url_hash ON job_postings USING hash(url);
+CREATE INDEX idx_job_postings_category ON job_postings(category);
 CREATE INDEX idx_message_tracking_message_id ON message_tracking(message_id);
 CREATE INDEX idx_job_locations_location ON job_locations(location);
 CREATE INDEX idx_job_terms_term ON job_terms(term);
+CREATE INDEX idx_job_degrees_degree ON job_degrees(degree);
 
 -- Create a view for human-readable timestamps (optional convenience)
 CREATE VIEW job_postings_readable AS
@@ -58,13 +68,15 @@ SELECT
     to_timestamp(jp.date_posted) AT TIME ZONE 'UTC' as posted_timestamp,
     to_timestamp(jp.date_updated) AT TIME ZONE 'UTC' as updated_timestamp,
     ARRAY_AGG(DISTINCT jl.location) FILTER (WHERE jl.location IS NOT NULL) as locations,
-    ARRAY_AGG(DISTINCT jt.term) FILTER (WHERE jt.term IS NOT NULL) as terms
+    ARRAY_AGG(DISTINCT jt.term) FILTER (WHERE jt.term IS NOT NULL) as terms,
+    ARRAY_AGG(DISTINCT jd.degree) FILTER (WHERE jd.degree IS NOT NULL) as degrees
 FROM job_postings jp
 LEFT JOIN job_locations jl ON jp.id = jl.id
 LEFT JOIN job_terms jt ON jp.id = jt.id
+LEFT JOIN job_degrees jd ON jp.id = jd.id
 GROUP BY jp.id, jp.date_updated, jp.url, jp.company_name, jp.title, 
          jp.sponsorship, jp.active, jp.source, jp.date_posted, 
-         jp.company_url, jp.is_visible;
+         jp.company_url, jp.is_visible, jp.category;
 
 -- Insert a test record to verify schema works
 INSERT INTO job_postings (id, date_updated, url, company_name, title, active, date_posted, is_visible) 

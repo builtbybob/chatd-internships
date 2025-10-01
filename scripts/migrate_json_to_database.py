@@ -180,6 +180,9 @@ class DataMigrator:
         if 'terms' in job_data and not isinstance(job_data['terms'], list):
             errors.append("terms must be a list")
             
+        if 'degrees' in job_data and not isinstance(job_data['degrees'], list):
+            errors.append("degrees must be a list")
+            
         if 'active' in job_data and not isinstance(job_data['active'], bool):
             errors.append("active must be a boolean")
             

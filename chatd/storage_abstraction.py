@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from chatd.database import (
-    DatabaseManager, JobPosting, JobLocation, JobTerm, MessageTracking,
+    DatabaseManager, JobPosting, JobLocation, JobTerm, JobDegree, MessageTracking,
     job_posting_from_dict, job_posting_to_dict, create_database_manager
 )
 
@@ -336,22 +336,169 @@ class DatabaseStorageBackend(StorageBackend):
             return []
     
     def save_job_postings(self, job_postings: List[Dict[str, Any]]) -> bool:
-        """Save job postings to database."""
+        """
+        Save job postings to database - DEPRECATED for incremental operations.
+        This method should only be used for initial bulk loading or migration.
+        For normal operations, use add_job_posting, update_job_posting, remove_job_posting.
+        """
+        logger.warning("save_job_postings called - this should only be used for bulk migration")
+        
+        # If this is a small number of jobs, process them individually for safety
+        if len(job_postings) <= 50:
+            logger.info(f"Processing {len(job_postings)} jobs individually for safety")
+            success = True
+            for job_data in job_postings:
+                if not self.add_job_posting(job_data):
+                    success = False
+            return success
+        
+        # For large bulk operations (migration), use the old approach
         try:
             with self.db_manager.session_scope() as session:
-                # Clear existing job postings
-                session.query(JobPosting).delete()
+                logger.warning("Performing bulk database replacement - this deletes all existing data")
                 
-                # Insert new job postings
+                # Clear existing data (only for bulk migration)
+                session.query(MessageTracking).delete(synchronize_session=False)
+                session.query(JobLocation).delete(synchronize_session=False) 
+                session.query(JobTerm).delete(synchronize_session=False)
+                session.query(JobDegree).delete(synchronize_session=False)
+                session.query(JobPosting).delete(synchronize_session=False)
+                session.flush()
+                
+                # Insert all job postings
                 for job_data in job_postings:
                     job_posting = job_posting_from_dict(job_data)
                     session.add(job_posting)
                 
-                logger.debug(f"Saved {len(job_postings)} job postings to database")
+                logger.warning(f"Bulk loaded {len(job_postings)} job postings to database")
                 return True
                 
         except Exception as e:
-            logger.error(f"Failed to save job postings to database: {e}")
+            logger.error(f"Failed to bulk load job postings to database: {e}")
+            return False
+    
+    def add_job_posting(self, job_data: Dict[str, Any]) -> bool:
+        """Add a single new job posting to database, or update if it already exists."""
+        try:
+            with self.db_manager.session_scope() as session:
+                job_id = job_data['id']
+                
+                # Check if job already exists by ID
+                existing_job = session.query(JobPosting).filter(JobPosting.id == job_id).first()
+                if existing_job:
+                    logger.debug(f"Job {job_id} already exists by ID, updating instead")
+                    return self.update_job_posting(job_id, job_data)
+                
+                # Check if job exists by URL (unique constraint)
+                job_url = job_data.get('url')
+                if job_url:
+                    existing_job_by_url = session.query(JobPosting).filter(JobPosting.url == job_url).first()
+                    if existing_job_by_url:
+                        logger.debug(f"Job with URL {job_url} already exists (ID: {existing_job_by_url.id}), updating instead")
+                        # Update the existing job with the new ID and data
+                        return self.update_job_posting(str(existing_job_by_url.id), job_data)
+                
+                # Truly new job - insert it
+                job_posting = job_posting_from_dict(job_data)
+                session.add(job_posting)
+                logger.debug(f"Added new job posting {job_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to add job posting {job_data.get('id', 'unknown')}: {e}")
+            return False
+    
+    def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
+        """Update specific fields of an existing job posting in database."""
+        try:
+            with self.db_manager.session_scope() as session:
+                # Get existing job
+                existing_job = session.query(JobPosting).filter(JobPosting.id == job_id).first()
+                if not existing_job:
+                    logger.warning(f"Cannot update job {job_id}: not found in database")
+                    return False
+                
+                # Check if this is a full job update (from add_job_posting) or partial update
+                is_full_update = 'url' in updates and 'company_name' in updates
+                
+                if is_full_update:
+                    # Full job replacement - update the ID if it's different
+                    new_job_id = updates.get('id', job_id)
+                    if str(new_job_id) != str(job_id):
+                        # Remove old job completely and insert new one
+                        session.query(JobLocation).filter(JobLocation.id == job_id).delete(synchronize_session=False)
+                        session.query(JobTerm).filter(JobTerm.id == job_id).delete(synchronize_session=False)
+                        session.query(JobDegree).filter(JobDegree.id == job_id).delete(synchronize_session=False)
+                        session.query(MessageTracking).filter(MessageTracking.id == job_id).delete(synchronize_session=False)
+                        session.delete(existing_job)
+                        session.flush()
+                        
+                        # Insert new job
+                        job_posting = job_posting_from_dict(updates)
+                        session.add(job_posting)
+                        logger.debug(f"Replaced job {job_id} with {new_job_id}")
+                        return True
+                
+                # Update main job posting fields (excluding relationships)
+                for field, value in updates.items():
+                    if field not in ['id', 'locations', 'terms', 'degrees']:
+                        if hasattr(existing_job, field):
+                            setattr(existing_job, field, value)
+                        else:
+                            # Skip unknown fields silently - they might be new fields not yet in the database schema
+                            logger.debug(f"Skipping unknown field '{field}' in job posting update")
+                            continue
+                
+                # Handle locations update if provided
+                if 'locations' in updates:
+                    session.query(JobLocation).filter(JobLocation.id == job_id).delete(synchronize_session=False)
+                    for location in updates['locations']:
+                        job_location = JobLocation(id=job_id, location=location)
+                        session.add(job_location)
+                
+                # Handle terms update if provided
+                if 'terms' in updates:
+                    session.query(JobTerm).filter(JobTerm.id == job_id).delete(synchronize_session=False)
+                    for term in updates['terms']:
+                        job_term = JobTerm(id=job_id, term=term)
+                        session.add(job_term)
+                
+                # Handle degrees update if provided
+                if 'degrees' in updates:
+                    session.query(JobDegree).filter(JobDegree.id == job_id).delete(synchronize_session=False)
+                    for degree in updates['degrees']:
+                        job_degree = JobDegree(id=job_id, degree=degree)
+                        session.add(job_degree)
+                
+                logger.debug(f"Updated job posting {job_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to update job posting {job_id}: {e}")
+            return False
+    
+    def remove_job_posting(self, job_id: str) -> bool:
+        """Remove a job posting from database."""
+        try:
+            with self.db_manager.session_scope() as session:
+                # Remove related data first
+                session.query(MessageTracking).filter(MessageTracking.id == job_id).delete(synchronize_session=False)
+                session.query(JobLocation).filter(JobLocation.id == job_id).delete(synchronize_session=False)
+                session.query(JobTerm).filter(JobTerm.id == job_id).delete(synchronize_session=False)
+                session.query(JobDegree).filter(JobDegree.id == job_id).delete(synchronize_session=False)
+                
+                # Remove main job posting
+                deleted_count = session.query(JobPosting).filter(JobPosting.id == job_id).delete(synchronize_session=False)
+                
+                if deleted_count > 0:
+                    logger.debug(f"Removed job posting {job_id}")
+                    return True
+                else:
+                    logger.warning(f"Job posting {job_id} not found for removal")
+                    return False
+                
+        except Exception as e:
+            logger.error(f"Failed to remove job posting {job_id}: {e}")
             return False
     
     def get_message_tracking(self) -> Dict[str, Dict[str, Any]]:
@@ -832,14 +979,23 @@ class DataStorage:
         # Handle new jobs (add them to storage)
         if changes['added']:
             try:
-                # Get current stored jobs and add the new ones
-                all_jobs = self.get_job_postings()
-                all_jobs.extend(changes['added'])
-                if not self.save_job_postings(all_jobs):
-                    logger.error("Failed to save new job postings")
-                    results['success'] = False
-                else:
-                    logger.info(f"Added {len(changes['added'])} new job postings")
+                # Handle JSON backend (bulk operation for efficiency)
+                if self.migration_mode in ['json_only', 'dual_write']:
+                    all_jobs = self.json_backend.get_job_postings()
+                    all_jobs.extend(changes['added'])
+                    if not self.json_backend.save_job_postings(all_jobs):
+                        logger.error("Failed to add new jobs to JSON backend")
+                        results['success'] = False
+                
+                # Handle database backend efficiently
+                if self.migration_mode in ['dual_write', 'database_only']:
+                    for job_data in changes['added']:
+                        if not self.database_backend.add_job_posting(job_data):
+                            logger.error(f"Failed to add job {job_data['id']} to database")
+                            results['success'] = False
+                
+                logger.info(f"Added {len(changes['added'])} new job postings")
+                    
             except Exception as e:
                 logger.error(f"Failed to add new job postings: {e}")
                 results['success'] = False
@@ -847,14 +1003,26 @@ class DataStorage:
         # Handle removed jobs (remove from storage)
         if changes['removed']:
             try:
-                current_stored_jobs = self.get_job_postings()
                 removed_ids = {job['id'] for job in changes['removed']}
-                filtered_jobs = [job for job in current_stored_jobs if job['id'] not in removed_ids]
-                if not self.save_job_postings(filtered_jobs):
-                    logger.error("Failed to remove deleted job postings")
-                    results['success'] = False
-                else:
+                
+                # Remove from JSON backend if needed
+                if self.migration_mode in ['json_only', 'dual_write']:
+                    current_stored_jobs = self.json_backend.get_job_postings()
+                    filtered_jobs = [job for job in current_stored_jobs if job['id'] not in removed_ids]
+                    if not self.json_backend.save_job_postings(filtered_jobs):
+                        logger.error("Failed to remove deleted job postings from JSON backend")
+                        results['success'] = False
+                
+                # Remove from database backend efficiently
+                if self.migration_mode in ['dual_write', 'database_only']:
+                    for job_id in removed_ids:
+                        if not self.database_backend.remove_job_posting(job_id):
+                            logger.error(f"Failed to remove job {job_id} from database")
+                            results['success'] = False
+                
+                if results['success']:
                     logger.info(f"Removed {len(changes['removed'])} deleted job postings")
+                    
             except Exception as e:
                 logger.error(f"Failed to remove deleted job postings: {e}")
                 results['success'] = False
