@@ -959,14 +959,14 @@ class DataStorage:
                 # Determine update strategy based on changes
                 if 'date_updated' in job_changes:
                     # Content correction: update entire job posting
-                    logger.info(f"Content correction detected for job {job_id}, updating entire posting")
+                    logger.debug(f"Content correction detected for job {job_id}, updating entire posting")
                     if not self.update_job_posting(job_id, job):
                         results['update_failures'].append({'job_id': job_id, 'reason': 'full_update_failed'})
                         results['success'] = False
                 else:
                     # Selective update: only changed fields
                     updates = {field: change_info['new'] for field, change_info in job_changes.items()}
-                    logger.info(f"Selective update for job {job_id}, fields: {list(updates.keys())}")
+                    logger.debug(f"Selective update for job {job_id}, fields: {list(updates.keys())}")
                     if not self.update_job_posting(job_id, updates):
                         results['update_failures'].append({'job_id': job_id, 'reason': 'selective_update_failed'})
                         results['success'] = False
@@ -993,9 +993,9 @@ class DataStorage:
                         if not self.database_backend.add_job_posting(job_data):
                             logger.error(f"Failed to add job {job_data['id']} to database")
                             results['success'] = False
-                
-                logger.info(f"Added {len(changes['added'])} new job postings")
-                    
+
+                logger.debug(f"Added {len(changes['added'])} new job postings")
+
             except Exception as e:
                 logger.error(f"Failed to add new job postings: {e}")
                 results['success'] = False

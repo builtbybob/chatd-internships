@@ -7,9 +7,9 @@
 #        ./sync-repo-data.sh              # Sync to latest (git pull)
 
 # Configuration
-HOST_REPO_DIR="/var/lib/chatd/repo"
+HOST_REPO_DIR="/opt/chatd/Summer2026-Internships"
 LISTINGS_PATH=".github/scripts/listings.json"
-DATA_DIR="/var/lib/chatd/data"
+DATA_DIR="/opt/chatd/data"
 PREVIOUS_DATA_FILE="$DATA_DIR/previous_data.json"
 COMMIT_HASH="$1"
 
@@ -36,13 +36,13 @@ fi
 # Check if directories exist
 if [ ! -d "$HOST_REPO_DIR" ]; then
     log_error "Repository directory $HOST_REPO_DIR does not exist"
-    log_info "Please ensure the bot is properly installed and the repository is cloned"
+    log_info "Please ensure the Summer2026-Internships repository is cloned in /opt/chatd/"
     exit 1
 fi
 
 if [ ! -d "$DATA_DIR" ]; then
     log_error "Data directory $DATA_DIR does not exist"
-    log_info "Please ensure the bot is properly installed"
+    log_info "Please ensure the data directory exists in /opt/chatd/data/"
     exit 1
 fi
 
@@ -64,13 +64,19 @@ fi
 
 log_info "Syncing repository data to prevent message replay..."
 
-# Stop the bot service if running
-if systemctl is-active --quiet chatd-internships; then
-    log_info "Stopping chatd-internships service..."
+# Stop the bot service if running (check both systemctl and docker-compose)
+SYSTEMCTL_ACTIVE=false
+CONTAINER_RUNNING=false
+
+# Check if systemctl is managing the service
+if systemctl is-active --quiet chatd-internships 2>/dev/null; then
+    log_info "Stopping chatd-internships service (systemctl)..."
     systemctl stop chatd-internships
-    SERVICE_WAS_RUNNING=true
-else
-    SERVICE_WAS_RUNNING=false
+    SYSTEMCTL_ACTIVE=true
+elif docker ps --format "table {{.Names}}" | grep -q "chatd-bot"; then
+    log_info "Stopping chatd-bot container (docker-compose)..."
+    cd /opt/chatd && docker-compose stop chatd-bot
+    CONTAINER_RUNNING=true
 fi
 
 # Sync repository
@@ -119,7 +125,7 @@ if ! cp "$LISTINGS_PATH" "$PREVIOUS_DATA_FILE"; then
     exit 1
 fi
 
-# Set correct ownership
+# Set correct ownership for Docker container (user ID 1000)
 chown 1000:1000 "$PREVIOUS_DATA_FILE"
 
 # Clear message tracking to start fresh
@@ -141,13 +147,19 @@ else
     log_warning "File sizes differ - this may indicate an issue"
 fi
 
-# Restart service if it was running
-if [ "$SERVICE_WAS_RUNNING" = true ]; then
-    log_info "Restarting chatd-internships service..."
+# Restart service/container based on how it was managed
+if [ "$SYSTEMCTL_ACTIVE" = true ]; then
+    log_info "Restarting chatd-internships service (systemctl)..."
     systemctl start chatd-internships
     log_success "Service restarted"
+elif [ "$CONTAINER_RUNNING" = true ]; then
+    log_info "Restarting chatd-bot container (docker-compose)..."
+    cd /opt/chatd && docker-compose up -d chatd-bot
+    log_success "Container restarted"
 else
-    log_info "Service was not running - start manually when ready"
+    log_info "No service was running - start manually when ready"
+    log_info "  With systemctl: sudo systemctl start chatd-internships"
+    log_info "  With docker-compose: cd /opt/chatd && docker-compose up -d chatd-bot"
 fi
 
 # Return to original directory
@@ -155,4 +167,10 @@ cd "$ORIGINAL_DIR" || exit 1
 
 log_success "Repository sync complete!"
 log_info "The bot will now use the current repository state as baseline"
-log_info "Monitor logs with: docker logs -f chatd-bot"
+
+# Provide appropriate monitoring command based on management method
+if [ "$SYSTEMCTL_ACTIVE" = true ]; then
+    log_info "Monitor logs with: sudo journalctl -u chatd-internships -f"
+else
+    log_info "Monitor logs with: cd /opt/chatd && docker-compose logs -f chatd-bot"
+fi

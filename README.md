@@ -26,20 +26,193 @@ The bot operates in a loop: it periodically pulls the latest data from the inter
 flowchart TD
    A[Start Bot] --> B[Clone/Update GitHub Repo]
    B --> C[Read listings.json]
-   C --> D[Compare with previous_data.json]
-   D --> E{New Visible & Active Roles?}
-   E -- Yes --> F[Send formatted messages to Discord channels]
-   E -- No --> K[Sleep until next check interval]
-   F --> L{Reactions enabled?}
-   L -- Yes --> G[Add reactions]
-   G --> K
-   L -- No --> K
-   K --> B
+   C --> D{Database Mode?}
+   D -->|database_only| E[Query PostgreSQL for existing jobs]
+   D -->|dual_write| F[Read previous_data.json + Query DB]
+   D -->|json_only| G[Read previous_data.json]
+   E --> H[Compare with new listings]
+   F --> H
+   G --> H
+   H --> I{Changes Detected?}
+   I -->|Yes| J[Process job changes]
+   I -->|No| Q[Sleep until next check interval]
+   J --> K[Update storage backend]
+   K --> L{New visible & active roles?}
+   L -->|Yes| M[Send formatted Discord messages]
+   L -->|No| Q
+   M --> N[Track message IDs in database]
+   N --> O{Reactions enabled?}
+   O -->|Yes| P[Add reactions to messages]
+   O -->|No| Q
+   P --> Q
+   Q --> B
 ```
 
 ## � Quick Start
 
 **For initial setup and installation, see [SETUP.md](docs/SETUP.md) for the complete step-by-step guide.**
+
+## 🏗️ Storage Architecture
+
+Ch@d Internships uses a sophisticated dual-storage system designed for reliability and performance during migration from JSON to PostgreSQL.
+
+### Storage Modes
+
+The bot supports three storage modes controlled by `MIGRATION_MODE`:
+
+- **`json_only`**: Legacy mode using only JSON file storage
+- **`dual_write`**: Migration mode - writes to both JSON and PostgreSQL, reads from JSON
+- **`database_only`**: Target mode using only PostgreSQL database
+
+### Efficient Database Operations
+
+The database backend uses **surgical precision** for updates, avoiding expensive bulk operations:
+
+#### Adding New Jobs
+When a new job posting arrives:
+```
+Input: New job with 3 locations, 2 terms
+Database Operations:
+- 1 INSERT into job_postings table
+- 3 INSERTs into job_locations table  
+- 2 INSERTs into job_terms table
+Total: 6 targeted INSERT operations
+```
+
+#### Updating Existing Jobs
+When job data changes (e.g., `active: true → false`):
+```
+Input: Job field update
+Database Operations:
+- 1 SELECT to find existing record
+- 1 UPDATE for changed fields only
+- Locations/terms only touched if they changed
+Total: 2-5 operations depending on what changed
+```
+
+**Example - Field + Location Update:**
+```
+Input: date_updated changed + locations reduced from 3 to 2
+Database Operations:
+- 1 SELECT (find job)
+- 1 UPDATE (date_updated field) 
+- 1 DELETE (old locations for this job)
+- 2 INSERTs (new locations)
+Total: 5 operations for this one job
+```
+
+#### Removing Jobs
+When a job posting is deleted:
+```
+Input: Job removal
+Database Operations:
+- 1 DELETE from job_locations (cascades)
+- 1 DELETE from job_terms (cascades)  
+- 1 DELETE from job_postings
+Total: 3 targeted DELETE operations
+```
+
+### Performance Benefits
+
+**Old Approach (Inefficient):**
+- Any change → Delete ALL jobs → Re-insert ALL jobs
+- 1 new job = 1000+ DELETE + 1000+ INSERT operations
+
+**New Approach (Efficient):**
+- Surgical updates targeting only changed data
+- 1 new job = 6 INSERT operations
+- 1 job update = 2-5 operations  
+- 1 job removal = 3 DELETE operations
+
+This eliminates duplicate key violations and provides massive performance improvements.
+
+## 🔍 Database Operations & Spot Checking
+
+### Finding Job Postings by Discord Message ID
+
+The bot tracks every Discord message it sends, allowing you to easily find the corresponding job posting:
+
+```sql
+-- Complete job posting lookup by Discord message ID
+WITH job_info AS (
+    SELECT jp.*, mt.message_id, mt.channel_id, mt.posted_at as discord_posted_at
+    FROM job_postings jp
+    JOIN message_tracking mt ON jp.id = mt.id
+    WHERE mt.message_id = 'YOUR_MESSAGE_ID_HERE'
+)
+SELECT 
+    ji.id,
+    ji.company_name,
+    ji.title,
+    ji.url,
+    ji.active,
+    ji.sponsorship,
+    ji.category,
+    TO_TIMESTAMP(ji.date_posted) as date_posted_human,
+    TO_TIMESTAMP(ji.date_updated) as date_updated_human,
+    ji.message_id,
+    ji.channel_id,
+    ji.discord_posted_at,
+    (SELECT ARRAY_AGG(location) FROM job_locations WHERE id = ji.id) as locations,
+    (SELECT ARRAY_AGG(term) FROM job_terms WHERE id = ji.id) as terms,
+    (SELECT ARRAY_AGG(degree) FROM job_degrees WHERE id = ji.id) as degrees
+FROM job_info ji;
+```
+
+### Finding Job Postings by Job ID (UUID)
+
+When you have a job ID from logs or need to look up a specific job posting:
+
+```sql
+-- Complete job posting lookup by Job ID (UUID)
+WITH job_info AS (
+    SELECT jp.*, mt.message_id, mt.channel_id, mt.posted_at as discord_posted_at
+    FROM job_postings jp
+    LEFT JOIN message_tracking mt ON jp.id = mt.id
+    WHERE jp.id = 'YOUR_JOB_ID_HERE'
+)
+SELECT 
+    ji.id,
+    ji.company_name,
+    ji.title,
+    ji.url,
+    ji.active,
+    ji.sponsorship,
+    ji.category,
+    TO_TIMESTAMP(ji.date_posted) as date_posted_human,
+    TO_TIMESTAMP(ji.date_updated) as date_updated_human,
+    ji.message_id,
+    ji.channel_id,
+    ji.discord_posted_at,
+    (SELECT ARRAY_AGG(location) FROM job_locations WHERE id = ji.id) as locations,
+    (SELECT ARRAY_AGG(term) FROM job_terms WHERE id = ji.id) as terms,
+    (SELECT ARRAY_AGG(degree) FROM job_degrees WHERE id = ji.id) as degrees
+FROM job_info ji;
+```
+
+### Quick Database Health Checks
+
+```sql
+-- Count total jobs and active jobs
+SELECT 
+    COUNT(*) as total_jobs,
+    COUNT(*) FILTER (WHERE active = true) as active_jobs,
+    COUNT(*) FILTER (WHERE active = false) as inactive_jobs
+FROM job_postings;
+
+-- Recent job activity (last 24 hours)
+SELECT 
+    COUNT(*) as jobs_updated_24h
+FROM job_postings 
+WHERE TO_TIMESTAMP(date_updated) > NOW() - INTERVAL '24 hours';
+
+-- Message tracking statistics
+SELECT 
+    COUNT(*) as total_discord_messages,
+    COUNT(DISTINCT channel_id) as channels_used,
+    MAX(posted_at) as last_message_posted
+FROM message_tracking;
+```
 
 ### Prerequisites for Development
 

@@ -244,24 +244,24 @@ def job_posting_from_dict(job_data: Dict[str, Any]) -> JobPosting:
         category=job_data.get('category')
     )
     
-    # Add locations
-    for location in job_data.get('locations', []):
+    # Add locations (deduplicated)
+    for location in set(job_data.get('locations', [])):
         job_location = JobLocation(
             id=job_posting.id,
             location=location
         )
         job_posting.locations.append(job_location)
     
-    # Add terms
-    for term in job_data.get('terms', []):
+    # Add terms (deduplicated)
+    for term in set(job_data.get('terms', [])):
         job_term = JobTerm(
             id=job_posting.id,
             term=term
         )
         job_posting.terms.append(job_term)
     
-    # Add degrees
-    for degree in job_data.get('degrees', []):
+    # Add degrees (deduplicated)
+    for degree in set(job_data.get('degrees', [])):
         job_degree = JobDegree(
             id=job_posting.id,
             degree=degree
