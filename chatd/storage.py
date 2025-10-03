@@ -5,14 +5,13 @@ This module handles persistent storage of data using various backends (file, DB,
 """
 
 import json
+import logging
 import os
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional, Type
 
-from chatd.logging_utils import get_logger
-
 # Get logger
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 class Storage(ABC):
