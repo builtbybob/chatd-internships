@@ -99,6 +99,43 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         bot.failed_channels.clear()
         bot.channel_failure_counts.clear()
     
+    async def test_http_session_cleanup(self):
+        """Test HTTP session cleanup functionality."""
+        from chatd.bot import on_disconnect
+        import aiohttp
+        
+        # Test the on_disconnect event handler directly
+        # This tests our HTTP session cleanup implementation
+        with patch('chatd.bot.bot') as mock_bot:
+            # Mock the bot's HTTP session
+            mock_session = AsyncMock(spec=aiohttp.ClientSession)
+            mock_session.closed = False
+            mock_bot.http.session = mock_session
+            
+            # Test cleanup
+            await on_disconnect()
+            
+            # Verify session close was called
+            mock_session.close.assert_called_once()
+        
+        # Test with no HTTP session (should not error)
+        with patch('chatd.bot.bot') as mock_bot:
+            mock_bot.http = None
+            
+            # Should not raise exception
+            await on_disconnect()
+            
+        # Test with already closed session
+        with patch('chatd.bot.bot') as mock_bot:
+            mock_session = AsyncMock(spec=aiohttp.ClientSession)
+            mock_session.closed = True
+            mock_bot.http.session = mock_session
+            
+            await on_disconnect()
+            
+            # Should not call close on already closed session
+            mock_session.close.assert_not_called()
+    
     async def test_send_message_success(self):
         """Test successful message sending."""
         from chatd.bot import send_message
@@ -409,6 +446,71 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             mock_send_messages.assert_called_once()
             args = mock_send_messages.call_args[0]  # Get positional args
             self.assertEqual(args[1], 'new_role_id')  # role_key should be the second argument
+    
+    async def test_storage_abstraction_integration(self):
+        """Test bot integration with new storage abstraction layer."""
+        # Temporarily stop the storage patcher for this test
+        self.storage_patcher.stop()
+        
+        try:
+            from chatd.bot import get_storage
+            
+            # Test storage initialization
+            with patch('chatd.bot.DataStorage') as mock_data_storage_class, \
+                 patch('chatd.bot.config') as mock_config:
+                
+                mock_config.migration_mode = 'dual_write'
+                mock_storage_instance = Mock()
+                mock_data_storage_class.return_value = mock_storage_instance
+                
+                # Clear any existing storage instance
+                from chatd import bot
+                bot._storage_instance = None
+                
+                # Test get_storage function
+                storage = get_storage()
+                
+                # Should return the same instance (singleton pattern)
+                storage2 = get_storage()
+                self.assertEqual(storage, storage2)
+                
+                # Verify DataStorage was initialized with config
+                mock_data_storage_class.assert_called_once_with(mock_config)
+        
+        finally:
+            # Restart the storage patcher
+            self.storage_patcher.start()
+    
+    async def test_migration_mode_compatibility(self):
+        """Test bot works with different migration modes."""
+        from chatd.bot import check_for_new_roles
+        
+        # Test with each migration mode
+        for mode in ['json_only', 'dual_write', 'database_only']:
+            with patch('chatd.bot.get_storage') as mock_get_storage, \
+                 patch('chatd.bot.read_json', return_value=[]), \
+                 patch('chatd.bot.clone_or_update_repo', return_value=True), \
+                 patch('chatd.bot.config') as mock_config:
+                
+                mock_config.migration_mode = mode
+                mock_config.max_post_age_days = 5
+                
+                mock_storage = Mock()
+                mock_storage.process_job_changes.return_value = {
+                    'added_count': 0,
+                    'updated_count': 0,
+                    'removed_count': 0,
+                    'update_failures': [],
+                    'success': True,
+                    'changes_for_discord': {'added': [], 'updated': [], 'removed': []}
+                }
+                mock_get_storage.return_value = mock_storage
+                
+                # Should not raise exception for any mode
+                await check_for_new_roles()
+                
+                # Verify process_job_changes was called
+                mock_storage.process_job_changes.assert_called_once()
 
 
 class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):

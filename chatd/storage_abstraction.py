@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Set
 from datetime import datetime
@@ -409,7 +410,13 @@ class DatabaseStorageBackend(StorageBackend):
             return False
     
     def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
-        """Update specific fields of an existing job posting in database."""
+        """
+        Update specific fields of an existing job posting in database.
+        
+        This method is primarily used by add_job_posting for ID replacement cases.
+        For regular updates, use update_job_posting_scalars (scalar fields only) or
+        update_job_posting_with_refresh (content corrections with relationships).
+        """
         try:
             with self.db_manager.session_scope() as session:
                 # Get existing job
@@ -418,10 +425,10 @@ class DatabaseStorageBackend(StorageBackend):
                     logger.warning(f"Cannot update job {job_id}: not found in database")
                     return False
                 
-                # Check if this is a full job update (from add_job_posting) or partial update
-                is_full_update = 'url' in updates and 'company_name' in updates
+                # Check if this is a full job replacement (from add_job_posting)
+                is_full_replacement = 'url' in updates and 'company_name' in updates
                 
-                if is_full_update:
+                if is_full_replacement:
                     # Full job replacement - update the ID if it's different
                     new_job_id = updates.get('id', job_id)
                     if str(new_job_id) != str(job_id):
@@ -439,38 +446,25 @@ class DatabaseStorageBackend(StorageBackend):
                         logger.debug(f"Replaced job {job_id} with {new_job_id}")
                         return True
                 
-                # Update main job posting fields (excluding relationships)
-                for field, value in updates.items():
-                    if field not in ['id', 'locations', 'terms', 'degrees']:
-                        if hasattr(existing_job, field):
-                            setattr(existing_job, field, value)
-                        else:
-                            # Skip unknown fields silently - they might be new fields not yet in the database schema
-                            logger.debug(f"Skipping unknown field '{field}' in job posting update")
-                            continue
+                # For partial updates, delegate to appropriate specialized methods
+                has_relationships = any(field in updates for field in ['locations', 'terms', 'degrees'])
                 
-                # Handle locations update if provided
-                if 'locations' in updates:
-                    session.query(JobLocation).filter(JobLocation.id == job_id).delete(synchronize_session=False)
-                    for location in updates['locations']:
-                        job_location = JobLocation(id=job_id, location=location)
-                        session.add(job_location)
+                if has_relationships:
+                    logger.warning(f"Relationship fields detected in partial update for job {job_id}. "
+                                 f"Use update_job_posting_with_refresh for content corrections or "
+                                 f"update_job_posting_scalars for scalar-only updates.")
+                    return False
                 
-                # Handle terms update if provided
-                if 'terms' in updates:
-                    session.query(JobTerm).filter(JobTerm.id == job_id).delete(synchronize_session=False)
-                    for term in updates['terms']:
-                        job_term = JobTerm(id=job_id, term=term)
-                        session.add(job_term)
+                # Handle scalar fields only
+                scalar_updates = {k: v for k, v in updates.items() if k not in ['id', 'locations', 'terms', 'degrees']}
                 
-                # Handle degrees update if provided
-                if 'degrees' in updates:
-                    session.query(JobDegree).filter(JobDegree.id == job_id).delete(synchronize_session=False)
-                    for degree in updates['degrees']:
-                        job_degree = JobDegree(id=job_id, degree=degree)
-                        session.add(job_degree)
+                for field, value in scalar_updates.items():
+                    if hasattr(existing_job, field):
+                        setattr(existing_job, field, value)
+                    else:
+                        logger.debug(f"Skipping unknown field '{field}' in job posting update")
                 
-                logger.debug(f"Updated job posting {job_id}")
+                logger.debug(f"Updated job posting {job_id} scalar fields: {list(scalar_updates.keys())}")
                 return True
                 
         except Exception as e:
@@ -492,10 +486,12 @@ class DatabaseStorageBackend(StorageBackend):
                 
                 if deleted_count > 0:
                     logger.debug(f"Removed job posting {job_id}")
-                    return True
                 else:
-                    logger.warning(f"Job posting {job_id} not found for removal")
-                    return False
+                    logger.warning(f"Job posting {job_id} not found for removal (already removed)")
+                
+                # Return True in both cases - idempotent operation
+                # Goal achieved: job posting does not exist in database
+                return True
                 
         except Exception as e:
             logger.error(f"Failed to remove job posting {job_id}: {e}")
@@ -659,46 +655,44 @@ class DatabaseStorageBackend(StorageBackend):
         
         return changes
     
-    def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
-        """Update specific fields of a job posting in database."""
+    def update_job_posting_scalars(self, job_id: str, updates: Dict[str, Any]) -> bool:
+        """Update only scalar fields of a job posting in database (no relationship updates)."""
         try:
             with self.db_manager.session_scope() as session:
                 # Find the job posting
                 job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 if not job_posting:
-                    logger.error(f"Job posting {job_id} not found for update")
+                    logger.error(f"Job posting {job_id} not found for scalar update")
                     return False
                 
-                # Update the job posting fields
+                # Update only scalar fields
+                scalar_updates = {}
                 for field, value in updates.items():
-                    if field in ['locations', 'terms']:
-                        # Handle relationship updates
-                        if field == 'locations':
-                            # Remove existing locations
-                            session.query(JobLocation).filter(JobLocation.id == job_id).delete()
-                            # Add new locations
-                            for location in value:
-                                job_location = JobLocation(id=job_id, location=location)
-                                session.add(job_location)
-                        elif field == 'terms':
-                            # Remove existing terms
-                            session.query(JobTerm).filter(JobTerm.id == job_id).delete()
-                            # Add new terms
-                            for term in value:
-                                job_term = JobTerm(id=job_id, term=term)
-                                session.add(job_term)
+                    if field in ['locations', 'terms', 'degrees']:
+                        # Warn about relationship fields but don't process them
+                        logger.warning(f"Ignoring relationship field '{field}' in scalar update for job {job_id}. Use content correction workflow for relationship updates.")
+                        continue
+                    elif field == 'id':
+                        # Skip ID field
+                        logger.debug(f"Skipping ID field in scalar update for job {job_id}")
+                        continue
                     else:
                         # Handle scalar field updates
                         if hasattr(job_posting, field):
                             setattr(job_posting, field, value)
+                            scalar_updates[field] = value
                         else:
-                            logger.warning(f"Unknown field {field} in job posting update")
+                            logger.warning(f"Unknown field '{field}' in job posting scalar update")
                 
-                logger.debug(f"Updated job posting {job_id} with fields: {list(updates.keys())}")
+                if scalar_updates:
+                    logger.debug(f"Updated job posting {job_id} scalar fields: {list(scalar_updates.keys())}")
+                else:
+                    logger.debug(f"No scalar fields to update for job posting {job_id}")
+                
                 return True
                 
         except Exception as e:
-            logger.error(f"Failed to update job posting {job_id} in database: {e}")
+            logger.error(f"Failed to update job posting {job_id} scalar fields: {e}")
             return False
 
 
@@ -893,11 +887,15 @@ class DataStorage:
     
     def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
         """
-        Update specific fields of a job posting using the appropriate backend(s).
+        Update specific scalar fields of a job posting using the appropriate backend(s).
+        
+        Note: This method only handles scalar field updates. For relationship updates
+        (locations, terms, degrees), use the content correction workflow via 
+        process_job_changes when date_updated changes.
         
         Args:
             job_id: ID of the job posting to update
-            updates: Dictionary of field updates {field_name: new_value}
+            updates: Dictionary of scalar field updates {field_name: new_value}
             
         Returns:
             True if successful, False otherwise
@@ -913,12 +911,12 @@ class DataStorage:
                 logger.debug(f"Successfully updated job posting {job_id} in JSON backend")
         
         if self.migration_mode in ['dual_write', 'database_only']:
-            db_success = self.database_backend.update_job_posting(job_id, updates)
+            db_success = self.database_backend.update_job_posting_scalars(job_id, updates)
             if not db_success:
-                logger.error(f"Failed to update job posting {job_id} in database backend")
+                logger.error(f"Failed to update job posting {job_id} scalar fields in database backend")
                 success = False
             else:
-                logger.debug(f"Successfully updated job posting {job_id} in database backend")
+                logger.debug(f"Successfully updated job posting {job_id} scalar fields in database backend")
         
         return success
     
@@ -949,27 +947,49 @@ class DataStorage:
             'changes_for_discord': changes  # Store change detection results for Discord processing
         }
         
-        # Process updates efficiently
+        # Process updates efficiently with proper workflow separation
         for update_info in changes['updated']:
             job = update_info['job']
             job_changes = update_info['changes']
             job_id = job['id']
             
             try:
-                # Determine update strategy based on changes
+                # Determine update strategy: content corrections take priority
                 if 'date_updated' in job_changes:
-                    # Content correction: update entire job posting
-                    logger.debug(f"Content correction detected for job {job_id}, updating entire posting")
-                    if not self.update_job_posting(job_id, job):
-                        results['update_failures'].append({'job_id': job_id, 'reason': 'full_update_failed'})
-                        results['success'] = False
+                    # Content correction workflow: full job refresh with relationships
+                    logger.info(f"Content correction detected for job {job_id} (date_updated changed), using full refresh workflow")
+                    
+                    # For JSON backend, use the existing remove/add approach (no cascade delete issues)
+                    if self.migration_mode in ['json_only', 'dual_write']:
+                        current_jobs_stored = self.json_backend.get_job_postings()
+                        filtered_jobs = [j for j in current_jobs_stored if j['id'] != job_id]
+                        filtered_jobs.append(job)
+                        if not self.json_backend.save_job_postings(filtered_jobs):
+                            results['update_failures'].append({'job_id': job_id, 'reason': 'json_refresh_failed'})
+                            results['success'] = False
+                            continue
+                    
+                    # For database backend, use differential update to preserve message tracking
+                    if self.migration_mode in ['dual_write', 'database_only']:
+                        if not self.update_job_posting_with_refresh(job):
+                            results['update_failures'].append({'job_id': job_id, 'reason': 'database_refresh_failed'})
+                            results['success'] = False
+                            continue
+                    
+                    logger.info(f"Successfully processed content correction for job posting {job_id}")
                 else:
-                    # Selective update: only changed fields
-                    updates = {field: change_info['new'] for field, change_info in job_changes.items()}
-                    logger.debug(f"Selective update for job {job_id}, fields: {list(updates.keys())}")
-                    if not self.update_job_posting(job_id, updates):
-                        results['update_failures'].append({'job_id': job_id, 'reason': 'selective_update_failed'})
-                        results['success'] = False
+                    # Selective update workflow: only scalar fields changed (active, is_visible, etc.)
+                    # Only process scalar fields - relationships are handled by content correction workflow
+                    scalar_updates = {field: change_info['new'] for field, change_info in job_changes.items() 
+                                    if field not in ['locations', 'terms', 'degrees']}
+                    
+                    if scalar_updates:
+                        logger.debug(f"Selective scalar update for job {job_id}, fields: {list(scalar_updates.keys())}")
+                        if not self.update_job_posting(job_id, scalar_updates):
+                            results['update_failures'].append({'job_id': job_id, 'reason': 'selective_update_failed'})
+                            results['success'] = False
+                    else:
+                        logger.debug(f"No scalar fields to update for job {job_id} (only relationship changes detected)")
                 
             except Exception as e:
                 logger.error(f"Failed to process updates for job {job_id}: {e}")
@@ -1031,3 +1051,168 @@ class DataStorage:
                    f"{results['updated_count']} updated, {results['removed_count']} removed")
         
         return results
+
+    def update_job_posting_with_refresh(self, job: dict) -> bool:
+        """Update job posting with differential updates to related data while preserving message tracking.
+        
+        This method is specifically for the database backend to avoid CASCADE DELETE issues.
+        The JSON backend doesn't need this because it doesn't have foreign key constraints.
+        
+        This method:
+        1. Updates the main job_posting record (preserves message tracking)
+        2. Differentially updates locations, terms, and degrees (only changes what's different)
+        3. Avoids deleting the job_posting itself (which would cascade delete message tracking)
+        
+        Performance benefits:
+        - No-op when no changes to related data
+        - Minimal database operations for small changes
+        - Preserves existing data that hasn't changed
+        
+        Args:
+            job: Job posting dictionary with all fields
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        job_id = job['id']
+        
+        try:
+            with self.database_backend.db_manager.session_scope() as session:
+                # Import the models we need
+                from .database import JobPosting, JobLocation, JobTerm, JobDegree
+                
+                # 1. Update the main job posting record (preserves message tracking)
+                job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
+                if not job_posting:
+                    logger.error(f"Job posting {job_id} not found for update")
+                    return False
+                
+                # Update all main fields
+                job_posting.date_updated = job['date_updated']
+                job_posting.url = job['url']
+                job_posting.company_name = job['company_name']
+                job_posting.title = job['title']
+                job_posting.sponsorship = job.get('sponsorship')
+                job_posting.active = job.get('active', True)
+                job_posting.source = job.get('source')
+                job_posting.date_posted = job.get('date_posted')
+                job_posting.company_url = job.get('company_url')
+                job_posting.is_visible = job.get('is_visible', True)
+                job_posting.category = job.get('category')
+                
+                # Flush the job posting update to ensure it's committed before updating related data
+                session.flush()
+                
+                # 2. Differential updates for related data (only change what's different)
+                
+                # Handle locations differentially
+                if 'locations' in job:
+                    existing_locations = {loc.location for loc in session.query(JobLocation).filter(JobLocation.id == job_id)}
+                    new_locations = set(job['locations']) if job['locations'] else set()
+                    
+                    # Remove locations that are no longer needed
+                    locations_to_remove = existing_locations - new_locations
+                    if locations_to_remove:
+                        session.query(JobLocation).filter(
+                            JobLocation.id == job_id,
+                            JobLocation.location.in_(locations_to_remove)
+                        ).delete(synchronize_session=False)
+                    
+                    # Add new locations (with duplicate protection)
+                    locations_to_add = new_locations - existing_locations
+                    for location in locations_to_add:
+                        try:
+                            # Check if this location already exists (race condition protection)
+                            existing_location = session.query(JobLocation).filter(
+                                JobLocation.id == job_id,
+                                JobLocation.location == location
+                            ).first()
+                            
+                            if not existing_location:
+                                session.add(JobLocation(id=uuid.UUID(job_id), location=location))
+                            else:
+                                logger.debug(f"Location '{location}' already exists for job {job_id}, skipping")
+                                
+                        except Exception as location_error:
+                            logger.error(f"Failed to add location '{location}' for job {job_id}: {location_error}")
+                            continue
+                
+                # Handle terms differentially
+                if 'terms' in job:
+                    existing_terms = {term.term for term in session.query(JobTerm).filter(JobTerm.id == job_id)}
+                    new_terms = set(job['terms']) if job['terms'] else set()
+                    
+                    # Remove terms that are no longer needed
+                    terms_to_remove = existing_terms - new_terms
+                    if terms_to_remove:
+                        session.query(JobTerm).filter(
+                            JobTerm.id == job_id,
+                            JobTerm.term.in_(terms_to_remove)
+                        ).delete(synchronize_session=False)
+                    
+                    # Add new terms (with duplicate protection)
+                    terms_to_add = new_terms - existing_terms
+                    for term in terms_to_add:
+                        try:
+                            # Check if this term already exists (race condition protection)
+                            existing_term = session.query(JobTerm).filter(
+                                JobTerm.id == job_id,
+                                JobTerm.term == term
+                            ).first()
+                            
+                            if not existing_term:
+                                session.add(JobTerm(id=uuid.UUID(job_id), term=term))
+                            else:
+                                logger.debug(f"Term '{term}' already exists for job {job_id}, skipping")
+                                
+                        except Exception as term_error:
+                            logger.error(f"Failed to add term '{term}' for job {job_id}: {term_error}")
+                            continue
+                
+                # Handle degrees differentially
+                if 'degrees' in job:
+                    existing_degrees = {deg.degree for deg in session.query(JobDegree).filter(JobDegree.id == job_id)}
+                    new_degrees = set(job['degrees']) if job['degrees'] else set()
+                    
+                    # Remove degrees that are no longer needed
+                    degrees_to_remove = existing_degrees - new_degrees
+                    if degrees_to_remove:
+                        session.query(JobDegree).filter(
+                            JobDegree.id == job_id,
+                            JobDegree.degree.in_(degrees_to_remove)
+                        ).delete(synchronize_session=False)
+                    
+                    # Add new degrees (with duplicate protection)
+                    degrees_to_add = new_degrees - existing_degrees
+                    for degree in degrees_to_add:
+                        try:
+                            # Double-check the job posting still exists before each insert
+                            job_still_exists = session.query(JobPosting).filter(JobPosting.id == job_id).first()
+                            if not job_still_exists:
+                                logger.error(f"Job posting {job_id} disappeared during degree update")
+                                return False
+                            
+                            # Check if this degree already exists (race condition protection)
+                            existing_degree = session.query(JobDegree).filter(
+                                JobDegree.id == job_id,
+                                JobDegree.degree == degree
+                            ).first()
+                            
+                            if not existing_degree:
+                                session.add(JobDegree(id=uuid.UUID(job_id), degree=degree))
+                            else:
+                                logger.debug(f"Degree '{degree}' already exists for job {job_id}, skipping")
+                                
+                        except Exception as degree_error:
+                            logger.error(f"Failed to add degree '{degree}' for job {job_id}: {degree_error}")
+                            # Continue with other degrees instead of failing the whole operation
+                            continue
+                
+                # Commit all changes
+                session.commit()
+                logger.debug(f"Successfully updated job posting {job_id} with refresh")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to update job posting {job_id} with refresh: {e}")
+            return False

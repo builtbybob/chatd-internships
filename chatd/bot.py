@@ -9,6 +9,7 @@ import heapq
 from datetime import datetime
 from typing import Dict, List, Any, Set, Optional, Tuple
 
+import aiohttp
 import discord
 from discord.ext import commands
 import schedule
@@ -341,6 +342,15 @@ async def on_disconnect() -> None:
     Event handler for when the bot disconnects.
     """
     logger.info("Bot is disconnecting...")
+    
+    # Try to close any remaining HTTP sessions
+    try:
+        if hasattr(bot, 'http') and hasattr(bot.http, 'session'):
+            if not bot.http.session.closed:
+                await bot.http.session.close()
+                logger.debug("Discord HTTP session closed")
+    except Exception as e:
+        logger.debug(f"Note: HTTP session cleanup issue (non-critical): {e}")
 
 
 @bot.event
@@ -412,7 +422,35 @@ def run_bot() -> None:
         try:
             await bot.start(config.discord_token)
         finally:
-            await bot.close()
+            logger.info("Starting bot cleanup...")
+            
+            # Close the Discord bot
+            if not bot.is_closed():
+                await bot.close()
+            
+            # Give a moment for connections to close
+            await asyncio.sleep(0.5)
+            
+            # Close any remaining aiohttp sessions
+            try:
+                # Get the current event loop
+                loop = asyncio.get_event_loop()
+                
+                # Close all unclosed aiohttp connectors
+                for task in asyncio.all_tasks(loop):
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+                
+                # Force cleanup of any remaining aiohttp sessions
+                await asyncio.sleep(0.1)
+                
+                logger.info("Bot cleanup completed")
+            except Exception as cleanup_error:
+                logger.warning(f"Error during session cleanup: {cleanup_error}")
     
     try:
         asyncio.run(run_with_cleanup())
