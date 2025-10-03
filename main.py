@@ -8,9 +8,22 @@ This script initializes the bot and runs it.
 import sys
 import signal
 import logging
+import os
 
+from chatd.logging_utils import setup_logging, setup_signal_handlers
+
+# Set up logging first, before importing other modules that use logging
+# Get log level and file from environment, with fallbacks
+log_level = os.getenv('LOG_LEVEL', 'INFO')
+log_file = os.getenv('LOG_FILE', '/app/logs/chatd.log')
+
+setup_logging(
+    log_level=log_level,
+    log_file=log_file
+)
+
+# Now import config and other modules after logging is set up
 from chatd.config import config, validate_config
-from chatd.logging_utils import setup_signal_handlers
 from chatd.bot import run_bot
 
 # Initialize logger

@@ -345,7 +345,7 @@ echo "🐳 Using docker-compose.yml in $WORK_DIR"
 
 # Stop any existing containers
 echo "🛑 Stopping existing containers..."
-docker-compose down --remove-orphans 2>/dev/null || true
+docker-compose down --remove-orphans || echo "   (No containers were running)"
 
 # Start services with docker-compose
 echo "🚀 Starting services with docker-compose..."
@@ -495,7 +495,7 @@ echo "🐳 Using docker-compose.yml in $(pwd)"
 
 # Stop any existing containers
 echo "🛑 Stopping existing containers..."
-docker-compose down --remove-orphans 2>/dev/null || true
+docker-compose down --remove-orphans || echo "   (No containers were running)"
 
 # Start services with docker-compose
 echo "� Starting services with docker-compose..."
