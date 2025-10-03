@@ -64,7 +64,10 @@ def setup_logging(log_level: str = 'INFO', log_file: Optional[str] = None,
         root_logger.removeHandler(handler)
     
     # Create formatter
-    formatter = logging.Formatter('[%(asctime)s] [%(levelname)-7s] %(name)s: %(message)s')
+    formatter = logging.Formatter(
+        '[%(asctime)s %(levelname)s %(name)s:%(lineno)d] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     
     # Always add console handler
     console_handler = logging.StreamHandler()
