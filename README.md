@@ -91,45 +91,66 @@ The database backend uses **surgical precision** for updates, avoiding expensive
 #### Adding New Jobs
 When a new job posting arrives:
 ```
-Input: New job with 3 locations, 2 terms
+Input: New job with 3 locations, 2 terms, 1 degree
 Database Operations:
-- 1 INSERT into job_postings table
-- 3 INSERTs into job_locations table  
-- 2 INSERTs into job_terms table
-Total: 6 targeted INSERT operations
+- 1 INSERT into job_posting table
+- 3 INSERTs into job_location table  
+- 2 INSERTs into job_term table
+- 1 INSERT into job_degree table
+- 1 INSERT into message_tracking table (when posted to Discord)
+Total: 8 targeted INSERT operations
 ```
 
-#### Updating Existing Jobs
-When job data changes (e.g., `active: true → false`):
+#### Updating Existing Jobs - Scalar Field Changes
+When only scalar fields change (e.g., `active: true → false`, `sponsorship` updated):
 ```
-Input: Job field update
+Input: Job scalar field update (active, sponsorship, is_visible, etc.)
 Database Operations:
-- 1 SELECT to find existing record
-- 1 UPDATE for changed fields only
-- Locations/terms only touched if they changed
-Total: 2-5 operations depending on what changed
+- 1 SELECT to find existing job_posting record
+- 1 UPDATE for changed scalar fields only (optimized single query)
+- Related tables (locations/terms/degrees) untouched
+- Message tracking preserved (no Discord repost)
+Total: 2 operations for scalar-only changes
 ```
 
-**Example - Field + Location Update:**
+#### Full Content Refresh - date_updated Changes  
+When `date_updated` changes (indicating content refresh from upstream):
 ```
-Input: date_updated changed + locations reduced from 3 to 2
+Input: Job with date_updated change + potential location/term/degree changes
 Database Operations:
-- 1 SELECT (find job)
-- 1 UPDATE (date_updated field) 
-- 1 DELETE (old locations for this job)
-- 2 INSERTs (new locations)
-Total: 5 operations for this one job
+- 1 SELECT to find existing job_posting record
+- 1 UPDATE for all scalar fields (complete refresh)
+- 1 SELECT to get existing locations/terms/degrees for comparison
+- N DELETE operations for removed locations/terms/degrees (differential)
+- M INSERT operations for new locations/terms/degrees (differential)
+- Message tracking preserved (no Discord repost due to content accuracy)
+Total: 3+ operations using differential updates to minimize database impact
+```
+
+**Example - Differential Content Refresh:**
+```
+Input: date_updated changed + locations changed from ["NYC", "SF", "LA"] to ["NYC", "Boston"]
+Database Operations:
+- 1 SELECT (find existing job_posting)
+- 1 UPDATE (all scalar fields including date_updated)
+- 1 SELECT (get existing locations: NYC, SF, LA)
+- 2 DELETE operations (remove "SF" and "LA" - differential logic)
+- 1 INSERT operation (add "Boston" - differential logic)
+- "NYC" untouched (efficiency optimization)
+Total: 6 operations using smart differential updates
 ```
 
 #### Removing Jobs
-When a job posting is deleted:
+When a job posting is deleted from upstream:
 ```
-Input: Job removal
+Input: Job removal from repository
 Database Operations:
-- 1 DELETE from job_locations (cascades)
-- 1 DELETE from job_terms (cascades)  
-- 1 DELETE from job_postings
-Total: 3 targeted DELETE operations
+- 1 DELETE from job_posting (CASCADE handles related tables)
+  - Automatically removes job_location entries
+  - Automatically removes job_term entries
+  - Automatically removes job_degree entries
+  - Automatically removes message_tracking entries
+Total: 1 DELETE with CASCADE cleanup
 ```
 
 ### Performance Benefits
@@ -137,14 +158,25 @@ Total: 3 targeted DELETE operations
 **Old Approach (Inefficient):**
 - Any change → Delete ALL jobs → Re-insert ALL jobs
 - 1 new job = 1000+ DELETE + 1000+ INSERT operations
+- No change detection = Full database rebuild every update
 
-**New Approach (Efficient):**
-- Surgical updates targeting only changed data
-- 1 new job = 6 INSERT operations
-- 1 job update = 2-5 operations  
-- 1 job removal = 3 DELETE operations
+**New Approach (Intelligent Updates):**
+- **Scalar Updates**: Only changed fields updated (active, sponsorship, etc.)
+  - 1 scalar change = 2 operations (SELECT + UPDATE)
+- **Content Refresh**: Differential updates when `date_updated` changes
+  - 1 content refresh = 3-10 operations depending on data differences
+  - **Differential Logic**: Only touches data that actually changed
+  - **Preserved Data**: Existing locations/terms/degrees left untouched when unchanged
+- **New Additions**: Surgical insertion of only new job postings
+  - 1 new job = 8 operations (1 job + locations + terms + degrees + tracking)
+- **Deletions**: Single CASCADE delete removes all related data
+  - 1 job removal = 1 DELETE operation
 
-This eliminates duplicate key violations and provides massive performance improvements.
+**Performance Gains:**
+- **99% fewer operations** for typical scalar updates (active status changes)
+- **Differential efficiency** for content corrections (only updates changed data)
+- **Preserved message tracking** eliminates duplicate Discord posts  
+- **Smart change detection** prevents unnecessary database writes
 
 ## 🔍 Database Operations & Spot Checking
 

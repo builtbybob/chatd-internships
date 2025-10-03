@@ -35,6 +35,8 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 
 **Files modified**: `chatd/logging_utils.py`, `scripts/create-management-scripts.sh`
 
+---
+
 ### 2. Optimize Docker Build Performance ✅ **COMPLETED**
 **Goal**: Separate build and run phases to eliminate slow startup times
 
@@ -69,6 +71,8 @@ This document tracks planned improvements and enhancements for the ChatD Interns
 - **Enhanced tooling**: User-agnostic build process with CHATD_BRANCH support
 
 **Files modified**: `chatd-internships.service`, `scripts/create-management-scripts.sh`
+
+---
 
 ### 3. Docker Image Auto-Pruning ✅ **COMPLETED**
 **Goal**: Automatically clean up old Docker images to prevent disk space issues
@@ -148,6 +152,8 @@ sudo chatd disk --alert              # Check if cleanup needed
 
 **Files Modified**: `scripts/create-management-scripts.sh`
 
+---
+
 ### 4. Asynchronous Message Reactions
 **Goal**: Improve reaction performance through async processing
 
@@ -169,6 +175,8 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [ ] `REACTION_RETRY_COUNT=3`
 
 **Files to modify**: `chatd/bot.py`, `chatd/config.py`
+
+---
 
 ## 🎯 Feature Enhancements
 
@@ -198,6 +206,8 @@ sudo chatd disk --alert              # Check if cleanup needed
 
 **Files to modify**: `chatd/bot.py`, `chatd/messages.py`, `chatd/config.py`
 
+---
+
 ### 6. Configurable Date Filtering ✅ **COMPLETED**
 **Goal**: Make "too old" threshold configurable instead of hardcoded
 
@@ -226,6 +236,8 @@ sudo chatd disk --alert              # Check if cleanup needed
 - **Enhanced logging**: Shows configured max age in debug output
 
 **Files modified**: `chatd/config.py`, `chatd/bot.py`, `.env.example`
+
+---
 
 ## 🔍 Data Quality & Performance
 
@@ -271,6 +283,8 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 - **Future-proof**: ID-based system scales with listings.json growth
 
 **Files modified**: `chatd/repo.py`, `chatd/bot.py`, `scripts/migrate-to-id-keys.py`
+
+---
 
 ### 8. Efficient Delta Processing ⚡ **(Partially Implemented - Storage Abstraction)**
 **Goal**: Process only changes instead of full file comparison
@@ -320,6 +334,8 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 
 **Files to modify**: `chatd/repo.py`, `chatd/storage_abstraction.py`, `chatd/bot.py`
 
+---
+
 ### 9. Role Status Management
 **Goal**: Handle role deactivations and visibility changes
 
@@ -350,6 +366,8 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
   - [ ] Error handling for messages that can't be modified
 
 **Files to modify**: `chatd/storage.py`, `chatd/bot.py`, `chatd/messages.py`, `chatd/config.py`
+
+---
 
 ### 10. Database Implementation (PostgreSQL + Docker) 🗄️ **(High Priority)**
 **Goal**: Replace JSON file storage with PostgreSQL database for improved data management, querying, and scalability
@@ -695,6 +713,8 @@ sudo chatd restart
 - `scripts/create-management-scripts.sh` (database management commands)
 - `Dockerfile` (database connectivity and initialization)
 
+---
+
 ### 11. Enhanced Monitoring & Observability
 **Goal**: Better visibility into bot performance and health
 
@@ -723,6 +743,8 @@ sudo chatd restart
   - [ ] Error rate tracking
 
 **Files to modify**: `chatd/bot.py`, `chatd/config.py`, `main.py`, `requirements.txt`
+
+---
 
 ### 12. Configuration Validation & Safety ✅ **COMPLETED**
 **Goal**: Prevent misconfigurations and provide better error messages
@@ -771,6 +793,8 @@ sudo chatd restart
 
 **Files modified**: `chatd/config.py`, `main.py`
 
+---
+
 ### 13. Backup & Recovery System 🎯 **(Stretch Goal)**
 **Goal**: Automated backup and disaster recovery procedures
 
@@ -795,6 +819,8 @@ sudo chatd restart
   - [ ] Backup retention policies
 
 **Files to modify**: `scripts/chatd-backup`, `chatd/config.py`, `scripts/recovery.sh`
+
+---
 
 ### 14. Multi-Environment Support 🎯 **(Requires Larger Disk)**
 **Goal**: Support for development, staging, and production environments
@@ -947,6 +973,8 @@ sudo chatd env promote staging prod    # Promote staging to prod
 - `chatd-internships.service` (production-specific service)
 - `Dockerfile` (environment-aware builds)
 
+---
+
 ### 15. Enhanced Test Simulation Framework 🧪 **(Depends on Multi-Environment)**
 **Goal**: Migrate and enhance existing test simulation script for multi-environment support
 
@@ -1080,6 +1108,8 @@ git reset --hard "$RESET_TARGET"
 
 **Files to modify**:
 - `setup_test_update.sh` (mark as deprecated, reference new script)
+
+---
 
 ### 16. Monitoring Dashboard & Alerting System 📊 **(High Priority)**
 **Goal**: Comprehensive monitoring dashboard with real-time metrics, alerts, and historical analytics
@@ -1297,6 +1327,7 @@ start_http_server(8000)  # Metrics available at http://localhost:8000/metrics
 - `Dockerfile` (expose metrics port)
 - `README.md` (monitoring setup documentation)
 
+---
 
 ### 17. Discord Message Update Integration
 **Goal**: Update previously sent Discord messages based on database changes to job postings
@@ -1396,6 +1427,91 @@ UPDATE_FOOTER_FORMAT="Updated on {date}"  # Customizable update footer text
 **Files to modify**: `chatd/bot.py`, `chatd/messages.py`, `chatd/storage_abstraction.py`, `chatd/config.py`
 **Files to create**: `tests/test_message_updates.py`
 
+---
+
+### 18. PostgreSQL MERGE Implementation for Refresh Operations 🔄 **(High Priority Performance)**
+**Goal**: Replace manual differential logic with PostgreSQL MERGE/UPSERT for atomic refresh operations
+
+**Current Issue**: Content refresh uses individual SELECT, DELETE, and INSERT operations in Python
+**Target**: Single atomic SQL MERGE operation for efficiency and consistency
+
+**Benefits**:
+- **Performance**: Single database round-trip instead of multiple operations
+- **Atomicity**: All-or-nothing updates with proper transaction isolation
+- **Simplicity**: Eliminate complex differential logic in Python code
+- **Reliability**: Database-level conflict resolution and duplicate handling
+- **Standards**: Use SQL standard MERGE functionality for upsert patterns
+
+**Current Approach** (Manual Differential):
+```python
+# Multiple operations with race condition potential
+existing_locations = {loc.location for loc in session.query(JobLocation).filter(...)}
+new_locations = set(job['locations'])
+locations_to_remove = existing_locations - new_locations
+locations_to_add = new_locations - existing_locations
+# Multiple DELETE and INSERT operations...
+```
+
+**Target Approach** (PostgreSQL MERGE):
+```sql
+-- Single atomic operation
+WITH new_locations(id, location) AS (
+    VALUES 
+    ('job-uuid-1', 'San Francisco, CA'),
+    ('job-uuid-1', 'New York, NY')
+)
+MERGE INTO job_location AS target
+USING new_locations AS source ON (target.id = source.id)
+WHEN MATCHED AND target.location NOT IN (SELECT location FROM new_locations WHERE id = source.id) 
+    THEN DELETE
+WHEN NOT MATCHED THEN 
+    INSERT (id, location) VALUES (source.id, source.location);
+```
+
+**Implementation Plan**:
+- [ ] **18.1** Research PostgreSQL MERGE syntax for relationship tables
+  - [ ] Study MERGE operations for job_location, job_term, job_degree tables
+  - [ ] Design MERGE queries for add/update/remove scenarios
+  - [ ] Handle edge cases (empty arrays, NULL values, constraint violations)
+  - [ ] Test MERGE performance vs current differential approach
+- [ ] **18.2** Implement MERGE-based refresh methods
+  - [ ] Create `merge_job_locations()`, `merge_job_terms()`, `merge_job_degrees()` methods
+  - [ ] Replace differential logic in `update_job_posting_with_refresh()`
+  - [ ] Use SQLAlchemy text() for raw SQL MERGE operations
+  - [ ] Add proper error handling and transaction management
+- [ ] **18.3** Performance benchmarking and validation
+  - [ ] Compare MERGE performance vs differential updates
+  - [ ] Test with various data sizes (1 job, 100 jobs, 1000 jobs)
+  - [ ] Validate data consistency and integrity with MERGE operations
+  - [ ] Measure database lock time and concurrent access impact
+- [ ] **18.4** Comprehensive testing
+  - [ ] Unit tests for all MERGE scenarios (add, update, remove)
+  - [ ] Integration tests with real database operations
+  - [ ] Edge case testing (empty data, constraint violations)
+  - [ ] Performance regression testing
+- [ ] **18.5** Documentation and deployment
+  - [ ] Update README.md to reflect MERGE-based approach
+  - [ ] Document performance improvements and benefits
+  - [ ] Create migration guide for teams using the codebase
+  - [ ] Add configuration option to toggle between MERGE and differential modes
+
+**Technical Implementation Notes**:
+- **PostgreSQL Version**: Requires PostgreSQL 15+ (already deployed)
+- **SQLAlchemy Integration**: Use `session.execute(text(merge_sql))` for raw SQL
+- **Transaction Safety**: Ensure proper transaction boundaries around MERGE operations
+- **Error Handling**: Graceful fallback to differential mode on MERGE failures
+
+**Expected Performance Gains**:
+- **Reduced Latency**: Single operation vs 3-10 operations per job refresh
+- **Better Concurrency**: Database-level locking instead of application-level logic
+- **Simplified Code**: Remove ~50 lines of complex differential logic
+- **Atomic Updates**: Eliminate race conditions during refresh operations
+
+**Files to modify**: `chatd/storage_abstraction.py`, `chatd/database.py`
+**Files to create**: `tests/test_merge_operations.py`
+
+---
+
 ## 📋 Implementation Notes
 
 ### Development Workflow
@@ -1457,6 +1573,8 @@ sudo chatd-loglevel critical  # Critical failures only
 
 **Files Modified**: `chatd/logging_utils.py`, `scripts/create-management-scripts.sh`
 
+---
+
 ### **Configurable Date Filtering** *(September 21, 2025)*
 **Problem**: Hardcoded 5-day role filtering preventing flexible deployment configurations
 - No way to adjust filtering without code changes
@@ -1477,6 +1595,8 @@ sudo chatd-loglevel critical  # Critical failures only
 
 **Files Modified**: `chatd/config.py`, `chatd/bot.py`, `.env.example`
 
+---
+
 ### **Docker Build Performance Optimization** *(September 21, 2025)*
 **Problem**: Slow deployments due to Docker rebuilding on every service restart
 - `systemctl start` triggered full Docker rebuild (~4+ minutes)
@@ -1495,6 +1615,8 @@ sudo chatd-loglevel critical  # Critical failures only
 - [x] Clear separation of concerns (build vs deploy)
 
 **Files Modified**: `chatd-internships.service`, `scripts/create-management-scripts.sh`
+
+---
 
 ### **ID-Based Role Tracking Implementation** *(September 24, 2025)*
 **Problem**: Complex composite key matching system caused reliability issues
@@ -1524,6 +1646,8 @@ sudo chatd-loglevel critical  # Critical failures only
 ```
 
 **Files Modified**: `chatd/repo.py`, `chatd/bot.py`, `scripts/migrate-to-id-keys.py`, `scripts/create-management-scripts.sh`
+
+---
 
 ### **PostgreSQL Database Implementation** *(October 3, 2025)*
 **Problem**: Legacy JSON file storage system limiting scalability and reliability
@@ -1626,3 +1750,5 @@ CREATE INDEX idx_job_posting_date_updated ON job_posting(date_updated);
 - Monitoring Dashboard & Alerting System (requires ~3-5GB additional space for monitoring stack)
 
 *Last Updated: October 3, 2025*
+
+---
