@@ -4,10 +4,56 @@ Tests for Discord bot operations.
 
 import asyncio
 import os
+import time
 import unittest
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 import discord
 from discord.ext import commands
+
+# Mock storage initialization at module level to prevent file system operations
+# This must happen before importing bot module
+import sys
+from pathlib import Path
+
+# Create a comprehensive mock for JsonStorageBackend that doesn't create directories
+class MockJsonStorageBackend:
+    def __init__(self, *args, **kwargs):
+        pass  # Don't create any directories or files
+
+# Create a comprehensive mock for DataStorage 
+class MockDataStorage:
+    def __init__(self, *args, **kwargs):
+        pass  # Don't create any backends
+
+# Patch the classes at the module level before any imports
+original_JsonStorageBackend = None
+original_DataStorage = None
+
+def setup_storage_mocks():
+    global original_JsonStorageBackend, original_DataStorage
+    if 'chatd.storage_abstraction' in sys.modules:
+        storage_module = sys.modules['chatd.storage_abstraction']
+        original_JsonStorageBackend = getattr(storage_module, 'JsonStorageBackend', None)
+        original_DataStorage = getattr(storage_module, 'DataStorage', None)
+        storage_module.JsonStorageBackend = MockJsonStorageBackend
+        storage_module.DataStorage = MockDataStorage
+    else:
+        # Patch before import
+        import chatd.storage_abstraction
+        original_JsonStorageBackend = chatd.storage_abstraction.JsonStorageBackend
+        original_DataStorage = chatd.storage_abstraction.DataStorage
+        chatd.storage_abstraction.JsonStorageBackend = MockJsonStorageBackend
+        chatd.storage_abstraction.DataStorage = MockDataStorage
+
+def teardown_storage_mocks():
+    global original_JsonStorageBackend, original_DataStorage
+    if 'chatd.storage_abstraction' in sys.modules and original_JsonStorageBackend and original_DataStorage:
+        storage_module = sys.modules['chatd.storage_abstraction']
+        storage_module.JsonStorageBackend = original_JsonStorageBackend
+        storage_module.DataStorage = original_DataStorage
+
+# Apply the mocks immediately
+setup_storage_mocks()
 
 
 class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
@@ -19,13 +65,20 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         self.env_patcher = patch.dict(os.environ, {
             'DISCORD_TOKEN': 'test-token',
             'CHANNEL_IDS': '123456789,987654321',
-            'ENABLE_REACTIONS': 'false'
+            'ENABLE_REACTIONS': 'false',
+            'MIGRATION_MODE': 'json_only',  # Add this to avoid database initialization
+            'DATA_FILE': '/tmp/test_data.json',
+            'MESSAGES_FILE': '/tmp/test_messages.json'
         })
         self.env_patcher.start()
         
         # Reset config singleton
         from chatd.config import Config
         Config._instance = None
+        
+        # Mock the get_storage function to avoid file system operations
+        self.storage_patcher = patch('chatd.bot.get_storage')
+        self.storage_patcher.start()
         
         # Clear global bot state
         from chatd import bot
@@ -37,6 +90,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         """Clean up after tests."""
         self.env_patcher.stop()
+        self.storage_patcher.stop()
         from chatd.config import Config
         Config._instance = None
         
@@ -44,6 +98,43 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         from chatd import bot
         bot.failed_channels.clear()
         bot.channel_failure_counts.clear()
+    
+    async def test_http_session_cleanup(self):
+        """Test HTTP session cleanup functionality."""
+        from chatd.bot import on_disconnect
+        import aiohttp
+        
+        # Test the on_disconnect event handler directly
+        # This tests our HTTP session cleanup implementation
+        with patch('chatd.bot.bot') as mock_bot:
+            # Mock the bot's HTTP session
+            mock_session = AsyncMock(spec=aiohttp.ClientSession)
+            mock_session.closed = False
+            mock_bot.http.session = mock_session
+            
+            # Test cleanup
+            await on_disconnect()
+            
+            # Verify session close was called
+            mock_session.close.assert_called_once()
+        
+        # Test with no HTTP session (should not error)
+        with patch('chatd.bot.bot') as mock_bot:
+            mock_bot.http = None
+            
+            # Should not raise exception
+            await on_disconnect()
+            
+        # Test with already closed session
+        with patch('chatd.bot.bot') as mock_bot:
+            mock_session = AsyncMock(spec=aiohttp.ClientSession)
+            mock_session.closed = True
+            mock_bot.http.session = mock_session
+            
+            await on_disconnect()
+            
+            # Should not call close on already closed session
+            mock_session.close.assert_not_called()
     
     async def test_send_message_success(self):
         """Test successful message sending."""
@@ -56,23 +147,25 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         mock_channel.send.return_value = mock_message
         
         with patch('chatd.bot.bot') as mock_bot, \
-             patch('chatd.bot.config') as mock_config:
+             patch('chatd.bot.config') as mock_config, \
+             patch('chatd.bot.get_storage') as mock_get_storage:
             
             mock_bot.get_channel.return_value = mock_channel
             mock_config.enable_reactions = False
             
             # Mock storage
-            with patch('chatd.bot.get_storage') as mock_get_storage:
-                mock_storage = MagicMock()
-                mock_storage.save_message_info.return_value = True
-                mock_get_storage.return_value = mock_storage
-                
-                result = await send_message('Test message', '123456789', self.sample_role_key)
-                
-                self.assertIsNotNone(result)
-                self.assertEqual(result.id, 12345)
-                mock_channel.send.assert_called_once_with('Test message')
-                mock_storage.save_message_info.assert_called_once()
+            mock_storage = Mock()
+            mock_storage.add_message_tracking.return_value = True
+            mock_get_storage.return_value = mock_storage
+            
+            result = await send_message('Test message', '123456789', self.sample_role_key)
+            
+            self.assertIsNotNone(result)
+            self.assertEqual(result.id, 12345)
+            mock_channel.send.assert_called_once_with('Test message')
+            mock_storage.add_message_tracking.assert_called_once_with(
+                self.sample_role_key, '12345', '123456789'
+            )
     
     async def test_send_message_channel_not_found(self):
         """Test message sending when channel is not found."""
@@ -138,23 +231,26 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             return None
         
         with patch('chatd.bot.bot') as mock_bot, \
-             patch('chatd.bot.config') as mock_config:
+             patch('chatd.bot.config') as mock_config, \
+             patch('chatd.bot.get_storage') as mock_get_storage:
             
             mock_config.channel_ids = ['123456789', '987654321']
             mock_config.enable_reactions = False
             mock_bot.get_channel.side_effect = get_channel_side_effect
             
             # Mock storage
-            with patch('chatd.bot.get_storage') as mock_get_storage:
-                mock_storage = MagicMock()
-                mock_storage.save_message_info.return_value = True
-                mock_get_storage.return_value = mock_storage
-                
-                results = await send_messages_to_channels('Test message', self.sample_role_key)
-                
-                self.assertEqual(len(results), 2)
-                mock_channel1.send.assert_called_once()
-                mock_channel2.send.assert_called_once()
+            mock_storage = Mock()
+            mock_storage.add_message_tracking.return_value = True
+            mock_get_storage.return_value = mock_storage
+            mock_storage.add_message_tracking.return_value = True
+            
+            results = await send_messages_to_channels('Test message', self.sample_role_key)
+            
+            self.assertEqual(len(results), 2)
+            mock_channel1.send.assert_called_once()
+            mock_channel2.send.assert_called_once()
+            # Should be called twice (once for each channel)
+            self.assertEqual(mock_storage.add_message_tracking.call_count, 2)
     
     @patch.dict(os.environ, {
         'DISCORD_TOKEN': 'test-token',
@@ -230,14 +326,18 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         """Test retrieving role data by message ID."""
         from chatd.bot import get_role_data_by_message_id
         
-        # Mock storage with message data
-        mock_messages = [
-            {'message_id': '12345', 'channel_id': '123456789', 'role_key': 'test_role'}
-        ]
+        # Mock message tracking data (new DataStorage format)
+        mock_message_tracking = {
+            'test_role_id': {
+                'message_id': '12345',
+                'channel_id': '123456789',
+                'posted_at': 1234567890
+            }
+        }
         
         mock_roles = [
             {
-                'id': 'test_role',
+                'id': 'test_role_id',
                 'company_name': 'Test Company',
                 'title': 'Software Engineer',
                 'url': 'https://example.com'
@@ -245,8 +345,8 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         ]
         
         with patch('chatd.bot.get_storage') as mock_get_storage:
-            mock_storage = MagicMock()
-            mock_storage.get_messages_for_role.return_value = mock_messages
+            mock_storage = Mock()
+            mock_storage.get_message_tracking.return_value = mock_message_tracking
             mock_get_storage.return_value = mock_storage
             
             with patch('chatd.bot.read_json', return_value=mock_roles):
@@ -254,6 +354,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
                 
                 self.assertIsNotNone(result)
                 self.assertEqual(result['company_name'], 'Test Company')
+                self.assertEqual(result['id'], 'test_role_id')
     
     async def test_send_dm_with_job_info(self):
         """Test sending DM with job information."""
@@ -277,6 +378,139 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         call_args = mock_user.send.call_args[0][0]
         self.assertIn('Test Company', call_args)
         self.assertIn('Software Engineer', call_args)
+    
+    async def test_check_for_new_roles(self):
+        """Test checking for new roles with DataStorage and new update support."""
+        from chatd.bot import check_for_new_roles
+        
+        # Use a recent timestamp for testing (current time - 1 day)
+        current_time = int(time.time())
+        one_day_ago = current_time - (24 * 60 * 60)
+        
+        # Mock new data (what's fetched from repo)
+        new_data = [
+            {
+                'id': 'existing_role_id',  # This should be detected as no change
+                'company_name': 'Existing Company',
+                'title': 'Existing Role',
+                'date_posted': one_day_ago,
+                'active': True,
+                'is_visible': True
+            },
+            {
+                'id': 'new_role_id',  # This should be processed as new
+                'company_name': 'New Company',
+                'title': 'New Role',
+                'date_posted': one_day_ago,  # Within the 5-day limit
+                'date_updated': current_time,
+                'active': True,  # Make sure it's active
+                'is_visible': True  # Make sure it's visible
+            }
+        ]
+        
+        # Mock the change processing results that now include changes_for_discord
+        mock_changes = {
+            'added': [new_data[1]],  # Only the new role
+            'updated': [],
+            'removed': []
+        }
+        
+        mock_process_results = {
+            'added_count': 1,
+            'updated_count': 0,
+            'removed_count': 0,
+            'update_failures': [],
+            'success': True,
+            'changes_for_discord': mock_changes  # This is what the bot now uses
+        }
+        
+        with patch('chatd.bot.get_storage') as mock_get_storage, \
+             patch('chatd.bot.read_json', return_value=new_data), \
+             patch('chatd.bot.send_messages_to_channels') as mock_send_messages, \
+             patch('chatd.bot.clone_or_update_repo', return_value=True), \
+             patch('chatd.bot.config') as mock_config:
+            
+            # Configure mocks
+            mock_storage = Mock()
+            mock_storage.process_job_changes.return_value = mock_process_results
+            mock_get_storage.return_value = mock_storage
+            mock_config.max_post_age_days = 5
+            
+            await check_for_new_roles()
+            
+            # Verify new update support methods were called
+            mock_storage.process_job_changes.assert_called_once_with(new_data)
+            # Note: detect_job_changes is no longer called separately - it's part of process_job_changes
+            
+            # Verify message sending was called for new role
+            mock_send_messages.assert_called_once()
+            args = mock_send_messages.call_args[0]  # Get positional args
+            self.assertEqual(args[1], 'new_role_id')  # role_key should be the second argument
+    
+    async def test_storage_abstraction_integration(self):
+        """Test bot integration with new storage abstraction layer."""
+        # Temporarily stop the storage patcher for this test
+        self.storage_patcher.stop()
+        
+        try:
+            from chatd.bot import get_storage
+            
+            # Test storage initialization
+            with patch('chatd.bot.DataStorage') as mock_data_storage_class, \
+                 patch('chatd.bot.config') as mock_config:
+                
+                mock_config.migration_mode = 'dual_write'
+                mock_storage_instance = Mock()
+                mock_data_storage_class.return_value = mock_storage_instance
+                
+                # Clear any existing storage instance
+                from chatd import bot
+                bot._storage_instance = None
+                
+                # Test get_storage function
+                storage = get_storage()
+                
+                # Should return the same instance (singleton pattern)
+                storage2 = get_storage()
+                self.assertEqual(storage, storage2)
+                
+                # Verify DataStorage was initialized with config
+                mock_data_storage_class.assert_called_once_with(mock_config)
+        
+        finally:
+            # Restart the storage patcher
+            self.storage_patcher.start()
+    
+    async def test_migration_mode_compatibility(self):
+        """Test bot works with different migration modes."""
+        from chatd.bot import check_for_new_roles
+        
+        # Test with each migration mode
+        for mode in ['json_only', 'dual_write', 'database_only']:
+            with patch('chatd.bot.get_storage') as mock_get_storage, \
+                 patch('chatd.bot.read_json', return_value=[]), \
+                 patch('chatd.bot.clone_or_update_repo', return_value=True), \
+                 patch('chatd.bot.config') as mock_config:
+                
+                mock_config.migration_mode = mode
+                mock_config.max_post_age_days = 5
+                
+                mock_storage = Mock()
+                mock_storage.process_job_changes.return_value = {
+                    'added_count': 0,
+                    'updated_count': 0,
+                    'removed_count': 0,
+                    'update_failures': [],
+                    'success': True,
+                    'changes_for_discord': {'added': [], 'updated': [], 'removed': []}
+                }
+                mock_get_storage.return_value = mock_storage
+                
+                # Should not raise exception for any mode
+                await check_for_new_roles()
+                
+                # Verify process_job_changes was called
+                mock_storage.process_job_changes.assert_called_once()
 
 
 class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
@@ -287,12 +521,19 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
         self.env_patcher = patch.dict(os.environ, {
             'DISCORD_TOKEN': 'test-token',
             'CHANNEL_IDS': '123456789',
-            'ENABLE_REACTIONS': 'true'
+            'ENABLE_REACTIONS': 'true',
+            'MIGRATION_MODE': 'json_only',  # Add this to avoid database initialization
+            'DATA_FILE': '/tmp/test_data.json',
+            'MESSAGES_FILE': '/tmp/test_messages.json'
         })
         self.env_patcher.start()
         
         from chatd.config import Config
         Config._instance = None
+        
+        # Mock the get_storage function to avoid file system operations
+        self.storage_patcher = patch('chatd.bot.get_storage')
+        self.storage_patcher.start()
         
         # Clear global bot state
         from chatd import bot
@@ -302,6 +543,7 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         """Clean up after tests."""
         self.env_patcher.stop()
+        self.storage_patcher.stop()
         from chatd.config import Config
         Config._instance = None
         

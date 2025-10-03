@@ -17,6 +17,269 @@ from pathlib import Path
 import discord
 from discord.ext import commands
 
+# Mock storage initialization at module level to prevent file system operations
+# This must happen before importing bot module
+import sys
+
+# Create a comprehensive mock for JsonStorageBackend that doesn't create directories
+class MockJsonStorageBackend:
+    def __init__(self, *args, **kwargs):
+        self._job_postings = []
+        self._message_tracking = {}
+    
+    def get_job_postings(self):
+        return self._job_postings.copy()
+    
+    def save_job_postings(self, job_postings):
+        self._job_postings = job_postings.copy()
+        return True
+    
+    def get_message_tracking(self):
+        return self._message_tracking.copy()
+    
+    def save_message_tracking(self, message_tracking):
+        self._message_tracking = message_tracking.copy()
+        return True
+    
+    def get_job_posting_by_id(self, job_id):
+        for job in self._job_postings:
+            if job['id'] == job_id:
+                return job.copy()
+        return None
+    
+    def add_message_tracking(self, job_id, message_id, channel_id):
+        self._message_tracking[job_id] = {
+            'message_id': message_id,
+            'channel_id': channel_id
+        }
+        return True
+    
+    def health_check(self):
+        return True
+    
+    def detect_job_changes(self, current_jobs, previous_jobs):
+        # Create lookup dictionaries by job ID
+        current_by_id = {job['id']: job for job in current_jobs}
+        previous_by_id = {job['id']: job for job in previous_jobs}
+        
+        # Track changes
+        changes = {
+            'added': [],
+            'updated': [],
+            'removed': []
+        }
+        
+        # Find added jobs
+        for job_id, job in current_by_id.items():
+            if job_id not in previous_by_id:
+                changes['added'].append(job)
+        
+        # Find removed jobs
+        for job_id, job in previous_by_id.items():
+            if job_id not in current_by_id:
+                changes['removed'].append(job)
+        
+        # Find updated jobs (check all fields, not just key fields)
+        for job_id, current_job in current_by_id.items():
+            if job_id in previous_by_id:
+                previous_job = previous_by_id[job_id]
+                job_changes = {}
+                
+                # Check all fields for changes
+                all_keys = set(current_job.keys()) | set(previous_job.keys())
+                for field in all_keys:
+                    if current_job.get(field) != previous_job.get(field):
+                        job_changes[field] = {
+                            'old': previous_job.get(field),
+                            'new': current_job.get(field)
+                        }
+                
+                if job_changes:
+                    changes['updated'].append({
+                        'id': job_id,
+                        'job': current_job,
+                        'changes': job_changes
+                    })
+        
+        return changes
+    
+    def update_job_posting(self, job_id, updates):
+        for i, job in enumerate(self._job_postings):
+            if job['id'] == job_id:
+                self._job_postings[i].update(updates)
+                return True
+        return False
+
+# Create a comprehensive mock for DataStorage 
+class MockDataStorage:
+    def __init__(self, *args, **kwargs):
+        self._job_postings = []
+        self._message_tracking = {}
+    
+    def get_job_postings(self):
+        return self._job_postings.copy()
+    
+    def save_job_postings(self, job_postings):
+        self._job_postings = job_postings.copy()
+        return True
+    
+    def get_message_tracking(self):
+        return self._message_tracking.copy()
+    
+    def save_message_tracking(self, message_tracking):
+        self._message_tracking = message_tracking.copy()
+        return True
+    
+    def get_job_posting_by_id(self, job_id):
+        for job in self._job_postings:
+            if job['id'] == job_id:
+                return job.copy()
+        return None
+    
+    def add_message_tracking(self, job_id, message_id, channel_id):
+        self._message_tracking[job_id] = {
+            'message_id': message_id,
+            'channel_id': channel_id
+        }
+        return True
+    
+    def health_check(self):
+        return {'json': True, 'database': True}
+    
+    def get_backend_status(self):
+        return {'mode': 'json_only', 'backends': {'json': True}}
+    
+    def detect_job_changes(self, current_jobs):
+        # For DataStorage, we compare against stored jobs
+        previous_jobs = self._job_postings
+        
+        # Create lookup dictionaries by job ID
+        current_by_id = {job['id']: job for job in current_jobs}
+        previous_by_id = {job['id']: job for job in previous_jobs}
+        
+        # Track changes
+        changes = {
+            'added': [],
+            'removed': [],
+            'active_changed': [],
+            'visibility_changed': [],
+            'content_corrected': []
+        }
+        
+        # Find added jobs
+        for job_id, job in current_by_id.items():
+            if job_id not in previous_by_id:
+                changes['added'].append(job)
+        
+        # Find removed jobs
+        for job_id, job in previous_by_id.items():
+            if job_id not in current_by_id:
+                changes['removed'].append(job)
+        
+        # Find updated jobs
+        for job_id, current_job in current_by_id.items():
+            if job_id in previous_by_id:
+                previous_job = previous_by_id[job_id]
+                
+                # Check for active changes
+                if current_job.get('active') != previous_job.get('active'):
+                    changes['active_changed'].append({
+                        'id': job_id,
+                        'job': current_job,
+                        'old_active': previous_job.get('active'),
+                        'new_active': current_job.get('active')
+                    })
+                
+                # Check for visibility changes
+                if current_job.get('is_visible') != previous_job.get('is_visible'):
+                    changes['visibility_changed'].append({
+                        'id': job_id,
+                        'job': current_job,
+                        'old_visible': previous_job.get('is_visible'),
+                        'new_visible': current_job.get('is_visible')
+                    })
+                
+                # Check for content corrections
+                if current_job.get('date_updated', 0) > previous_job.get('date_updated', 0):
+                    changes['content_corrected'].append({
+                        'id': job_id,
+                        'job': current_job,
+                        'old_date': previous_job.get('date_updated'),
+                        'new_date': current_job.get('date_updated')
+                    })
+        
+        return changes
+    
+    def update_job_posting(self, job_id, updates):
+        for i, job in enumerate(self._job_postings):
+            if job['id'] == job_id:
+                self._job_postings[i].update(updates)
+                return True
+        return False
+    
+    def process_job_changes(self, current_jobs):
+        # Detect changes first
+        changes = self.detect_job_changes(current_jobs)
+        
+        # Calculate summary statistics
+        summary = {
+            'added': len(changes['added']),
+            'removed': len(changes['removed']),
+            'active_changed': len(changes['active_changed']),
+            'visibility_changed': len(changes['visibility_changed']),
+            'content_corrected': len(changes['content_corrected'])
+        }
+        
+        # Determine if changes need Discord notification
+        changes_for_discord = []
+        changes_for_discord.extend(changes['added'])
+        changes_for_discord.extend([c['job'] for c in changes['active_changed']])
+        changes_for_discord.extend([c['job'] for c in changes['visibility_changed']])
+        
+        # Save the new data
+        self.save_job_postings(current_jobs)
+        
+        return {
+            'changes_detected': bool(changes_for_discord),
+            'changes_for_discord': changes_for_discord,
+            'full_update_needed': len(changes_for_discord) > 10,
+            'summary': summary,
+            'added_count': summary['added'],
+            'removed_count': summary['removed'], 
+            'updated_count': summary['active_changed'] + summary['visibility_changed'] + summary['content_corrected'],
+            'success': True
+        }
+
+# Patch the classes at the module level before any imports
+original_JsonStorageBackend = None
+original_DataStorage = None
+
+def setup_storage_mocks():
+    global original_JsonStorageBackend, original_DataStorage
+    if 'chatd.storage_abstraction' in sys.modules:
+        storage_module = sys.modules['chatd.storage_abstraction']
+        original_JsonStorageBackend = getattr(storage_module, 'JsonStorageBackend', None)
+        original_DataStorage = getattr(storage_module, 'DataStorage', None)
+        storage_module.JsonStorageBackend = MockJsonStorageBackend
+        storage_module.DataStorage = MockDataStorage
+    else:
+        # Patch before import
+        import chatd.storage_abstraction
+        original_JsonStorageBackend = chatd.storage_abstraction.JsonStorageBackend
+        original_DataStorage = chatd.storage_abstraction.DataStorage
+        chatd.storage_abstraction.JsonStorageBackend = MockJsonStorageBackend
+        chatd.storage_abstraction.DataStorage = MockDataStorage
+
+def teardown_storage_mocks():
+    global original_JsonStorageBackend, original_DataStorage
+    if 'chatd.storage_abstraction' in sys.modules and original_JsonStorageBackend and original_DataStorage:
+        storage_module = sys.modules['chatd.storage_abstraction']
+        storage_module.JsonStorageBackend = original_JsonStorageBackend
+        storage_module.DataStorage = original_DataStorage
+
+# Apply the mocks immediately
+setup_storage_mocks()
+
 
 class TestIntegration(unittest.TestCase):
     """Integration test cases for the bot modules."""
@@ -226,8 +489,8 @@ class TestAsyncIntegration(unittest.IsolatedAsyncioTestCase):
             
             # Mock storage
             with patch('chatd.bot.get_storage') as mock_get_storage:
-                mock_storage = MagicMock()
-                mock_storage.save_message_info.return_value = True
+                mock_storage = Mock()
+                mock_storage.add_message_tracking.return_value = True
                 mock_get_storage.return_value = mock_storage
                 
                 message = format_message(self.sample_role)

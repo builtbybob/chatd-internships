@@ -1,0 +1,70 @@
+version: '3.8'
+services:
+  chatd-postgres:
+    image: postgres:15-alpine
+    container_name: chatd-postgres
+    environment:
+      POSTGRES_DB: chatd
+      POSTGRES_USER: chatd
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-chatd_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Only expose port for development/debugging - remove in production
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatd -d chatd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - chatd-network
+
+  chatd-bot:
+    build: .
+    container_name: chatd-bot
+    environment:
+      # Load environment variables from the host or .env file
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - CHANNEL_IDS=${CHANNEL_IDS}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - MIGRATION_MODE=${MIGRATION_MODE:-dual_write}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENABLE_REACTIONS=${ENABLE_REACTIONS:-false}
+      - MAX_POST_AGE_DAYS=${MAX_POST_AGE_DAYS:-3}
+      - CHECK_INTERVAL_MINUTES=${CHECK_INTERVAL_MINUTES:-1}
+      - MAX_RETRIES=${MAX_RETRIES:-3}
+      # Database configuration
+      - DB_HOST=chatd-postgres
+      - DB_PORT=5432
+      - DB_NAME=chatd
+      - DB_USER=chatd
+      - DB_TYPE=postgresql
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./Summer2026-Internships:/app/Summer2026-Internships
+    depends_on:
+      chatd-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - chatd-network
+    # Optional: add health check for the bot
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python3 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  chatd-network:
+    driver: bridge

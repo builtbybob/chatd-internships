@@ -41,12 +41,14 @@ def clone_or_update_repo() -> bool:
             try:
                 # Get new commit hash of the file
                 new_hash = repo.git.rev_parse('HEAD:' + os.path.relpath(config.json_file_path, config.local_repo_path))
+                # Get the current commit hash for logging
+                current_commit = repo.git.rev_parse('HEAD')[:8]  # Short hash (8 chars)
                 # Compare hashes to see if file changed
                 was_updated = old_hash != new_hash
                 if was_updated:
-                    logger.info("Repository pulled and listings file was updated.")
+                    logger.info(f"Repository pulled and listings file was updated. Current commit: {current_commit}")
                 else:
-                    logger.debug("Repository pulled but listings file unchanged.")
+                    logger.debug(f"Repository pulled but listings file unchanged. Current commit: {current_commit}")
                 return was_updated
             except git.exc.GitCommandError:
                 # If we can't get the new hash, assume file changed to be safe
@@ -63,7 +65,8 @@ def clone_or_update_repo() -> bool:
                 logger.warning(f"Could not remove invalid repository directory: {e}")
             
             repo = git.Repo.clone_from(config.repo_url, config.local_repo_path, kill_after_timeout=60)
-            logger.info("Repository cloned fresh.")
+            current_commit = repo.git.rev_parse('HEAD')[:8]  # Short hash (8 chars)
+            logger.info(f"Repository cloned fresh. Current commit: {current_commit}")
             return True
         except Exception as e:
             logger.error(f"Error updating repository: {e}")
@@ -71,7 +74,8 @@ def clone_or_update_repo() -> bool:
     else:
         logger.info("Repository not found locally, cloning...")
         repo = git.Repo.clone_from(config.repo_url, config.local_repo_path, kill_after_timeout=60)
-        logger.info("Repository cloned fresh.")
+        current_commit = repo.git.rev_parse('HEAD')[:8]  # Short hash (8 chars)
+        logger.info(f"Repository cloned fresh. Current commit: {current_commit}")
         return True
 
 

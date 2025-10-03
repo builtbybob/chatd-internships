@@ -32,6 +32,18 @@ DEFAULT_CONFIG = {
     'ENABLE_REACTIONS': 'false',
     'MAX_POST_AGE_DAYS': '5',
     'TIMEZONE': '',  # Default to system timezone
+    # Database configuration
+    'DB_TYPE': 'postgresql',  # postgresql or sqlite (fallback)
+    'DB_HOST': 'chatd-postgres',  # Docker service name or hostname
+    'DB_PORT': '5432',  # Database port
+    'DB_NAME': 'chatd',  # Database name
+    'DB_USER': 'chatd',  # Database username
+    'MIGRATION_MODE': 'json_only',  # json_only|dual_write|database_only
+    'DB_CONNECTION_POOL_SIZE': '5',  # Connection pool size
+    'DB_AUTO_VACUUM': 'true',  # Enable automatic database maintenance
+    'DB_HEALTH_CHECK_INTERVAL': '300',  # Health check interval in seconds
+    'DB_MIGRATION_BATCH_SIZE': '100',  # Records to migrate per batch
+    'DB_BACKUP_RETENTION_DAYS': '30',  # Days to keep database backups
 }
 
 # Required configuration values that must be set
@@ -60,6 +72,12 @@ class Config:
         # Load environment variables from .env file
         load_dotenv()
         
+        # Debug: Check if load_dotenv found the file and loaded our values
+        print(f"DEBUG: After load_dotenv() - MIGRATION_MODE: {repr(os.getenv('MIGRATION_MODE'))}")
+        logger.info(f"🔍 After load_dotenv() - DB_PASSWORD: {'SET' if os.getenv('DB_PASSWORD') else 'NOT SET'}")
+        logger.info(f"🔍 After load_dotenv() - LOG_LEVEL: {repr(os.getenv('LOG_LEVEL'))}")
+        logger.info(f"🔍 After load_dotenv() - MIGRATION_MODE: {repr(os.getenv('MIGRATION_MODE'))}")
+        
         # Set default values, but don't let empty environment variables override defaults
         for key, default_value in DEFAULT_CONFIG.items():
             env_value = os.getenv(key)
@@ -86,15 +104,36 @@ class Config:
         self.max_retries = int(self.max_retries)
         self.check_interval_minutes = int(self.check_interval_minutes)
         self.max_post_age_days = int(self.max_post_age_days)
+        self.db_port = int(self.db_port)
+        self.db_connection_pool_size = int(self.db_connection_pool_size)
+        self.db_health_check_interval = int(self.db_health_check_interval)
+        self.db_migration_batch_size = int(self.db_migration_batch_size)
+        self.db_backup_retention_days = int(self.db_backup_retention_days)
         
         # Convert boolean values
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')
+        self.db_auto_vacuum = self.db_auto_vacuum.lower() in ('true', '1', 'yes', 'on')
         
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')
         
+        # Set database password (required for database connection)
+        self.db_password = os.getenv('DB_PASSWORD')
+        
         # Set timezone (empty string means use system default)
         self.timezone = os.getenv('TIMEZONE', '').strip()
+        
+        # Set migration mode (override default if specified)
+        migration_mode_env = os.getenv('MIGRATION_MODE')
+        print(f"DEBUG: MIGRATION_MODE environment variable: {repr(migration_mode_env)}")
+        logger.info(f"🔍 MIGRATION_MODE environment variable: {repr(migration_mode_env)}")
+        if migration_mode_env and migration_mode_env.strip():
+            self.migration_mode = migration_mode_env.strip().lower()
+            print(f"DEBUG: MIGRATION_MODE set from environment: {self.migration_mode}")
+            logger.info(f"🔍 MIGRATION_MODE set from environment: {self.migration_mode}")
+        else:
+            print(f"DEBUG: MIGRATION_MODE using default: {self.migration_mode}")
+            logger.info(f"🔍 MIGRATION_MODE using default: {self.migration_mode}")
         
         self._initialized = True
 
@@ -141,6 +180,11 @@ class Config:
         # Validate Discord connection (basic token test)
         if not self._validate_discord_connection():
             return False
+        
+        # Validate database configuration if not in json_only mode
+        if self.migration_mode != 'json_only':
+            if not self._validate_database_config():
+                return False
         
         logger.info("✅ Configuration validation passed.")
         return True
@@ -400,6 +444,35 @@ class Config:
         except Exception as e:
             logger.error(f"❌ Discord connection validation failed: {e}")
             return False
+
+    def _validate_database_config(self) -> bool:
+        """Validate database configuration when not in json_only mode."""
+        logger.info("🔍 Validating database configuration...")
+        
+        # Check required database configuration
+        if not self.db_password:
+            logger.error("❌ DB_PASSWORD is required for database connection")
+            logger.error("   Please set DB_PASSWORD in your environment variables")
+            return False
+        
+        # Validate migration mode
+        valid_modes = ['json_only', 'dual_write', 'database_only']
+        if self.migration_mode not in valid_modes:
+            logger.error(f"❌ MIGRATION_MODE must be one of: {', '.join(valid_modes)}")
+            logger.error(f"   Current value: {self.migration_mode}")
+            return False
+        
+        # Validate numeric database config
+        if not (1 <= self.db_connection_pool_size <= 20):
+            logger.error(f"❌ DB_CONNECTION_POOL_SIZE must be between 1 and 20. Got: {self.db_connection_pool_size}")
+            return False
+        
+        if not (10 <= self.db_migration_batch_size <= 1000):
+            logger.error(f"❌ DB_MIGRATION_BATCH_SIZE must be between 10 and 1000. Got: {self.db_migration_batch_size}")
+            return False
+        
+        logger.info("✅ Database configuration validation passed")
+        return True
 
 
 # Create a singleton instance
