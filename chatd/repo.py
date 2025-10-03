@@ -5,6 +5,7 @@ This module handles cloning, updating, and reading data from the GitHub reposito
 """
 
 import json
+import logging
 import os
 import shutil
 from typing import Dict, List, Any
@@ -12,10 +13,9 @@ from typing import Dict, List, Any
 import git
 
 from chatd.config import config
-from chatd.logging_utils import get_logger
 
 # Get logger
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 def clone_or_update_repo() -> bool:

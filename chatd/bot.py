@@ -6,6 +6,7 @@ This module handles Discord interactions and event handling.
 
 import asyncio
 import heapq
+import logging
 from datetime import datetime
 from typing import Dict, List, Any, Set, Optional, Tuple
 
@@ -15,13 +16,12 @@ from discord.ext import commands
 import schedule
 
 from chatd.config import config
-from chatd.logging_utils import get_logger
 from chatd.messages import format_message
 from chatd.repo import clone_or_update_repo, read_json
 from chatd.storage_abstraction import DataStorage
 
 # Get logger
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 # Storage will be initialized lazily to avoid import-time directory creation
 storage = None

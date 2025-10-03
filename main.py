@@ -7,13 +7,14 @@ This script initializes the bot and runs it.
 
 import sys
 import signal
+import logging
 
 from chatd.config import config, validate_config
-from chatd.logging_utils import get_logger, setup_signal_handlers
+from chatd.logging_utils import setup_signal_handlers
 from chatd.bot import run_bot
 
 # Initialize logger
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 def signal_handler(sig, frame):

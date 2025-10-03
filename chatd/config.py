@@ -16,7 +16,7 @@ import logging
 from dotenv import load_dotenv
 
 # Initialize logger (will be properly configured after logging_utils is imported)
-logger = logging.getLogger('chatd-internships')
+logger = logging.getLogger(__name__)
 
 # Default configuration values
 DEFAULT_CONFIG = {
@@ -72,8 +72,6 @@ class Config:
         # Load environment variables from .env file
         load_dotenv()
         
-        # Debug: Check if load_dotenv found the file and loaded our values
-        print(f"DEBUG: After load_dotenv() - MIGRATION_MODE: {repr(os.getenv('MIGRATION_MODE'))}")
         logger.info(f"🔍 After load_dotenv() - DB_PASSWORD: {'SET' if os.getenv('DB_PASSWORD') else 'NOT SET'}")
         logger.info(f"🔍 After load_dotenv() - LOG_LEVEL: {repr(os.getenv('LOG_LEVEL'))}")
         logger.info(f"🔍 After load_dotenv() - MIGRATION_MODE: {repr(os.getenv('MIGRATION_MODE'))}")
@@ -125,14 +123,11 @@ class Config:
         
         # Set migration mode (override default if specified)
         migration_mode_env = os.getenv('MIGRATION_MODE')
-        print(f"DEBUG: MIGRATION_MODE environment variable: {repr(migration_mode_env)}")
         logger.info(f"🔍 MIGRATION_MODE environment variable: {repr(migration_mode_env)}")
         if migration_mode_env and migration_mode_env.strip():
             self.migration_mode = migration_mode_env.strip().lower()
-            print(f"DEBUG: MIGRATION_MODE set from environment: {self.migration_mode}")
             logger.info(f"🔍 MIGRATION_MODE set from environment: {self.migration_mode}")
         else:
-            print(f"DEBUG: MIGRATION_MODE using default: {self.migration_mode}")
             logger.info(f"🔍 MIGRATION_MODE using default: {self.migration_mode}")
         
         self._initialized = True

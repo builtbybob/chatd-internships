@@ -4,6 +4,7 @@ Message formatting for the chatd-internships bot.
 This module handles formatting and comparing role data for Discord messages.
 """
 
+import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -17,10 +18,8 @@ except ImportError:
         # If no timezone support available, we'll use a simple offset
         ZoneInfo = None
 
-from chatd.logging_utils import get_logger
-
 # Get logger
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 
 def format_epoch(val: float) -> str:
