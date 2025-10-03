@@ -43,10 +43,15 @@ services:
       - DB_NAME=chatd
       - DB_USER=chatd
       - DB_TYPE=postgresql
+      # Timezone configuration - uses host machine timezone
+      - TZ=${TZ:-UTC}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./Summer2026-Internships:/app/Summer2026-Internships
+      # Mount timezone data for proper local time
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       chatd-postgres:
         condition: service_healthy
