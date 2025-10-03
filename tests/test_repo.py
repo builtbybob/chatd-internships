@@ -57,7 +57,8 @@ class TestRepositoryOperations(unittest.TestCase):
         mock_repo_class.return_value = mock_repo_instance
         
         # Mock git operations to simulate file changes
-        mock_repo_instance.git.rev_parse.side_effect = ['old_hash', 'new_hash']
+        # First call gets old hash, second call gets new hash (different = changed)
+        mock_repo_instance.git.rev_parse.side_effect = ['old_hash', 'new_hash', 'commit123']
         mock_repo_instance.remotes.origin.pull.return_value = None
         
         result = clone_or_update_repo()

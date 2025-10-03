@@ -187,7 +187,7 @@ fi
 
 # Configuration
 REPO_URL="https://github.com/builtbybob/chatd-internships.git"
-BUILD_DIR="/tmp/chatd-build-$$"
+WORK_DIR="/opt/chatd"
 
 # Branch priority: command line arg -> environment variable -> default to main
 BRANCH="${1:-${CHATD_BRANCH:-main}}"
@@ -195,7 +195,7 @@ BRANCH="${1:-${CHATD_BRANCH:-main}}"
 echo "🔄 Building ChatD Internships Bot..."
 echo "📍 Repository: ${REPO_URL}"
 echo "🌿 Branch: ${BRANCH}"
-
+echo "📁 Working directory: ${WORK_DIR}"
 
 # Show branch source for clarity
 if [[ -n "$1" ]]; then
@@ -216,28 +216,30 @@ elif [ "$DISK_USAGE" -ge 80 ]; then
     echo "⚠️ Warning: Disk usage at ${DISK_USAGE}%. Consider manual cleanup."
 fi
 if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
-    echo "❌ Not enough disk space to build and deploy new images. Aborting."
+    echo "❌ Not enough disk space to build new images. Aborting."
     exit 1
 fi
 
-# Cleanup function
-cleanup() {
-    if [[ -d "$BUILD_DIR" ]]; then
-        echo "🧹 Cleaning up build directory..."
-        rm -rf "$BUILD_DIR"
+# Create or update working directory
+if [[ -d "$WORK_DIR" ]]; then
+    echo "📡 Updating existing repository..."
+    cd "$WORK_DIR"
+    
+    # Preserve .env file during git operations
+    if [[ -f ".env" ]]; then
+        echo "💾 Preserving existing .env configuration"
     fi
-}
-trap cleanup EXIT
-
-# Create clean build directory
-echo "� Creating build directory: ${BUILD_DIR}"
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-
-# Clone repository
-echo "📡 Cloning repository..."
-git clone --depth 1 --branch "$BRANCH" "$REPO_URL" chatd-source
-cd chatd-source
+    
+    # Update to latest code
+    git fetch origin
+    git checkout "$BRANCH"
+    git reset --hard "origin/$BRANCH"
+else
+    echo "📡 Cloning repository to working directory..."
+    mkdir -p "$(dirname "$WORK_DIR")"
+    git clone --branch "$BRANCH" "$REPO_URL" "$WORK_DIR"
+    cd "$WORK_DIR"
+fi
 
 # Get current git commit hash
 COMMIT_HASH=$(git rev-parse --short HEAD)
@@ -300,15 +302,65 @@ if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
     exit 1
 fi
 
-# Restart the service if it's running
-if systemctl is-active --quiet chatd-internships; then
-    echo "🔄 Restarting service with new image..."
-    systemctl restart chatd-internships
-    echo "✅ Bot deployed successfully!"
+# Deploy using docker-compose (which handles networking properly)
+echo "🔄 Deploying bot with docker-compose..."
+
+WORK_DIR="/opt/chatd"
+
+# Check if working directory exists
+if [[ ! -d "$WORK_DIR" ]]; then
+    echo "❌ Error: Working directory $WORK_DIR not found"
+    echo "   Run 'chatd build' first to set up the working directory"
+    exit 1
+fi
+
+# Change to working directory
+cd "$WORK_DIR"
+
+# Verify required files exist
+if [[ ! -f "docker-compose.yml" ]]; then
+    echo "❌ Error: docker-compose.yml not found in $WORK_DIR"
+    echo "   Run 'chatd build' to update the working directory"
+    exit 1
+fi
+
+if [[ ! -f ".env" ]]; then
+    echo "⚠️  Warning: .env file not found in $WORK_DIR"
+    echo "   Create .env file with your configuration before deployment"
+    echo "   Example: cp .env.example .env && nano .env"
+    exit 1
+fi
+
+echo "🐳 Using docker-compose.yml in $WORK_DIR"
+
+# Stop any existing containers
+echo "🛑 Stopping existing containers..."
+docker-compose down --remove-orphans 2>/dev/null || true
+
+# Start services with docker-compose
+echo "🚀 Starting services with docker-compose..."
+if docker-compose up -d; then
+    echo "✅ Bot deployed successfully via docker-compose!"
+    
+    # Wait a moment for containers to start
+    sleep 3
+    
+    # Show status
+    echo ""
+    echo "📊 Container Status:"
+    docker-compose ps
 else
-    echo "🚀 Starting bot service..."
-    systemctl start chatd-internships
-    echo "✅ Bot started successfully!"
+    echo "❌ Error: docker-compose deployment failed"
+    echo "   Falling back to systemctl for compatibility..."
+    if systemctl is-active --quiet chatd-internships; then
+        echo "🔄 Restarting service with new image..."
+        systemctl restart chatd-internships
+        echo "✅ Bot deployed successfully!"
+    else
+        echo "🚀 Starting bot service..."
+        systemctl start chatd-internships
+        echo "✅ Bot started successfully!"
+    fi
 fi
 
 # --- Docker Image Auto-Pruning ---
@@ -341,7 +393,7 @@ set -e
 
 # Configuration
 REPO_URL="https://github.com/builtbybob/chatd-internships.git"
-BUILD_DIR="/tmp/chatd-build-$$"
+WORK_DIR="/opt/chatd"
 
 # Branch priority: command line arg -> environment variable -> default to main
 BRANCH="${1:-${CHATD_BRANCH:-main}}"
@@ -349,6 +401,7 @@ BRANCH="${1:-${CHATD_BRANCH:-main}}"
 echo "🔄 Updating ChatD Internships Bot (build + deploy)..."
 echo "📍 Repository: ${REPO_URL}"
 echo "🌿 Branch: ${BRANCH}"
+echo "📁 Working directory: ${WORK_DIR}"
 
 # Show branch source for clarity
 if [[ -n "$1" ]]; then
@@ -359,24 +412,26 @@ else
     echo "   (default branch)"
 fi
 
-# Cleanup function
-cleanup() {
-    if [[ -d "$BUILD_DIR" ]]; then
-        echo "🧹 Cleaning up build directory..."
-        rm -rf "$BUILD_DIR"
+# Create or update working directory
+if [[ -d "$WORK_DIR" ]]; then
+    echo "📡 Updating existing repository..."
+    cd "$WORK_DIR"
+    
+    # Preserve .env file during git operations
+    if [[ -f ".env" ]]; then
+        echo "💾 Preserving existing .env configuration"
     fi
-}
-trap cleanup EXIT
-
-# Create clean build directory
-echo "� Creating build directory: ${BUILD_DIR}"
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-
-# Clone repository
-echo "📡 Cloning repository..."
-git clone --depth 1 --branch "$BRANCH" "$REPO_URL" chatd-source
-cd chatd-source
+    
+    # Update to latest code
+    git fetch origin
+    git checkout "$BRANCH"
+    git reset --hard "origin/$BRANCH"
+else
+    echo "📡 Cloning repository to working directory..."
+    mkdir -p "$(dirname "$WORK_DIR")"
+    git clone --branch "$BRANCH" "$REPO_URL" "$WORK_DIR"
+    cd "$WORK_DIR"
+fi
 
 # Get current git commit hash
 COMMIT_HASH=$(git rev-parse --short HEAD)
@@ -402,17 +457,57 @@ else
     echo "✅ Bot image built successfully!"
 fi
 
-# Restart the service if it's running
-if systemctl is-active --quiet chatd-internships; then
-    echo "🔄 Restarting service..."
-    systemctl restart chatd-internships
-    echo "✅ Bot updated and deployed!"
+# Deploy using docker-compose (which handles networking properly)
+echo "🔄 Deploying bot with docker-compose..."
+
+# We're already in the working directory from the build step
+# Verify required files exist
+if [[ ! -f "docker-compose.yml" ]]; then
+    echo "❌ Error: docker-compose.yml not found in working directory"
+    echo "   This should not happen - check repository contents"
+    exit 1
+fi
+
+if [[ ! -f ".env" ]]; then
+    echo "⚠️  Warning: .env file not found"
+    echo "   Create .env file with your configuration before deployment"
+    echo "   Example: cp .env.example .env && nano .env"
+    exit 1
+fi
+
+echo "🐳 Using docker-compose.yml in $(pwd)"
+
+# Stop any existing containers
+echo "🛑 Stopping existing containers..."
+docker-compose down --remove-orphans 2>/dev/null || true
+
+# Start services with docker-compose
+echo "� Starting services with docker-compose..."
+if docker-compose up -d; then
+    echo "✅ Bot updated and deployed via docker-compose!"
     echo "📦 Running: ${IMAGE_TAG}"
+    
+    # Wait a moment for containers to start
+    sleep 3
+    
+    # Show status
+    echo ""
+    echo "📊 Container Status:"
+    docker-compose ps
 else
-    echo "🚀 Starting bot service..."
-    systemctl start chatd-internships
-    echo "✅ Bot built and started!"
-    echo "📦 Running: ${IMAGE_TAG}"
+    echo "❌ Error: docker-compose deployment failed"
+    echo "   Falling back to systemctl for compatibility..."
+    if systemctl is-active --quiet chatd-internships; then
+        echo "🔄 Restarting service..."
+        systemctl restart chatd-internships
+        echo "✅ Bot updated and deployed!"
+        echo "📦 Running: ${IMAGE_TAG}"
+    else
+        echo "🚀 Starting bot service..."
+        systemctl start chatd-internships
+        echo "✅ Bot built and started!"
+        echo "📦 Running: ${IMAGE_TAG}"
+    fi
 fi
 
 # --- Docker Image Auto-Pruning ---
@@ -689,10 +784,10 @@ case $LOG_TYPE in
     "app")
         if [[ "$FOLLOW" == "true" ]]; then
             echo "📋 Following application logs..."
-            tail -f /var/lib/chatd/logs/chatd.log 2>/dev/null || echo "❌ No application logs found"
+            tail -f /opt/chatd/logs/chatd.log 2>/dev/null || echo "❌ No application logs found"
         else
             echo "📋 Last $LINES lines of application logs:"
-            tail -n "$LINES" /var/lib/chatd/logs/chatd.log 2>/dev/null || echo "❌ No application logs found"
+            tail -n "$LINES" /opt/chatd/logs/chatd.log 2>/dev/null || echo "❌ No application logs found"
         fi
         ;;
     "docker")
@@ -732,8 +827,8 @@ echo "💾 Creating backup of ChatD bot data..."
 
 # Create compressed backup
 tar -czf "$BACKUP_FILE" \
-    -C /var/lib/chatd data \
-    -C /etc/chatd .env \
+    -C /opt/chatd data \
+    -C /opt/chatd .env \
     2>/dev/null || echo "⚠️  Some files may not exist yet"
 
 if [[ -f "$BACKUP_FILE" ]]; then
@@ -762,8 +857,8 @@ echo "========================"
 # Bot Data Files
 echo ""
 echo "📁 Bot Data Files:"
-if [[ -d "/var/lib/chatd/data" ]]; then
-    ls -la /var/lib/chatd/data/ 2>/dev/null || echo "   (empty)"
+if [[ -d "/opt/chatd/data" ]]; then
+    ls -la /opt/chatd/data/ 2>/dev/null || echo "   (empty)"
 else
     echo "   ❌ Data directory not found"
 fi
@@ -771,8 +866,8 @@ fi
 # Repository Status
 echo ""
 echo "📚 Repository Status:"
-if [[ -d "/var/lib/chatd/repo" ]]; then
-    cd /var/lib/chatd/repo 2>/dev/null && {
+if [[ -d "/opt/chatd/Summer2026-Internships" ]]; then
+    cd /opt/chatd/Summer2026-Internships 2>/dev/null && {
         if [[ -d ".git" ]]; then
             echo "   📍 Branch: $(git branch --show-current 2>/dev/null || echo 'unknown')"
             echo "   🔄 Last commit: $(git log -1 --pretty=format:'%h %s' 2>/dev/null || echo 'unknown')"
@@ -802,9 +897,9 @@ systemctl status chatd-internships --no-pager -l || echo "   ❌ Service status 
 # Recent Log Summary
 echo ""
 echo "📋 Recent Activity:"
-if [[ -f "/var/lib/chatd/logs/chatd.log" ]]; then
+if [[ -f "/opt/chatd/logs/chatd.log" ]]; then
     echo "   Last 5 log entries:"
-    tail -5 /var/lib/chatd/logs/chatd.log | sed 's/^/   /'
+    tail -5 /opt/chatd/logs/chatd.log | sed 's/^/   /'
 else
     echo "   ❌ No log file found"
 fi
@@ -812,8 +907,8 @@ fi
 # Disk Usage
 echo ""
 echo "💾 Disk Usage:"
-echo "   Data: $(du -sh /var/lib/chatd 2>/dev/null | cut -f1 || echo 'unknown')"
-echo "   Logs: $(du -sh /var/lib/chatd/logs 2>/dev/null | cut -f1 || echo 'unknown')"
+echo "   Data: $(du -sh /opt/chatd 2>/dev/null | cut -f1 || echo 'unknown')"
+echo "   Logs: $(du -sh /opt/chatd/logs 2>/dev/null | cut -f1 || echo 'unknown')"
 EOF
     chmod +x /usr/local/bin/chatd-data
 }
@@ -846,6 +941,12 @@ show_usage() {
     echo "  prune      Aggressive cleanup (alias for chatd-prune)"
     echo "  disk       Show disk usage and image status (alias for chatd-disk)"
     echo ""
+    echo "Docker Compose Commands:"
+    echo "  compose-up     Start services with docker-compose"
+    echo "  compose-down   Stop services with docker-compose"
+    echo "  compose-ps     Show docker-compose service status"
+    echo "  compose-logs   Show docker-compose logs"
+    echo ""
     echo "Examples:"
     echo "  chatd start           # Start the bot"
     echo "  chatd build           # Build new image"
@@ -863,6 +964,11 @@ show_usage() {
     echo "Environment Variables:"
     echo "  CHATD_BRANCH          # Default branch for build/update commands"
     echo "                        # Example: export CHATD_BRANCH=dev"
+    echo ""
+    echo "Directory Structure:"
+    echo "  /opt/chatd/           # Working directory containing source code,"
+    echo "                        # docker-compose.yml, and .env configuration"
+    echo "  Run 'chatd build' first to set up the working directory"
 }
 
 case "$1" in
@@ -928,6 +1034,55 @@ case "$1" in
         shift
         chatd-disk "$@"
         ;;
+    compose-up)
+        echo "🐳 Starting services with docker-compose..."
+        
+        WORK_DIR="/opt/chatd"
+        if [[ -d "$WORK_DIR" && -f "$WORK_DIR/docker-compose.yml" ]]; then
+            cd "$WORK_DIR"
+            echo "🐳 Using docker-compose.yml in $WORK_DIR"
+            docker-compose up -d
+            echo "📊 Container Status:"
+            docker-compose ps
+        else
+            echo "❌ Working directory $WORK_DIR not found or missing docker-compose.yml"
+            echo "   Run 'chatd build' first to set up the working directory"
+        fi
+        ;;
+    compose-down)
+        echo "🛑 Stopping services with docker-compose..."
+        
+        WORK_DIR="/opt/chatd"
+        if [[ -d "$WORK_DIR" && -f "$WORK_DIR/docker-compose.yml" ]]; then
+            cd "$WORK_DIR"
+            docker-compose down --remove-orphans
+        else
+            echo "❌ Working directory $WORK_DIR not found or missing docker-compose.yml"
+        fi
+        ;;
+    compose-ps)
+        echo "📊 Docker Compose Service Status:"
+        
+        WORK_DIR="/opt/chatd"
+        if [[ -d "$WORK_DIR" && -f "$WORK_DIR/docker-compose.yml" ]]; then
+            cd "$WORK_DIR"
+            docker-compose ps
+        else
+            echo "❌ Working directory $WORK_DIR not found or missing docker-compose.yml"
+        fi
+        ;;
+    compose-logs)
+        echo "📋 Docker Compose Logs:"
+        
+        WORK_DIR="/opt/chatd"
+        if [[ -d "$WORK_DIR" && -f "$WORK_DIR/docker-compose.yml" ]]; then
+            cd "$WORK_DIR"
+            shift
+            docker-compose logs "$@"
+        else
+            echo "❌ Working directory $WORK_DIR not found or missing docker-compose.yml"
+        fi
+        ;;
     ""|help|-h|--help)
         show_usage
         ;;
@@ -986,6 +1141,11 @@ echo "✅ Created chatd-disk"
 
 echo ""
 echo "🎉 All management scripts created successfully!"
+echo ""
+echo "📋 Directory Structure Information:"
+echo "   Working directory: /opt/chatd/"
+echo "   Run 'chatd build' to set up the working directory with latest source"
+echo "   The .env file should be placed in /opt/chatd/ alongside docker-compose.yml"
 echo ""
 echo "Available commands:"
 echo "  chatd start/stop/restart - Control the bot"
