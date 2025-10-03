@@ -259,7 +259,17 @@ fi
 
 # Build new docker image with commit tag
 echo "🐳 Building Docker image for commit ${COMMIT_HASH}..."
-docker build -t "${IMAGE_TAG}" .
+docker-compose build chatd-bot
+
+# Tag the built image with commit hash and latest
+BUILT_IMAGE_ID=$(docker images -q chatd_chatd-bot:latest)
+if [[ -n "$BUILT_IMAGE_ID" ]]; then
+    docker tag "$BUILT_IMAGE_ID" "${IMAGE_TAG}"
+    docker tag "$BUILT_IMAGE_ID" "${LATEST_TAG}"
+else
+    echo "❌ Failed to find built image"
+    exit 1
+fi
 
 # Also tag as latest
 echo "🏷️  Tagging as latest..."
@@ -449,12 +459,18 @@ if docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
 else
     # Build new docker image with commit tag
     echo "🐳 Building Docker image for commit ${COMMIT_HASH}..."
-    docker build -t "${IMAGE_TAG}" .
+    docker-compose build chatd-bot
     
-    # Also tag as latest
-    echo "🏷️  Tagging as latest..."
-    docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
-    echo "✅ Bot image built successfully!"
+    # Tag the built image with commit hash and latest
+    BUILT_IMAGE_ID=$(docker images -q chatd_chatd-bot:latest)
+    if [[ -n "$BUILT_IMAGE_ID" ]]; then
+        docker tag "$BUILT_IMAGE_ID" "${IMAGE_TAG}"
+        docker tag "$BUILT_IMAGE_ID" "${LATEST_TAG}"
+        echo "✅ Bot image built successfully!"
+    else
+        echo "❌ Failed to find built image"
+        exit 1
+    fi
 fi
 
 # Deploy using docker-compose (which handles networking properly)
@@ -985,7 +1001,15 @@ case "$1" in
         sudo systemctl restart chatd-internships
         ;;
     status)
+        echo "⚙️  Service Status:"
         systemctl status chatd-internships --no-pager
+        echo ""
+        echo "🐳 Container Status:"
+        if [[ -d "/opt/chatd" && -f "/opt/chatd/docker-compose.yml" ]]; then
+            cd /opt/chatd && docker-compose ps
+        else
+            echo "   ❌ Working directory not found"
+        fi
         ;;
     enable)
         echo "✅ Enabling ChatD bot auto-start..."
