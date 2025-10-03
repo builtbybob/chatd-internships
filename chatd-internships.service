@@ -1,5 +1,5 @@
 [Unit]
-Description=ChatD Internships Discord Bot
+Description=ChatD Internships Discord Bot with PostgreSQL
 Documentation=https://github.com/builtbybob/chatd-internships
 After=docker.service network.target
 Requires=docker.service
@@ -14,38 +14,27 @@ TimeoutStartSec=300
 TimeoutStopSec=30
 Restart=on-failure
 RestartSec=30
+WorkingDirectory=/opt/chatd
 
 # Create data directories if they don't exist
-ExecStartPre=/bin/mkdir -p /var/lib/chatd/data /var/lib/chatd/repo /var/lib/chatd/logs
-ExecStartPre=/bin/chown -R 1000:1000 /var/lib/chatd
+ExecStartPre=/bin/mkdir -p /opt/chatd/data /opt/chatd/logs
+ExecStartPre=/bin/chown -R 1000:1000 /opt/chatd/data /opt/chatd/logs
 
-# Stop and remove any existing container
-ExecStartPre=-/usr/bin/docker stop chatd-bot
-ExecStartPre=-/usr/bin/docker rm chatd-bot
+# Stop any existing containers
+ExecStartPre=-/usr/bin/docker-compose down --remove-orphans
 
-# Start container with all volume mounts and configuration
-ExecStart=/usr/bin/docker run -d \
-  --name chatd-bot \
-  --env-file /etc/chatd/.env \
-  --restart unless-stopped \
-  --log-driver json-file \
-  --log-opt max-size=10m \
-  --log-opt max-file=3 \
-  -v /var/lib/chatd/data:/app/data \
-  -v /var/lib/chatd/repo:/app/Summer2026-Internships \
-  -v /var/lib/chatd/logs:/app/logs \
-  chatd-internships:latest
+# Start services with docker-compose (both bot and PostgreSQL)
+ExecStart=/usr/bin/docker-compose up -d
 
-# Health check
-ExecStartPost=/bin/sleep 10
+# Health check for bot container
+ExecStartPost=/bin/sleep 15
 ExecStartPost=/usr/bin/docker exec chatd-bot python -c "import sys; sys.exit(0)"
 
-# Stop and remove container
-ExecStop=/usr/bin/docker stop chatd-bot
-ExecStopPost=/usr/bin/docker rm -f chatd-bot
+# Stop all services
+ExecStop=/usr/bin/docker-compose down
 
-# Cleanup on reload
-ExecReload=/usr/bin/docker restart chatd-bot
+# Reload services
+ExecReload=/usr/bin/docker-compose restart
 
 [Install]
 WantedBy=multi-user.target
