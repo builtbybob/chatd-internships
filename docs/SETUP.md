@@ -1,13 +1,22 @@
-# ChatD Internships Bot - Initial Setup Guide
+# Ch@d Internships Bot - Complete Setup Guide
 
-This guide covers the complete setup process for the ChatD Internships Discord bot using Docker and systemd for production deployment.
+This guide covers the complete setup process for the ChatD Internships Discord bot using Docker Compose with PostgreSQL database and systemd for production deployment.
+
+## Overview
+
+The ChatD Internships bot monitors the [Summer2026-Internships](https://github.com/SimplifyJobs/Summer2026-Internships) repository for new job postings and posts updates to Discord channels. The bot uses:
+
+- **Docker Compose** for containerized deployment
+- **PostgreSQL** database for job posting and message tracking data
+- **systemd** for automatic startup and service management
+- **Management scripts** for easy administration
 
 ## Prerequisites
 
 Before starting, ensure you have:
 
 - **Linux system** (tested on Ubuntu/Debian/Raspberry Pi OS)
-- **Docker** installed and running
+- **Docker and Docker Compose** installed
 - **Git** installed
 - **Discord bot token** and **channel IDs**
 - **Root/sudo access** for system configuration
@@ -21,12 +30,12 @@ Before starting, ensure you have:
 sudo apt update && sudo apt upgrade -y
 
 # Install essential packages
-sudo apt install -y git docker.io curl docker-compose
+sudo apt install -y git docker.io docker-compose curl
 
 # Add current user to docker group
 sudo usermod -aG docker $USER
 
-# Restart to apply group changes (or logout/login)
+# Log out and back in (or reboot) to apply group changes
 sudo reboot
 ```
 
@@ -35,291 +44,214 @@ sudo reboot
 ```bash
 # Test Docker installation
 docker --version
+docker-compose --version
 docker run hello-world
 ```
 
-## Step 2: Clone and Setup Repository
+## Step 2: Clone Repository and Setup Working Directory
 
-### Clone the Repository
+### Clone the Ch@d Repository
 
 ```bash
-# Clone to your home directory or preferred location
+# Clone to a temporary location first
 cd ~
 git clone https://github.com/builtbybob/chatd-internships.git
 cd chatd-internships
 ```
 
-### Create System Directories
+### Setup Production Directory
+
+The bot runs from `/opt/chatd/` with the following structure:
 
 ```bash
-# Create required directories with correct permissions
-sudo mkdir -p /var/lib/chatd/data /var/lib/chatd/repo /var/lib/chatd/logs
-sudo chown -R 1000:1000 /var/lib/chatd/
+# Create the production directory and copy files
+sudo mkdir -p /opt/chatd
+sudo cp -r . /opt/chatd/
+cd /opt/chatd
+
+# Create required data directories
+sudo mkdir -p /opt/chatd/data /opt/chatd/logs
+
+# Set proper ownership (Docker containers run as user 1000)
+sudo chown -R 1000:1000 /opt/chatd/data /opt/chatd/logs
+```
+
+### Clone the Internships Repository
+
+```bash
+# Clone the internships repository that the bot monitors
+cd /opt/chatd
+sudo git clone https://github.com/SimplifyJobs/Summer2026-Internships.git
+
+# Set proper ownership
+sudo chown -R 1000:1000 /opt/chatd/Summer2026-Internships
 ```
 
 ## Step 3: Discord Bot Configuration
 
-### Create Configuration File
+### Create Environment Configuration
 
 ```bash
-# Create configuration directory
-sudo mkdir -p /etc/chatd
+# Copy the example configuration
+cd /opt/chatd
+sudo cp .env.example .env
 
-# Copy example configuration
-sudo cp .env.example /etc/chatd/.env
-
-# Set secure permissions
-sudo chmod 600 /etc/chatd/.env
+# Set secure permissions (contains Discord token)
+sudo chmod 600 .env
 
 # Edit configuration
-sudo nano /etc/chatd/.env
+sudo nano .env
 ```
 
 ### Configure Environment Variables
 
-Edit `/etc/chatd/.env` with your settings:
+Edit `/opt/chatd/.env` with your settings:
 
 ```ini
-# Discord Bot Configuration (REQUIRED)
+###############################################################
+# Discord Bot Configuration (MANDATORY)
+###############################################################
+
+# Your Discord bot token (get from Discord Developer Portal)
 DISCORD_TOKEN=your_discord_bot_token_here
+
+# Comma-separated list of Discord channel IDs to post to
 CHANNEL_IDS=123456789012345678,987654321098765432
 
-# Logging Configuration
-LOG_LEVEL=INFO
+###############################################################
+# Database Configuration (MANDATORY)
+###############################################################
 
-# Bot Behavior
-ENABLE_REACTIONS=false
-MAX_RETRIES=3
-CHECK_INTERVAL_MINUTES=1
-MAX_POST_AGE_DAYS=5
-
-# Repository Settings (usually don't need to change)
-REPO_URL=https://github.com/SimplifyJobs/Summer2026-Internships.git
-LOG_MAX_BYTES=10485760
-LOG_BACKUP_COUNT=5
-```
-
-**Required Settings:**
-- `DISCORD_TOKEN`: Your Discord bot token from the [Discord Developer Portal](https://discord.com/developers/applications)
-- `CHANNEL_IDS`: Comma-separated list of Discord channel IDs where the bot should send messages
-
-**How to get Discord Channel ID:**
-1. Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)
-2. Right-click on the channel → Copy ID
-
-## Step 4: Database Setup (PostgreSQL)
-
-The ChatD bot supports both JSON file storage (legacy) and PostgreSQL database storage. PostgreSQL provides better data integrity, querying capabilities, and scalability.
-
-### Option A: PostgreSQL Database (Recommended)
-
-#### Configure Environment Variables
-
-```bash
-# Generate a secure database password
-DB_PASSWORD=$(openssl rand -base64 32)
-echo "Generated PostgreSQL password: $DB_PASSWORD"
-
-# Example output:
-# Generated PostgreSQL password: SHuGgJyt4LTjpQ/s7BUjWR+GcjYY2qM6HWIXmGUIYDM=
-
-# Edit .env to use PostgreSQL file
-sudo nano /etc/chatd/.env
-```
-
-Edit `/etc/chatd/.env` with your settings:
-
-```ini
-# Database password for PostgreSQL (required for database mode)
-# This should match the password set in docker-compose.database.yml
-DB_PASSWORD=your_postgres_password_here
+# Database password for PostgreSQL (generate a secure password)
+DB_PASSWORD=your_secure_postgres_password_here
 
 # Database migration mode: json_only|dual_write|database_only
 MIGRATION_MODE=database_only
 
-# Database connection settings (advanced)
-#DB_TYPE=postgresql
-#DB_HOST=chatd-postgres
-#DB_PORT=5432
-#DB_NAME=chatd
-#DB_USER=chatd
-#DB_CONNECTION_POOL_SIZE=5
-#DB_AUTO_VACUUM=true
-#DB_HEALTH_CHECK_INTERVAL=300
-#DB_MIGRATION_BATCH_SIZE=100
-#DB_BACKUP_RETENTION_DAYS=30
+###############################################################
+# Logging Configuration
+###############################################################
+
+# Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_LEVEL=INFO
+
+###############################################################
+# Bot Behavior
+###############################################################
+
+# Enable reactions on posted messages (true/false)
+ENABLE_REACTIONS=false
+
+# Maximum number of retries for failed operations
+MAX_RETRIES=3
+
+# How often to check for new job postings (minutes)
+CHECK_INTERVAL_MINUTES=1
+
+# Maximum age of job postings to display (days)
+MAX_POST_AGE_DAYS=3
 ```
 
 **Required Settings:**
-- `DB_PASSWORD`: Use the password generated in `DB_PASSWORD` (include `=`)
-- `MIGRATION_MODE`: Choose based on your setup:
-  - `database_only`: New installations with PostgreSQL (recommended)
-  - `json_only`: Legacy JSON file storage
-  - `dual_write`: Migration phase (writes to both JSON and database)
 
-**How to get Database Password:**
+1. **`DISCORD_TOKEN`**: Get from [Discord Developer Portal](https://discord.com/developers/applications)
+   - Create a new application
+   - Go to Bot section
+   - Copy the token
+
+2. **`CHANNEL_IDS`**: Discord channel IDs where bot should post (comma-separated)
+   - Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)
+   - Right-click on channel → Copy ID
+
+3. **`DB_PASSWORD`**: Generate a secure password for PostgreSQL:
+   ```bash
+   # Generate a secure password
+   openssl rand -base64 32
+   ```
+
+## Step 4: Database Setup (PostgreSQL)
+
+The bot uses PostgreSQL for storing job postings and tracking sent messages. The database is automatically configured with Docker Compose.
+
+### Start PostgreSQL Container
+
 ```bash
-# View the generated PostgreSQL password
-echo "Generated PostgreSQL password: $DB_PASSWORD"
-```
+cd /opt/chatd
 
-#### Setup PostgreSQL with Docker
-
-``` bash
-# Start PostgreSQL container, passing PostgreSQL password to Docker
-DB_PASSWORD=$DB_PASSWORD docker-compose -f docker-compose.database.yml up -d
+# Start only the PostgreSQL container first
+sudo docker-compose up -d chatd-postgres
 
 # Wait for database to be ready (may take 30-60 seconds)
-echo "Waiting for PostgreSQL to be ready..."
+echo "Waiting for PostgreSQL to initialize..."
 sleep 30
 
-# Verify database connection
-docker exec chatd-postgres pg_isready -U chatd
-
-# Example successful response:
-# /var/run/postgresql:5432 - accepting connections
+# Verify database is ready
+sudo docker exec chatd-postgres pg_isready -U chatd
+# Expected output: /var/run/postgresql:5432 - accepting connections
 ```
 
-#### Verify Database Setup
+### Verify Database Schema
+
+The database schema is automatically created from `sql/init/001_initial_schema.sql`:
 
 ```bash
 # Check container status
-docker ps | grep chatd-postgres
+sudo docker ps | grep chatd-postgres
 
-# Test database connection and schema
-docker exec -it chatd-postgres psql -U chatd -d chatd -c "\dt"
+# Verify database tables were created
+sudo docker exec -it chatd-postgres psql -U chatd -d chatd -c "\dt"
 
-# You should see the following tables:
-# - job_postings
-# - job_locations  
-# - job_terms
-# - message_tracking
+# Expected tables:
+# - job_postings      (main job data)
+# - job_locations     (job locations)
+# - job_terms         (job terms like "Summer 2026")
+# - job_degrees       (degree requirements)
+# - message_tracking  (tracks sent Discord messages)
 
-# Test database view(s) were created
-docker exec -it chatd-postgres psql -U chatd -d chatd -c "\dv"
-
-# You should see the following views:
-# - job_postings_readable (view)
+# Test the readable view
+sudo docker exec -it chatd-postgres psql -U chatd -d chatd -c "SELECT * FROM job_postings_readable LIMIT 1;"
 ```
 
-### Option B: JSON File Storage (Legacy)
+## Step 5: Initial Data Sync
 
-If you prefer to use JSON file storage or are upgrading an existing installation, you can skip the database setup and use the default configuration.
-
-### Setup .env to use JSON file
-```bash
-# Edit configuration
-sudo nano /etc/chatd/.env
-```
-
-#### Configure Environment Variables
-
-Edit `/etc/chatd/.env` with your settings:
-
-```ini
-# Database migration mode: json_only|dual_write|database_only
-MIGRATION_MODE=json_only        # For legacy JSON file storage
-```
-
-## Step 5: Repository Data Setup
-
-### Initial Repository Clone
+**CRITICAL STEP**: Prevent the bot from replaying old messages by syncing current repository state:
 
 ```bash
-# Clone the internships repository directly to the correct location
-cd /var/lib/chatd/
-sudo git clone https://github.com/SimplifyJobs/Summer2026-Internships.git repo
+cd /opt/chatd
 
-# Set correct ownership
-sudo chown -R 1000:1000 /var/lib/chatd/repo/
-
-# Note: If you later encounter "Permission denied" errors on .git/FETCH_HEAD,
-# re-run the chown command above to fix git repository permissions
-```
-
-### Prevent Message Replay
-
-**CRITICAL STEP**: To prevent the bot from replaying old messages, sync the current repository state:
-
-```bash
-# Use the provided sync script to set baseline
-cd ~/chatd-internships
+# Use the sync script to set baseline
 sudo ./scripts/sync-repo-data.sh
+
+# This script:
+# - Copies current listings.json to previous_data.json
+# - Clears message tracking
+# - Ensures no old messages are replayed on first run
 ```
-
-This script:
-- Copies current `listings.json` to `previous_data.json`
-- Clears message tracking
-- Ensures no old messages are replayed on first run
-
-### Database Migration (Optional - For Existing Installations)
-
-If you have an existing installation with JSON data and want to migrate to PostgreSQL:
-
-```bash
-# Step 1: Ensure PostgreSQL is running
-docker ps | grep chatd-postgres
-
-# Step 2: Run migration with dry-run to preview
-cd ~/chatd-internships
-
-# (Recommended) Create and activate a Python virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install required dependencies
-pip install -r requirements.txt
-
-# Ensure DB_PASSWORD is set, required for migration script
-# Check if variable is set
-echo $DB_PASSWORD
-# If not set, get password from .env file
-DB_PASSWORD=$(sudo grep DB_PASSWORD /etc/chatd/.env | sed 's/DB_PASSWORD=//')
-
-# Run migration with dry-run to preview
-python scripts/migrate_json_to_database.py --dry-run --verbose
-
-# Step 3: Execute the actual migration
-python scripts/migrate_json_to_database.py --verbose
-> **Note:** If you encounter an error like `'DatabaseManager' object has no attribute 'JobPosting'`, edit `scripts/migrate_json_to_database.py` to import model classes directly:
-> ```python
-> from chatd.database import JobPosting, MessageTracking, JobLocation, JobTerm
-> ```
-> Then use these classes directly in your queries (e.g., `JobPosting`, not `self.db_manager.JobPosting`).
-
-# Step 4: Update configuration to use database
-sudo nano /etc/chatd/.env
-# Change: MIGRATION_MODE=database_only
-```
-
-The migration script will:
-- Create automatic backups of your JSON files
-- Validate all data before migration
-- Import historical job postings and message tracking
-- Verify data integrity after migration
 
 ## Step 6: Install Management Scripts
 
-### Install System Integration
+### Create Management Commands
 
 ```bash
-# Install management scripts and systemd service
-cd ~/chatd-internships
+cd /opt/chatd
+
+# Install management scripts
 sudo ./scripts/create-management-scripts.sh
+
+# This creates commands like:
+# - chatd (main control)
+# - chatd-logs (log viewer)
+# - chatd-loglevel (dynamic log control)
+# - chatd-build, chatd-deploy, chatd-update
 ```
 
-This creates:
-- Management commands (`chatd`, `chatd-logs`, `chatd-loglevel`)
-- Systemd service file
-- Docker integration
-
-### Copy Service File
+### Install Systemd Service
 
 ```bash
 # Copy systemd service file
 sudo cp chatd-internships.service /etc/systemd/system/
 
-# Reload systemd
+# Reload systemd configuration
 sudo systemctl daemon-reload
 
 # Enable service to start on boot
@@ -328,32 +260,39 @@ sudo systemctl enable chatd-internships
 
 ## Step 7: Build and Deploy
 
-### Build Docker Image
+### Build Docker Images
 
 ```bash
-# Build the bot's Docker image
+cd /opt/chatd
+
+# Build the bot Docker image
 sudo chatd build
+
+# This builds the chatd-bot container with current code
 ```
 
-### Start the Service
+### Start the Complete Service
 
 ```bash
-# Start the bot service
+# Start both PostgreSQL and bot containers
 sudo systemctl start chatd-internships
 
 # Check service status
-chatd status
+sudo chatd status
 ```
 
 ### Verify Operation
 
 ```bash
 # Monitor logs in real-time
-chatd logs -f
+sudo chatd logs -f
 
 # Check for successful startup messages:
+# ✅ Logging configured with level: INFO
 # ✅ Configuration validation completed successfully
-# ✅ Discord connection successful
+# ✅ Database connection successful (PostgreSQL)
+# ✅ Discord connection successful (logged in as YourBot#1234)
+# ✅ Can access 1/1 configured channels
 # 🔍 No updates to listings file, skipping check
 ```
 
@@ -364,17 +303,21 @@ The message "No updates to listings file, skipping check" confirms that message 
 ### Service Management
 
 ```bash
-# Check service status
-chatd status
+# Check overall status
+sudo chatd status
 
 # View logs
-chatd logs -f              # Follow logs in real-time
-chatd logs -n 100          # Show last 100 lines
+sudo chatd logs -f              # Follow logs in real-time
+sudo chatd logs -n 100          # Show last 100 lines
 
 # Service control
 sudo systemctl start chatd-internships
 sudo systemctl stop chatd-internships
 sudo systemctl restart chatd-internships
+
+# Enable/disable auto-start on boot
+sudo systemctl enable chatd-internships
+sudo systemctl disable chatd-internships
 ```
 
 ### Dynamic Log Level Control
@@ -389,6 +332,38 @@ sudo chatd-loglevel info
 # Other levels: warning, error, critical
 ```
 
+### Docker Container Management
+
+```bash
+# Check container status
+sudo docker ps
+
+# View container-specific logs
+sudo docker logs chatd-bot
+sudo docker logs chatd-postgres
+
+# Restart specific containers
+sudo docker restart chatd-bot
+sudo docker restart chatd-postgres
+```
+
+### Database Management
+
+```bash
+# Connect to database for inspection
+sudo docker exec -it chatd-postgres psql -U chatd -d chatd
+
+# Common database queries:
+# \dt                                    # List tables
+# \dv                                    # List views
+# SELECT COUNT(*) FROM job_postings;     # Count job postings
+# SELECT COUNT(*) FROM message_tracking; # Count tracked messages
+# \q                                     # Quit psql
+
+# Database backup
+sudo docker exec chatd-postgres pg_dump -U chatd chatd > /opt/chatd/data/backup_$(date +%Y%m%d_%H%M%S).sql
+```
+
 ### Repository Synchronization
 
 ```bash
@@ -399,150 +374,193 @@ sudo ./scripts/sync-repo-data.sh
 sudo ./scripts/sync-repo-data.sh abc123def456
 ```
 
+## Step 9: Updates and Maintenance
+
+### Updating the Bot
+
+```bash
+# Update to latest code and redeploy
+sudo chatd update
+
+# Update to specific branch
+sudo chatd update dev
+
+# Manual update process:
+cd /opt/chatd
+sudo git pull
+sudo chatd build
+sudo chatd deploy
+```
+
+### Database Migration (From JSON to PostgreSQL)
+
+If upgrading from a JSON-only installation:
+
+```bash
+cd /opt/chatd
+
+# Ensure PostgreSQL is running
+sudo docker ps | grep chatd-postgres
+
+# Run migration with dry-run to preview
+python3 scripts/migrate_json_to_database.py --dry-run --verbose
+
+# Execute the actual migration
+python3 scripts/migrate_json_to_database.py --verbose
+
+# Update configuration to use database only
+sudo nano .env
+# Change: MIGRATION_MODE=database_only
+
+# Restart service
+sudo systemctl restart chatd-internships
+```
+
 ## Troubleshooting
 
 ### Common Issues
 
 #### 1. Service Won't Start
+
 ```bash
 # Check service status for errors
 sudo systemctl status chatd-internships
 
 # Check Docker logs
-docker logs chatd-bot
+sudo docker logs chatd-bot
+sudo docker logs chatd-postgres
 
 # Common fixes:
 sudo systemctl daemon-reload
 sudo systemctl restart chatd-internships
+
+# Check if containers are running
+sudo docker ps -a
 ```
 
-#### 2. Permission Errors
+#### 2. Database Connection Issues
+
+```bash
+# Check PostgreSQL container status
+sudo docker ps | grep chatd-postgres
+
+# Check database connectivity
+sudo docker exec chatd-postgres pg_isready -U chatd
+
+# View database logs
+sudo docker logs chatd-postgres
+
+# Restart database container
+sudo docker restart chatd-postgres
+
+# Check environment variables
+sudo grep DB_ /opt/chatd/.env
+```
+
+#### 3. Permission Errors
+
 ```bash
 # Fix data directory permissions
-sudo chown -R 1000:1000 /var/lib/chatd/
+sudo chown -R 1000:1000 /opt/chatd/data /opt/chatd/logs /opt/chatd/Summer2026-Internships
 
 # Fix configuration permissions
-sudo chmod 600 /etc/chatd/.env
+sudo chmod 600 /opt/chatd/.env
+
+# Check Docker group membership
+groups $USER
+# Should include 'docker'
 ```
 
-#### 3. Repository Issues
+#### 4. Discord Connection Issues
+
+```bash
+# Verify Discord token in configuration
+sudo grep DISCORD_TOKEN /opt/chatd/.env
+
+# Check channel IDs format
+sudo grep CHANNEL_IDS /opt/chatd/.env
+
+# Test with debug logging
+sudo chatd-loglevel debug
+sudo chatd logs -f
+```
+
+#### 5. Repository Issues
+
 ```bash
 # Check repository structure
-ls -la /var/lib/chatd/repo/
-# Should show: .git/, .github/, README.md (not nested Summer2026-Internships/)
+ls -la /opt/chatd/Summer2026-Internships/
+# Should show: .git/, .github/, README.md
+
+# Check if repository is accessible
+cd /opt/chatd/Summer2026-Internships
+sudo git status
+sudo git pull
 
 # Re-sync repository data
 sudo ./scripts/sync-repo-data.sh
 ```
 
-#### 4. Database Issues (PostgreSQL)
+#### 6. Container Issues
+
 ```bash
-# Check PostgreSQL container status
-docker ps | grep chatd-postgres
+# Check Docker service
+sudo systemctl status docker
 
-# Check database connectivity
-docker exec chatd-postgres pg_isready -U chatd
-
-# View database logs
-docker logs chatd-postgres
-
-# Restart database container
-docker restart chatd-postgres
-
-# Connect to database for manual inspection
-docker exec -it chatd-postgres psql -U chatd -d chatd
-
-# Common database commands:
-# \dt                           # List tables
-# SELECT COUNT(*) FROM job_postings;  # Count records
-# \q                            # Quit psql
-```
-
-#### 5. Database Migration Issues
-```bash
-# Check migration status
-python scripts/migrate_json_to_database.py --dry-run
-
-# View migration logs for errors
-cat /var/lib/chatd/logs/chatd.log | grep -i migration
-
-# Rollback to JSON mode if needed
-sudo nano /etc/chatd/.env
-# Change: MIGRATION_MODE=json_only
-sudo systemctl restart chatd-internships
-```
-
-#### 6. Bot Replays Old Messages
-```bash
-# Stop service and re-sync data
-sudo systemctl stop chatd-internships
-sudo ./scripts/sync-repo-data.sh
-sudo systemctl start chatd-internships
-```
-
-#### 7. Docker Issues
-```bash
 # Restart Docker service
 sudo systemctl restart docker
 
-# Rebuild bot image
+# Clean up containers and rebuild
+sudo docker-compose down
+sudo docker system prune -f
 sudo chatd build
-
-# Check Docker status
-docker ps -a
+sudo systemctl start chatd-internships
 ```
 
 ### Log Analysis
 
-#### Successful Startup Logs
+#### Successful Startup Sequence
 
-**With PostgreSQL Database:**
 ```
-✅ Configuration validation completed successfully
-✅ Database connection successful (PostgreSQL)
-✅ Database health check passed
-✅ Discord connection successful (logged in as YourBot#1234)
-✅ Can access 1/1 configured channels
-📡 Pulling latest changes from git...
-🔍 No updates to listings file, skipping check
-```
-
-**With JSON Storage:**
-```
-✅ Configuration validation completed successfully
-✅ Discord connection successful (logged in as YourBot#1234)
-✅ Can access 1/1 configured channels
-📡 Pulling latest changes from git...
-🔍 No updates to listings file, skipping check
+[2025-10-03 13:36:45 INFO __main__:21] 🚀 Starting ChatD Internships Bot...
+[2025-10-03 13:36:45 INFO __main__:25] 🔧 Validating configuration...
+[2025-10-03 13:36:45 INFO chatd.config:184] ✅ Configuration validation passed.
+[2025-10-03 13:36:45 INFO __main__:32] ✅ Configuration validation completed successfully
+[2025-10-03 13:36:45 INFO __main__:39] 🤖 Starting Discord bot...
+[2025-10-03 13:36:45 INFO chatd.database:75] Database connection successful (PostgreSQL)
+[2025-10-03 13:36:45 INFO chatd.bot:413] Starting bot with environment configuration...
+[2025-10-03 13:36:45 INFO discord.client:611] logging in using static token
+[2025-10-03 13:36:46 INFO chatd.bot:327] Logged in as YourBot#1234
+[2025-10-03 13:36:46 INFO chatd.bot:328] Bot is ready and monitoring 1 channels
 ```
 
 #### Warning Signs
-```
-❌ Missing required environment variables
-❌ Cannot access repository
+
+```bash
+# Discord token issues:
+❌ Discord login failed - invalid token
+
+# Database issues:
 ❌ Database connection failed
 ❌ Database health check failed
-⚠️  No accessible channels found
-⚠️  Migration mode not supported
-OSError: [Errno 16] Device or resource busy
+
+# Configuration issues:
+❌ Missing required environment variables
+❌ Cannot access repository
+
+# Permission issues:
+OSError: [Errno 13] Permission denied
 ```
 
 ### Emergency Recovery
 
-#### Reset Everything
 ```bash
-# Stop service
+# Complete reset (nuclear option)
 sudo systemctl stop chatd-internships
-
-# Clean Docker
-docker stop chatd-bot 2>/dev/null || true
-docker rm chatd-bot 2>/dev/null || true
-
-# Reset data
-sudo rm -rf /var/lib/chatd/data/*
+sudo docker-compose down
+sudo docker system prune -f
+sudo rm -rf /opt/chatd/data/*
 sudo ./scripts/sync-repo-data.sh
-
-# Restart
 sudo systemctl start chatd-internships
 ```
 
@@ -551,70 +569,137 @@ sudo systemctl start chatd-internships
 After successful setup, your system should have:
 
 ```
-/etc/chatd/
-├── .env                          # Bot configuration
-└── .env.postgres                 # PostgreSQL password (if using database)
+/opt/chatd/                              # Main working directory
+├── .env                                 # Environment configuration
+├── docker-compose.yml                   # Container orchestration
+├── chatd-internships.service            # Systemd service definition
+├── Dockerfile                           # Bot container build
+├── requirements.txt                     # Python dependencies
+├── main.py                             # Bot entry point
+├── chatd/                              # Bot source code
+│   ├── __init__.py
+│   ├── bot.py                          # Discord bot logic
+│   ├── config.py                       # Configuration management
+│   ├── database.py                     # PostgreSQL integration
+│   ├── logging_utils.py                # Logging configuration
+│   ├── messages.py                     # Message formatting
+│   ├── repo.py                         # Git repository handling
+│   ├── storage.py                      # Data storage (legacy JSON)
+│   └── storage_abstraction.py          # Storage interface
+├── sql/                                # Database schema
+│   └── init/
+│       └── 001_initial_schema.sql      # PostgreSQL schema
+├── scripts/                            # Management scripts
+│   ├── create-management-scripts.sh    # Installs admin commands
+│   ├── sync-repo-data.sh              # Repository sync utility
+│   └── migrate_json_to_database.py    # Migration script
+├── data/                               # Application data
+│   ├── previous_data.json              # Baseline job listings
+│   ├── message_tracking.json           # Message tracking (JSON mode)
+│   └── current_head.txt               # Git commit tracking
+├── logs/                               # Application logs
+│   └── chatd.log                      # Main log file
+└── Summer2026-Internships/             # Monitored repository
+    ├── .git/
+    ├── .github/
+    │   └── scripts/
+    │       └── listings.json           # Current job listings
+    └── README.md
 
-/var/lib/chatd/
-├── data/
-│   ├── previous_data.json        # Baseline job listings (JSON mode)
-│   ├── message_tracking.json     # Sent messages tracking (JSON mode)
-│   └── current_head.txt          # Git commit tracking
-├── repo/                         # GitHub repository contents
-│   ├── .git/
-│   ├── .github/
-│   │   └── scripts/
-│   │       └── listings.json     # Current job listings
-│   └── README.md
-└── logs/                         # Application logs
-
-/usr/local/bin/
-├── chatd                         # Main management command
-├── chatd-logs                    # Log viewer
-└── chatd-loglevel               # Dynamic log control
-
-/etc/systemd/system/
-└── chatd-internships.service     # System service
-
-# Docker Components (if using PostgreSQL)
+# Docker Components
 Docker Containers:
-├── chatd-bot                     # Main bot container
-└── chatd-postgres               # PostgreSQL database container
+├── chatd-bot                           # Main bot container
+└── chatd-postgres                      # PostgreSQL database
 
 Docker Volumes:
-└── postgres_data                 # Persistent database storage
+└── postgres_data                       # Persistent database storage
+
+# System Integration
+/etc/systemd/system/
+└── chatd-internships.service          # Systemd service
+
+/usr/local/bin/
+├── chatd                              # Main management command
+├── chatd-build                        # Build Docker image
+├── chatd-deploy                       # Deploy existing image
+├── chatd-update                       # Build and deploy
+├── chatd-logs                         # Log viewer
+├── chatd-loglevel                     # Dynamic log control
+├── chatd-version                      # Version management
+├── chatd-backup                       # Backup utility
+├── chatd-cleanup                      # Image cleanup
+└── chatd-data                         # Data inspection
 ```
 
 ## Security Considerations
 
-1. **File Permissions**: Configuration file contains sensitive Discord token
+1. **Environment File Security**
    ```bash
-   sudo chmod 600 /etc/chatd/.env
+   # Secure the configuration file (contains Discord token and DB password)
+   sudo chmod 600 /opt/chatd/.env
    ```
 
-2. **Firewall**: No inbound ports needed (bot connects outbound only)
+2. **Database Security**
+   - Database is only accessible within Docker network
+   - Strong password required for database access
+   - Regular security updates via `sudo apt update && sudo apt upgrade`
 
-3. **Updates**: Keep system and Docker updated regularly
+3. **Network Security**
+   - Bot only makes outbound connections (GitHub API, Discord API)
+   - No inbound ports needed for bot operation
+   - PostgreSQL port (5432) exposed only for development (remove in production)
+
+4. **System Updates**
    ```bash
+   # Keep system updated
    sudo apt update && sudo apt upgrade -y
+   
+   # Update Docker images periodically
+   sudo docker pull postgres:15-alpine
+   sudo chatd build
    ```
-
-4. **Monitoring**: Regularly check logs for unusual activity
 
 ## Performance Notes
 
-- **Memory Usage**: ~50-100MB RAM typical
-- **Disk Usage**: ~200MB for Docker image + data
+- **Memory Usage**: ~100-200MB total (bot: ~50-100MB, PostgreSQL: ~50-100MB)
+- **Disk Usage**: ~500MB for images + variable for data
 - **CPU Usage**: Minimal (periodic git pulls and Discord API calls)
-- **Network**: Outbound HTTPS only (GitHub, Discord APIs)
+- **Network**: Outbound HTTPS only (GitHub API, Discord API)
+- **Database**: Optimized with indexes for common query patterns
+
+## Production Recommendations
+
+1. **Monitoring Setup**
+   ```bash
+   # Set up log rotation
+   sudo nano /etc/logrotate.d/chatd
+   ```
+
+2. **Backup Strategy**
+   ```bash
+   # Regular database backups
+   sudo crontab -e
+   # Add: 0 2 * * * docker exec chatd-postgres pg_dump -U chatd chatd > /opt/chatd/data/backup_$(date +\%Y\%m\%d).sql
+   ```
+
+3. **Resource Limits**
+   - Consider setting Docker memory limits for production
+   - Monitor disk usage for log files and database growth
+
+4. **High Availability**
+   - Set up external database for multi-instance deployments
+   - Use Docker Swarm or Kubernetes for scaling
 
 ## Next Steps
 
 After successful setup:
 
 1. **Monitor Initial Operation**: Watch logs for 24 hours to ensure stability
-2. **Set Up Backups**: Consider backing up `/var/lib/chatd/data/` periodically
-3. **Configure Alerts**: Set up monitoring for service failures if desired
-4. **Update Procedures**: Bookmark this guide for future updates
+2. **Set Up Monitoring**: Consider setting up alerts for service failures
+3. **Configure Backups**: Set up regular backups of database and configuration
+4. **Performance Tuning**: Monitor resource usage and adjust as needed
+5. **Update Procedures**: Establish regular update schedule for security
 
-The bot is now ready for production use! 🚀
+The ChatD Internships bot is now ready for production use! 🚀
+
+For support, issues, or contributions, visit: https://github.com/builtbybob/chatd-internships
