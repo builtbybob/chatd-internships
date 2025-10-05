@@ -22,7 +22,13 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 usage() {
     echo "Usage: $0 <environment-name>"
     echo ""
-    echo "Creates a new ChatD environment with isolated containers, database, and management."
+    echo "Creates echo -e "${BLUE}📁 Location:${NC} $ENV_DIR"
+echo -e "${BLUE}🐳 Containers:${NC} ${ENV_NAME}-postgres, ${ENV_NAME}-bot"
+echo -e "${BLUE}🔌 PostgreSQL Port:${NC} $POSTGRES_PORT"
+echo -e "${BLUE}📦 Repository:${NC} $REPO_URL"
+echo -e "${BLUE}🔒 Database Password:${NC} Auto-generated and configured"
+echo -e "${BLUE}🛠️  Management Command:${NC} $ENV_NAME"
+echo -e "${BLUE}🔧 Systemd Service:${NC} $ENV_NAME.service"ChatD environment with isolated containers, database, and management."
     echo ""
     echo "Examples:"
     echo "  $0 thatd-internships     # Creates /opt/thatd-internships (development)"
@@ -190,10 +196,39 @@ while true; do
 done
 
 echo ""
+
+# Prompt for repository URL
+echo -e "${BLUE}📦 Repository URL:${NC}"
+echo "  (The GitHub repository containing internship listings)"
+echo "  Default: https://github.com/SimplifyJobs/Summer2026-Internships.git"
+read -p "Enter repository URL (or press Enter for default): " REPO_URL_INPUT
+
+if [[ -z "$REPO_URL_INPUT" ]]; then
+    REPO_URL="https://github.com/SimplifyJobs/Summer2026-Internships.git"
+    echo -e "${GREEN}✅ Using default repository URL${NC}"
+else
+    REPO_URL="$REPO_URL_INPUT"
+    
+    # Basic validation - check if it looks like a git URL
+    if [[ ! "$REPO_URL" =~ ^https?://.*\.git$ ]] && [[ ! "$REPO_URL" =~ ^git@.*\.git$ ]]; then
+        echo -e "${YELLOW}⚠️  Repository URL doesn't look like a standard git URL${NC}"
+        echo "  Expected format: https://github.com/user/repo.git"
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Setup cancelled."
+            exit 0
+        fi
+    fi
+fi
+
+echo ""
 echo -e "${GREEN}✅ Configuration collected:${NC}"
 echo -e "  🤖 Bot token: ${DISCORD_TOKEN:0:20}...***"
 echo -e "  📺 Channel(s): $CHANNEL_IDS"
+echo -e "  📦 Repository: $REPO_URL"
 echo -e "  🔒 Database password: [Generated securely]"
+echo -e "  📦 Repository: $REPO_URL"
 echo ""
 
 # Create environment directory
@@ -203,6 +238,23 @@ if ! sudo mkdir -p "$ENV_DIR" "$ENV_DIR/data" "$ENV_DIR/logs"; then
     echo "Please check permissions and try again."
     exit 1
 fi
+
+# Clone repository
+echo -e "${YELLOW}📥 Cloning repository...${NC}"
+REPO_DIR_NAME="Summer2026-Internships"
+if [[ ! -d "$ENV_DIR/$REPO_DIR_NAME" ]]; then
+    if ! sudo git clone "$REPO_URL" "$ENV_DIR/$REPO_DIR_NAME"; then
+        echo -e "${RED}❌ Failed to clone repository: $REPO_URL${NC}"
+        echo "Please check the repository URL and your internet connection."
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Repository cloned successfully${NC}"
+else
+    echo -e "${YELLOW}⚠️  Repository directory already exists, skipping clone${NC}"
+fi
+
+# Set proper ownership for the cloned repository
+sudo chown -R root:root "$ENV_DIR/$REPO_DIR_NAME"
 
 # Copy and customize docker-compose.yml
 echo -e "${YELLOW}🐳 Setting up Docker configuration...${NC}"
@@ -253,7 +305,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ${ENV_NAME}_repo_data:/app/Summer2026-Internships
+      - $ENV_DIR/Summer2026-Internships:/app/Summer2026-Internships:ro
       - ${ENV_NAME}_app_data:/app/data
       - $ENV_DIR/logs:/app/logs
     networks:
@@ -272,8 +324,6 @@ networks:
 volumes:
   ${ENV_NAME}_postgres_data:
     name: ${ENV_NAME}_postgres_data
-  ${ENV_NAME}_repo_data:
-    name: ${ENV_NAME}_repo_data
   ${ENV_NAME}_app_data:
     name: ${ENV_NAME}_app_data
 EOF
@@ -317,7 +367,7 @@ MIGRATION_MODE=database_only
 # Repository Settings
 ###############################################################
 
-REPO_URL=https://github.com/SimplifyJobs/Summer2026-Internships.git
+REPO_URL=$REPO_URL
 LOCAL_REPO_PATH=/app/Summer2026-Internships
 
 ###############################################################
@@ -537,6 +587,74 @@ sudo chmod 600 "$ENV_DIR/.env"  # Secure environment file
 
 # Reload systemd
 sudo systemctl daemon-reload
+
+echo ""
+# Create systemd service file for environment management
+create_systemd_service "$ENV_NAME" "$SCRIPT_PATH"
+
+# Database Migration (Optional)
+echo ""
+echo -e "${CYAN}📊 Database Migration${NC}"
+echo "The system can automatically migrate data from listings.json to the database."
+read -p "Would you like to migrate existing data to the database? (y/n): " -n 1 -r MIGRATE_DATA
+echo ""
+
+if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
+    echo -e "${BLUE}🔄 Starting database migration...${NC}"
+    
+    # Check if repository was cloned and has listings.json
+    CLONED_REPO_PATH="$ENV_DIR/$REPO_DIR_NAME"
+    LISTINGS_JSON_PATH="$CLONED_REPO_PATH/.github/scripts/listings.json"
+    if [[ ! -f "$LISTINGS_JSON_PATH" ]]; then
+        echo -e "${YELLOW}⚠️  Warning: listings.json not found at $LISTINGS_JSON_PATH${NC}"
+        echo "Migration will be skipped. You can run it manually later."
+        echo "To run manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+    else
+        # Create Python virtual environment for migration
+        echo -e "${BLUE}📦 Setting up Python environment...${NC}"
+        VENV_DIR="$ENV_DIR/migration_venv"
+        
+        if ! python3 -m venv "$VENV_DIR"; then
+            echo -e "${RED}❌ Failed to create Python virtual environment${NC}"
+            echo "Please install python3-venv package: sudo apt-get install python3-venv"
+            echo "Migration will be skipped."
+        else
+            # Activate virtual environment and install requirements
+            source "$VENV_DIR/bin/activate"
+            
+            if pip install -r requirements.txt > /dev/null 2>&1; then
+                echo -e "${BLUE}🗃️  Running migration script...${NC}"
+                
+                # Start the environment first to ensure database is available
+                echo -e "${BLUE}🚀 Starting environment for migration...${NC}"
+                "$SCRIPT_PATH" start > /dev/null 2>&1
+                
+                # Wait a moment for database to be ready
+                sleep 5
+                
+                # Run migration
+                if python3 scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
+                    echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
+                else
+                    echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
+                    echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+                fi
+                
+                # Stop the environment
+                "$SCRIPT_PATH" stop > /dev/null 2>&1
+            else
+                echo -e "${RED}❌ Failed to install Python requirements${NC}"
+                echo "Migration will be skipped. Install requirements manually and run:"
+                echo "python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+            fi
+            
+            deactivate
+        fi
+    fi
+else
+    echo -e "${BLUE}ℹ️  Skipping database migration.${NC}"
+    echo "You can run it later with: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+fi
 
 echo ""
 echo -e "${GREEN}✅ ChatD environment '$ENV_NAME' has been created successfully!${NC}"

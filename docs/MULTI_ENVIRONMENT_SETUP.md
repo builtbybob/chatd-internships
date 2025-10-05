@@ -25,7 +25,50 @@ sudo ./scripts/setup-chatd-environment.sh <environment-name>
 The script will prompt you for:
 - **Discord Bot Token** (from Discord Developer Portal)
 - **Channel IDs** (comma-separated list)
+- **Repository URL** (defaults to SimplifyJobs Summer2026-Internships)
 - **Database Password** (auto-generated)
+
+The script will automatically:
+- Clone the specified repository
+- Generate secure database passwords  
+- Create isolated Docker containers and networks
+- Configure environment variables
+- Set up systemd service for management
+- **Optionally migrate existing data** from listings.json to the database
+
+### 2. Database Migration (Optional)
+
+During setup, the script will ask if you want to migrate existing data:
+
+```
+📊 Database Migration
+The system can automatically migrate data from listings.json to the database.
+Would you like to migrate existing data to the database? (y/n): y
+```
+
+**What happens during migration:**
+- Creates a Python virtual environment for the migration
+- Installs required dependencies
+- Starts the environment temporarily
+- Runs the migration script to import data from `listings.json`
+- Validates data integrity and provides progress tracking
+- Stops the environment when complete
+
+**Manual Migration:**
+If you skip during setup or want to migrate later:
+
+```bash
+# Navigate to the ChatD repository
+cd /path/to/chatd-internships
+
+# Run migration with repository path
+python3 scripts/migrate_json_to_database.py --repo-path /opt/<environment-name>/Summer2026-Internships
+
+# Or with custom data file
+python3 scripts/migrate_json_to_database.py --data-file /path/to/listings.json
+```
+
+### 3. Start Your Environment
 
 Examples: `chatd-internships`, `chatd-newgrad`
 
@@ -91,6 +134,12 @@ Each environment gets its own management command:
 ### Performance Optimization
 - **Section 4.1 settings**: All environments include optimized message posting delays
 - **Configurable**: Can be tuned per environment in `.env` file
+
+### Database Migration
+- **Optional automation**: Migrate existing listings.json data during setup
+- **Data validation**: Comprehensive integrity checks and progress tracking
+- **Manual capability**: Run migrations independently when needed
+- **Virtual environment**: Self-contained Python environment for migration dependencies
 
 ## Environment Examples
 
