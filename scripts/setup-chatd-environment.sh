@@ -394,6 +394,18 @@ sudo mv "/tmp/.env-$ENV_NAME" "$ENV_DIR/.env"
 
 # Create systemd service
 echo -e "${YELLOW}🔧 Creating systemd service...${NC}"
+
+# Determine which Docker Compose command to use
+if command -v docker-compose &> /dev/null; then
+    COMPOSE_CMD="docker-compose"
+elif docker compose version &> /dev/null; then
+    COMPOSE_CMD="docker compose"
+else
+    echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
+    echo "Please install Docker Compose and try again."
+    exit 1
+fi
+
 cat > "/tmp/$ENV_NAME.service" << EOF
 [Unit]
 Description=ChatD Bot - $ENV_NAME Environment
@@ -410,13 +422,13 @@ Group=root
 WorkingDirectory=$ENV_DIR
 
 # Start the service
-ExecStart=/usr/bin/docker compose up -d
+ExecStart=/usr/bin/$COMPOSE_CMD up -d
 
 # Stop the service
-ExecStop=/usr/bin/docker compose down
+ExecStop=/usr/bin/$COMPOSE_CMD down
 
 # Reload the service
-ExecReload=/usr/bin/docker compose restart
+ExecReload=/usr/bin/$COMPOSE_CMD restart
 
 [Install]
 WantedBy=multi-user.target
@@ -447,6 +459,16 @@ ENV_NAME="ENV_NAME_PLACEHOLDER"
 ENV_DIR="/opt/$ENV_NAME"
 SERVICE_NAME="$ENV_NAME.service"
 
+# Determine which Docker Compose command to use
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+elif docker compose version &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
+    echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
+    exit 1
+fi
+
 # Check if we're in the right directory
 if [[ ! -d "$ENV_DIR" ]]; then
     echo -e "${RED}❌ Environment directory not found: $ENV_DIR${NC}"
@@ -464,19 +486,19 @@ case "${1:-}" in
         sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
         echo ""
         echo -e "${YELLOW}🐳 Docker Containers:${NC}"
-        docker compose ps
+        $DOCKER_COMPOSE_CMD ps
         echo ""
         echo -e "${YELLOW}💾 Database Status:${NC}"
-        docker compose exec ${ENV_NAME}-postgres pg_isready -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_} 2>/dev/null && echo "✅ Database is ready" || echo "❌ Database not accessible"
+        $DOCKER_COMPOSE_CMD exec ${ENV_NAME}-postgres pg_isready -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_} 2>/dev/null && echo "✅ Database is ready" || echo "❌ Database not accessible"
         ;;
     "logs")
         CONTAINER="${2:-}"
         if [[ -n "$CONTAINER" ]]; then
             echo -e "${BLUE}📋 Logs for $ENV_NAME-$CONTAINER${NC}"
-            docker compose logs -f "${ENV_NAME}-${CONTAINER}"
+            $DOCKER_COMPOSE_CMD logs -f "${ENV_NAME}-${CONTAINER}"
         else
             echo -e "${BLUE}📋 All logs for $ENV_NAME${NC}"
-            docker compose logs -f
+            $DOCKER_COMPOSE_CMD logs -f
         fi
         ;;
     "start")
@@ -501,33 +523,33 @@ case "${1:-}" in
         ;;
     "build")
         echo -e "${BLUE}🔨 Building $ENV_NAME containers...${NC}"
-        docker compose build
+        $DOCKER_COMPOSE_CMD build
         ;;
     "pull")
         echo -e "${BLUE}📥 Pulling latest images for $ENV_NAME...${NC}"
-        docker compose pull
+        $DOCKER_COMPOSE_CMD pull
         ;;
     "shell")
         CONTAINER="${2:-bot}"
         echo -e "${BLUE}🐚 Opening shell in $ENV_NAME-$CONTAINER...${NC}"
-        docker compose exec "${ENV_NAME}-${CONTAINER}" /bin/bash
+        $DOCKER_COMPOSE_CMD exec "${ENV_NAME}-${CONTAINER}" /bin/bash
         ;;
     "db")
         echo -e "${BLUE}🗄️  Connecting to $ENV_NAME database...${NC}"
-        docker compose exec ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}
+        $DOCKER_COMPOSE_CMD exec ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}
         ;;
     "update")
         echo -e "${BLUE}🔄 Updating $ENV_NAME environment...${NC}"
         echo "Pulling latest code..."
-        docker compose pull
+        $DOCKER_COMPOSE_CMD pull
         echo "Rebuilding containers..."
-        docker compose build
+        $DOCKER_COMPOSE_CMD build
         echo "Restarting services..."
-        docker compose up -d
+        $DOCKER_COMPOSE_CMD up -d
         ;;
     "cleanup")
         echo -e "${YELLOW}🧹 Cleaning up $ENV_NAME Docker resources...${NC}"
-        docker compose down
+        $DOCKER_COMPOSE_CMD down
         echo "Removing unused images..."
         docker image prune -f
         echo "Removing unused volumes (excluding data)..."
@@ -619,7 +641,21 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                 # Start only the database for migration (not the bot!)
                 echo -e "${BLUE}🚀 Starting database for migration...${NC}"
                 cd "$ENV_DIR"
-                if ! sudo docker compose up -d "$ENV_NAME-postgres"; then
+                
+                # Check if docker-compose or docker compose is available
+                if command -v docker-compose &> /dev/null; then
+                    DOCKER_COMPOSE_CMD="docker-compose"
+                elif docker compose version &> /dev/null; then
+                    DOCKER_COMPOSE_CMD="docker compose"
+                else
+                    echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
+                    echo "Migration will be skipped. Please install Docker Compose."
+                    echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+                    deactivate
+                    continue
+                fi
+                
+                if ! sudo $DOCKER_COMPOSE_CMD up -d "$ENV_NAME-postgres"; then
                     echo -e "${RED}❌ Failed to start database container${NC}"
                     echo "Migration will be skipped. Check Docker logs for details."
                     echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
@@ -641,7 +677,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                     
                     # Stop only the database (bot was never started)
                     echo -e "${BLUE}🛑 Stopping database...${NC}"
-                    cd "$ENV_DIR" && sudo docker compose stop "$ENV_NAME-postgres" > /dev/null 2>&1
+                    cd "$ENV_DIR" && sudo $DOCKER_COMPOSE_CMD stop "$ENV_NAME-postgres" > /dev/null 2>&1
                 fi
             else
                 echo -e "${RED}❌ Failed to install Python requirements${NC}"
