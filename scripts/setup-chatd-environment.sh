@@ -71,6 +71,12 @@ if [[ ! -f "$REPO_DIR/chatd/bot.py" ]] || [[ ! -f "$REPO_DIR/sql/init/001_initia
     exit 1
 fi
 
+# Function to generate a secure password
+generate_password() {
+    # Generate a 32-character password with letters, numbers, and safe symbols
+    openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
+}
+
 # Function to find next available port
 find_available_port() {
     local base_port=$1
@@ -96,11 +102,15 @@ if [[ $WEB_PORT == 8080 ]]; then
     WEB_PORT=8081
 fi
 
+# Generate secure database password
+DB_PASSWORD=$(generate_password)
+
 echo -e "${BLUE}🚀 Setting up ChatD environment: $ENV_NAME${NC}"
 echo -e "${BLUE}📁 Directory: $ENV_DIR${NC}"
 echo -e "${BLUE}🐳 Container prefix: $ENV_NAME${NC}"
 echo -e "${BLUE}🔌 PostgreSQL port: $POSTGRES_PORT${NC}"
 echo -e "${BLUE}🌐 Web port: $WEB_PORT${NC}"
+echo -e "${BLUE}🔒 Database password: [Generated securely]${NC}"
 echo ""
 
 # Confirm before proceeding
@@ -110,6 +120,81 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Setup cancelled."
     exit 0
 fi
+
+echo ""
+echo -e "${YELLOW}📝 Discord Bot Configuration${NC}"
+echo "Please provide your Discord bot details for this environment."
+echo ""
+
+# Prompt for Discord bot token
+while true; do
+    echo -e "${BLUE}🤖 Discord Bot Token:${NC}"
+    echo "  (Get this from https://discord.com/developers/applications)"
+    read -p "Enter Discord bot token: " DISCORD_TOKEN
+    
+    if [[ -z "$DISCORD_TOKEN" ]]; then
+        echo -e "${RED}❌ Discord bot token cannot be empty. Please try again.${NC}"
+        continue
+    fi
+    
+    # Basic validation - Discord bot tokens are typically 70+ characters
+    if [[ ${#DISCORD_TOKEN} -lt 50 ]]; then
+        echo -e "${RED}❌ Discord bot token seems too short (expected 50+ characters). Please verify.${NC}"
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            continue
+        fi
+    fi
+    
+    break
+done
+
+echo ""
+
+# Prompt for channel IDs
+while true; do
+    echo -e "${BLUE}📺 Discord Channel IDs:${NC}"
+    echo "  (Right-click on channels → Copy ID, separate multiple IDs with commas)"
+    echo "  Example: 123456789012345678,987654321098765432"
+    read -p "Enter channel ID(s): " CHANNEL_IDS
+    
+    if [[ -z "$CHANNEL_IDS" ]]; then
+        echo -e "${RED}❌ At least one channel ID is required. Please try again.${NC}"
+        continue
+    fi
+    
+    # Basic validation - check if IDs look like Discord snowflakes
+    IFS=',' read -ra CHANNEL_ARRAY <<< "$CHANNEL_IDS"
+    VALID_CHANNELS=true
+    
+    for channel_id in "${CHANNEL_ARRAY[@]}"; do
+        # Remove whitespace
+        channel_id=$(echo "$channel_id" | tr -d ' ')
+        
+        # Check if it's a number and has reasonable length (Discord IDs are 17-19 digits)
+        if [[ ! "$channel_id" =~ ^[0-9]{16,20}$ ]]; then
+            echo -e "${RED}❌ Invalid channel ID: $channel_id (should be 16-20 digits)${NC}"
+            VALID_CHANNELS=false
+            break
+        fi
+    done
+    
+    if [[ "$VALID_CHANNELS" == true ]]; then
+        # Clean up the channel IDs (remove extra spaces)
+        CHANNEL_IDS=$(echo "$CHANNEL_IDS" | tr -d ' ')
+        break
+    else
+        echo "Please check your channel IDs and try again."
+    fi
+done
+
+echo ""
+echo -e "${GREEN}✅ Configuration collected:${NC}"
+echo -e "  🤖 Bot token: ${DISCORD_TOKEN:0:20}...***"
+echo -e "  📺 Channel(s): $CHANNEL_IDS"
+echo -e "  🔒 Database password: [Generated securely]"
+echo ""
 
 # Create environment directory
 echo -e "${YELLOW}📁 Creating environment directory...${NC}"
@@ -208,17 +293,17 @@ cat > "/tmp/.env-$ENV_NAME" << EOF
 ###############################################################
 
 # Discord bot token for $ENV_NAME environment
-DISCORD_TOKEN=your_discord_bot_token_here
+DISCORD_TOKEN=$DISCORD_TOKEN
 
 # Comma-separated Discord channel IDs for $ENV_NAME
-CHANNEL_IDS=your_channel_ids_here
+CHANNEL_IDS=$CHANNEL_IDS
 
 ###############################################################
 # Database Configuration
 ###############################################################
 
 # Database password for $ENV_NAME environment
-DB_PASSWORD=your_postgres_password_here
+DB_PASSWORD=$DB_PASSWORD
 
 # Database configuration (auto-configured by Docker)
 DB_TYPE=postgresql
@@ -459,15 +544,17 @@ echo ""
 echo -e "${BLUE}📁 Location:${NC} $ENV_DIR"
 echo -e "${BLUE}🐳 Containers:${NC} ${ENV_NAME}-postgres, ${ENV_NAME}-bot"
 echo -e "${BLUE}🔌 PostgreSQL Port:${NC} $POSTGRES_PORT"
-echo -e "${BLUE}🛠️  Management Command:${NC} $ENV_NAME"
+echo -e "${BLUE}� Database Password:${NC} Auto-generated and configured"
+echo -e "${BLUE}�🛠️  Management Command:${NC} $ENV_NAME"
 echo -e "${BLUE}🔧 Systemd Service:${NC} $ENV_NAME.service"
 echo ""
 echo -e "${YELLOW}📝 Next Steps:${NC}"
-echo "1. Edit the configuration: sudo nano $ENV_DIR/.env"
-echo "2. Set your Discord bot token and channel IDs"
-echo "3. Set your database password"
-echo "4. Start the environment: $ENV_NAME start"
-echo "5. Enable auto-start: $ENV_NAME enable"
+echo "1. Configuration is fully complete! ✅"
+echo "2. Start the environment: $ENV_NAME start"
+echo "3. Enable auto-start: $ENV_NAME enable"
+echo "4. Check status: $ENV_NAME status"
+echo ""
+echo -e "${GREEN}🎉 Your environment is ready to use immediately!${NC}"
 echo ""
 echo -e "${YELLOW}🎯 Quick Commands:${NC}"
 echo "  $ENV_NAME status    # Check environment status"

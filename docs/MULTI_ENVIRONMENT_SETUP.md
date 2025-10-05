@@ -12,37 +12,30 @@ The ChatD system now supports multiple isolated environments using the generaliz
 
 ## Quick Start
 
+### Prerequisites
+- **Discord Bot Token**: Create a bot at https://discord.com/developers/applications
+- **Channel IDs**: Right-click on Discord channels → "Copy ID" (requires Developer Mode)
+
 ### 1. Create a New Environment
 
 ```bash
 sudo ./scripts/setup-chatd-environment.sh <environment-name>
 ```
 
-Examples: `thatd-internships`, `newgrad-roles`, `chatd-fall2025`
+The script will prompt you for:
+- **Discord Bot Token** (from Discord Developer Portal)
+- **Channel IDs** (comma-separated list)
+- **Database Password** (auto-generated)
 
-### 2. Configure the Environment
+Examples: `chatd-internships`, `chatd-newgrad`
 
-```bash
-# Edit the configuration
-sudo nano /opt/<env-name>/.env
-
-# Required settings:
-DISCORD_TOKEN=your_bot_token_here
-CHANNEL_IDS=your_channel_ids_here
-DB_PASSWORD=your_database_password_here
-```
-
-### 3. Start the Environment
+### 2. Start the Environment
 
 ```bash
-# Start the environment
+# Everything is configured automatically!
 <env-name> start
-
-# Enable auto-start on boot
-<env-name> enable
-
-# Check status
-<env-name> status
+<env-name> enable  # Enable auto-start on boot
+<env-name> status  # Check status
 ```
 
 ## Environment Naming
@@ -102,9 +95,8 @@ Each environment gets its own management command:
 ## Environment Examples
 
 ```bash
-# Create and configure any environment
+# Fully automated setup - just run and follow prompts!
 sudo ./scripts/setup-chatd-environment.sh <environment-name>
-sudo nano /opt/<environment-name>/.env  # Configure bot token and passwords
 <environment-name> start
 <environment-name> status
 ```
