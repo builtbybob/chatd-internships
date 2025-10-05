@@ -228,7 +228,6 @@ echo -e "  🤖 Bot token: ${DISCORD_TOKEN:0:20}...***"
 echo -e "  📺 Channel(s): $CHANNEL_IDS"
 echo -e "  📦 Repository: $REPO_URL"
 echo -e "  🔒 Database password: [Generated securely]"
-echo -e "  📦 Repository: $REPO_URL"
 echo ""
 
 # Create environment directory
@@ -589,9 +588,6 @@ sudo chmod 600 "$ENV_DIR/.env"  # Secure environment file
 sudo systemctl daemon-reload
 
 echo ""
-# Create systemd service file for environment management
-create_systemd_service "$ENV_NAME" "$SCRIPT_PATH"
-
 # Database Migration (Optional)
 echo ""
 echo -e "${CYAN}📊 Database Migration${NC}"
@@ -627,7 +623,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                 
                 # Start the environment first to ensure database is available
                 echo -e "${BLUE}🚀 Starting environment for migration...${NC}"
-                "$SCRIPT_PATH" start > /dev/null 2>&1
+                "/usr/local/bin/$ENV_NAME" start > /dev/null 2>&1
                 
                 # Wait a moment for database to be ready
                 sleep 5
@@ -641,7 +637,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                 fi
                 
                 # Stop the environment
-                "$SCRIPT_PATH" stop > /dev/null 2>&1
+                "/usr/local/bin/$ENV_NAME" stop > /dev/null 2>&1
             else
                 echo -e "${RED}❌ Failed to install Python requirements${NC}"
                 echo "Migration will be skipped. Install requirements manually and run:"
