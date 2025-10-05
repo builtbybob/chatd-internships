@@ -703,3 +703,467 @@ After successful setup:
 The ChatD Internships bot is now ready for production use! 🚀
 
 For support, issues, or contributions, visit: https://github.com/builtbybob/chatd-internships
+
+---
+
+## Development Environment Setup
+
+This section covers setting up a local development environment that runs in parallel with your production deployment, allowing you to test changes safely without disrupting the live bot.
+
+### Overview
+
+The development setup uses:
+- **Separate Discord bot** (e.g., "ThatdInternships") 
+- **Isolated database** (chatd_test vs chatd)
+- **Different container names** to avoid conflicts
+- **Different ports** to prevent collisions
+- **Local directory** instead of `/opt/chatd/`
+
+### Prerequisites
+
+- Production ChatD bot already running via systemctl
+- Separate Discord bot created for testing
+- Access to test Discord channels
+- Development working in `/home/user/chatd-internships/`
+
+### Step 1: Create Test Bot on Discord
+
+1. **Create New Application**:
+   - Go to [Discord Developer Portal](https://discord.com/developers/applications)
+   - Click "New Application" 
+   - Name it "ThatdInternships" (or similar)
+
+2. **Configure Bot**:
+   - Go to "Bot" section
+   - Click "Add Bot"
+   - Copy the bot token (you'll need this)
+   - Enable necessary intents if required
+
+3. **Add to Test Server**:
+   - Go to "OAuth2" → "URL Generator"
+   - Select "bot" scope
+   - Select necessary permissions (Send Messages, Add Reactions, etc.)
+   - Use generated URL to add bot to your test server
+
+4. **Get Test Channel IDs**:
+   - In Discord, enable Developer Mode (User Settings → Advanced → Developer Mode)
+   - Right-click test channels → Copy ID
+
+### Step 2: Copy and Configure Environment
+
+```bash
+# From your development directory
+cd /home/rbarton/chatd-internships
+
+# Copy production environment as starting point
+sudo cp /opt/chatd/.env .env.test
+
+# Edit the test configuration
+nano .env.test
+```
+
+**Configure `.env.test` with test-specific values:**
+
+```ini
+###############################################################
+# Discord Bot Configuration (TEST BOT)
+###############################################################
+
+# Your TEST Discord bot token (different from production)
+DISCORD_TOKEN=your_test_bot_token_here
+
+# Test Discord channel IDs (comma-separated)
+CHANNEL_IDS=your_test_channel_ids_here
+
+###############################################################
+# Database Configuration (TEST DATABASE)
+###############################################################
+
+# Test database password (can be different from production)
+DB_PASSWORD=test_chatd_password_123
+
+# Use database-only mode for testing
+MIGRATION_MODE=database_only
+
+###############################################################
+# Development/Testing Configuration
+###############################################################
+
+# Enable debug logging for development
+LOG_LEVEL=DEBUG
+
+# Enable reactions for testing reaction features
+ENABLE_REACTIONS=true
+
+# Faster check interval for development testing
+CHECK_INTERVAL_MINUTES=1
+
+# Standard settings
+MAX_RETRIES=3
+MAX_POST_AGE_DAYS=3
+```
+
+### Step 3: Create Development Docker Compose
+
+Create a `docker-compose.test.yml` file for your development environment:
+
+```bash
+# Create test docker-compose file
+cat > docker-compose.test.yml << 'EOF'
+version: '3.8'
+services:
+  chatd-postgres-test:
+    image: postgres:15-alpine
+    container_name: chatd-postgres-test
+    environment:
+      POSTGRES_DB: chatd_test
+      POSTGRES_USER: chatd
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-test_chatd_password_123}
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Use different port to avoid conflict with production
+      - "5433:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatd -d chatd_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - chatd-test-network
+
+  chatd-bot-test:
+    build: .
+    container_name: chatd-bot-test
+    environment:
+      # Load from test environment file
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - CHANNEL_IDS=${CHANNEL_IDS}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - MIGRATION_MODE=${MIGRATION_MODE:-database_only}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - ENABLE_REACTIONS=${ENABLE_REACTIONS:-true}
+      - MAX_POST_AGE_DAYS=${MAX_POST_AGE_DAYS:-3}
+      - CHECK_INTERVAL_MINUTES=${CHECK_INTERVAL_MINUTES:-1}
+      - MAX_RETRIES=${MAX_RETRIES:-3}
+      # Test database configuration
+      - DB_HOST=chatd-postgres-test
+      - DB_PORT=5432
+      - DB_NAME=chatd_test
+      - DB_USER=chatd
+      - DB_TYPE=postgresql
+      # Timezone configuration
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./Summer2026-Internships:/app/Summer2026-Internships
+      # Mount timezone data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    depends_on:
+      chatd-postgres-test:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - chatd-test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python3 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_test_data:
+    driver: local
+
+networks:
+  chatd-test-network:
+    driver: bridge
+EOF
+```
+
+### Step 4: Prepare Development Data
+
+```bash
+# Ensure Summer2026-Internships repository exists locally
+if [ ! -d "Summer2026-Internships" ]; then
+    git clone https://github.com/SimplifyJobs/Summer2026-Internships.git
+fi
+
+# Create local data and logs directories
+mkdir -p data logs
+
+# Set proper permissions for Docker containers
+sudo chown -R 1000:1000 data logs Summer2026-Internships
+
+# Sync current repository state to prevent replaying old messages
+cp Summer2026-Internships/.github/scripts/listings.json data/previous_data.json
+
+# Create empty message tracking file
+echo '{}' > data/message_tracking.json
+
+# Create current head tracking file
+cd Summer2026-Internships
+git rev-parse HEAD > ../data/current_head.txt
+cd ..
+```
+
+### Step 5: Start Development Environment
+
+```bash
+# Load test environment variables
+export $(cat .env.test | xargs)
+
+# Start test environment with test compose file
+docker-compose -f docker-compose.test.yml up -d
+
+# Wait for database to initialize
+echo "Waiting for test database to initialize..."
+sleep 30
+
+# Check container status
+docker ps | grep test
+
+# Expected output should show:
+# chatd-postgres-test
+# chatd-bot-test
+```
+
+### Step 6: Verify Development Environment
+
+```bash
+# Check container logs
+docker-compose -f docker-compose.test.yml logs chatd-bot-test
+
+# Should see successful startup messages:
+# ✅ Configuration validation passed
+# ✅ Database connection successful (PostgreSQL)  
+# ✅ Discord connection successful (logged in as ThatdInternships#1234)
+# ✅ Can access X/X configured channels
+
+# Test database connection
+docker exec -it chatd-postgres-test psql -U chatd -d chatd_test -c "\dt"
+
+# Should show the same table structure as production:
+# job_postings, job_locations, job_terms, job_degrees, message_tracking
+```
+
+### Step 7: Development Workflow
+
+#### Making and Testing Changes
+
+```bash
+# 1. Make code changes to chatd/*.py files
+nano chatd/bot.py
+
+# 2. Rebuild and restart test bot
+docker-compose -f docker-compose.test.yml build chatd-bot-test
+docker-compose -f docker-compose.test.yml restart chatd-bot-test
+
+# 3. Monitor test logs
+docker-compose -f docker-compose.test.yml logs -f chatd-bot-test
+```
+
+#### Testing New Features
+
+```bash
+# Enable debug logging to see detailed operation
+docker exec -it chatd-bot-test python3 -c "
+import logging
+logging.basicConfig(level=logging.DEBUG)
+"
+
+# Test specific reactions or features in your test Discord channels
+# Your test bot will operate independently of production
+```
+
+#### Database Inspection
+
+```bash
+# Connect to test database
+docker exec -it chatd-postgres-test psql -U chatd -d chatd_test
+
+# Useful queries for development:
+# SELECT COUNT(*) FROM job_postings;
+# SELECT * FROM message_tracking ORDER BY posted_at DESC LIMIT 5;
+# SELECT company_name, COUNT(*) FROM job_postings GROUP BY company_name ORDER BY count DESC LIMIT 10;
+```
+
+### Step 8: Managing Development Environment
+
+#### Start/Stop Development Environment
+
+```bash
+# Start development environment
+docker-compose -f docker-compose.test.yml up -d
+
+# Stop development environment  
+docker-compose -f docker-compose.test.yml down
+
+# Stop and remove volumes (fresh start)
+docker-compose -f docker-compose.test.yml down -v
+```
+
+#### View Logs
+
+```bash
+# Follow all logs
+docker-compose -f docker-compose.test.yml logs -f
+
+# Follow just bot logs
+docker-compose -f docker-compose.test.yml logs -f chatd-bot-test
+
+# Follow just database logs
+docker-compose -f docker-compose.test.yml logs -f chatd-postgres-test
+
+# View recent logs
+docker-compose -f docker-compose.test.yml logs --tail=100 chatd-bot-test
+```
+
+#### Reset Development Environment
+
+```bash
+# Complete reset (clean slate)
+docker-compose -f docker-compose.test.yml down -v
+docker system prune -f
+rm -rf data/* logs/*
+
+# Re-sync repository data
+cp Summer2026-Internships/.github/scripts/listings.json data/previous_data.json
+echo '{}' > data/message_tracking.json
+cd Summer2026-Internships && git rev-parse HEAD > ../data/current_head.txt && cd ..
+
+# Restart
+docker-compose -f docker-compose.test.yml up -d
+```
+
+### Key Differences from Production
+
+| Aspect | Production | Development |
+|--------|------------|-------------|
+| **Service Management** | systemctl | docker-compose |
+| **Working Directory** | `/opt/chatd/` | `./` (current dir) |
+| **Discord Bot** | ChatD#1234 | ThatdInternships#5678 |
+| **Database** | `chatd` | `chatd_test` |
+| **Database Port** | 5432 (internal) | 5433 (host accessible) |
+| **Container Names** | chatd-bot, chatd-postgres | chatd-bot-test, chatd-postgres-test |
+| **Log Level** | INFO | DEBUG |
+| **Reactions** | Disabled | Enabled for testing |
+| **Auto-restart** | systemctl managed | docker-compose restart policy |
+
+### Troubleshooting Development Setup
+
+#### Port Conflicts
+
+```bash
+# Check if ports are in use
+sudo netstat -tlnp | grep :5433
+
+# If port 5433 is busy, change it in docker-compose.test.yml:
+# ports:
+#   - "5434:5432"  # Use different port
+```
+
+#### Container Name Conflicts
+
+```bash
+# Check for existing containers
+docker ps -a | grep chatd
+
+# If containers exist with same names, either:
+# 1. Use different names in docker-compose.test.yml
+# 2. Stop/remove conflicting containers:
+docker stop chatd-bot-test chatd-postgres-test
+docker rm chatd-bot-test chatd-postgres-test
+```
+
+#### Environment Variable Issues
+
+```bash
+# Verify environment file is loaded correctly
+docker exec chatd-bot-test env | grep DISCORD
+
+# Check for missing variables
+docker-compose -f docker-compose.test.yml config
+```
+
+#### Database Connection Issues
+
+```bash
+# Check if test database is running
+docker ps | grep postgres-test
+
+# Test database connectivity
+docker exec chatd-postgres-test pg_isready -U chatd -d chatd_test
+
+# Check database logs
+docker logs chatd-postgres-test
+```
+
+#### Bot Connection Issues
+
+```bash
+# Verify Discord token is correct for test bot
+echo $DISCORD_TOKEN
+
+# Check channel IDs are correct for test channels  
+echo $CHANNEL_IDS
+
+# Verify test bot has permissions in test channels
+# Check Discord bot OAuth2 permissions
+```
+
+### Development Best Practices
+
+1. **Keep Environments Isolated**:
+   - Never use production Discord tokens in development
+   - Use separate test channels
+   - Don't share databases between environments
+
+2. **Regular Cleanup**:
+   ```bash
+   # Clean up development containers and images regularly
+   docker-compose -f docker-compose.test.yml down
+   docker system prune -f
+   ```
+
+3. **Test Thoroughly**:
+   - Test new features in development first
+   - Verify database migrations work correctly
+   - Test error handling and edge cases
+
+4. **Monitor Resource Usage**:
+   ```bash
+   # Check Docker resource usage
+   docker stats
+   
+   # Monitor disk usage
+   df -h
+   docker system df
+   ```
+
+5. **Version Control**:
+   - Don't commit `.env.test` (contains tokens)
+   - Use `.gitignore` to exclude sensitive files
+   - Keep `docker-compose.test.yml` in version control
+
+### Integration with Production
+
+When your development changes are ready:
+
+1. **Test thoroughly** in development environment
+2. **Create feature branch** for changes
+3. **Deploy to production** using standard update process:
+   ```bash
+   # On production system
+   cd /opt/chatd
+   sudo git pull
+   sudo chatd update
+   ```
+
+The development environment allows you to safely test new features, debug issues, and experiment with configurations without any risk to your production Discord bot! 🚀

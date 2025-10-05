@@ -44,6 +44,10 @@ DEFAULT_CONFIG = {
     'DB_HEALTH_CHECK_INTERVAL': '300',  # Health check interval in seconds
     'DB_MIGRATION_BATCH_SIZE': '100',  # Records to migrate per batch
     'DB_BACKUP_RETENTION_DAYS': '30',  # Days to keep database backups
+    # Message posting optimization settings
+    'MESSAGE_POST_DELAY_MS': '100',  # Delay between message posts in milliseconds
+    'REACTION_DELAY_MS': '500',  # Delay between adding reactions in milliseconds
+    'BATCH_PROCESSING_DELAY_MS': '50',  # Delay between batch operations in milliseconds
 }
 
 # Required configuration values that must be set
@@ -107,6 +111,10 @@ class Config:
         self.db_health_check_interval = int(self.db_health_check_interval)
         self.db_migration_batch_size = int(self.db_migration_batch_size)
         self.db_backup_retention_days = int(self.db_backup_retention_days)
+        # Message timing configurations (convert to seconds for asyncio.sleep)
+        self.message_post_delay = int(self.message_post_delay_ms) / 1000.0
+        self.reaction_delay = int(self.reaction_delay_ms) / 1000.0
+        self.batch_processing_delay = int(self.batch_processing_delay_ms) / 1000.0
         
         # Convert boolean values
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')
