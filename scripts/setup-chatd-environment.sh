@@ -12,6 +12,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Script configuration
@@ -22,13 +23,7 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 usage() {
     echo "Usage: $0 <environment-name>"
     echo ""
-    echo "Creates echo -e "${BLUE}📁 Location:${NC} $ENV_DIR"
-echo -e "${BLUE}🐳 Containers:${NC} ${ENV_NAME}-postgres, ${ENV_NAME}-bot"
-echo -e "${BLUE}🔌 PostgreSQL Port:${NC} $POSTGRES_PORT"
-echo -e "${BLUE}📦 Repository:${NC} $REPO_URL"
-echo -e "${BLUE}🔒 Database Password:${NC} Auto-generated and configured"
-echo -e "${BLUE}🛠️  Management Command:${NC} $ENV_NAME"
-echo -e "${BLUE}🔧 Systemd Service:${NC} $ENV_NAME.service"ChatD environment with isolated containers, database, and management."
+    echo "Creates a new ChatD environment with isolated containers, database, and management."
     echo ""
     echo "Examples:"
     echo "  $0 thatd-internships     # Creates /opt/thatd-internships (development)"
