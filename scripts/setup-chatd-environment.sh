@@ -45,7 +45,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 ENV_NAME="$1"
-# ENV_DIR will be set after cloning the ChatD repository
+ENV_DIR="/opt/$ENV_NAME"
 
 # Validate environment name
 if [[ ! "$ENV_NAME" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]] && [[ ! "$ENV_NAME" =~ ^[a-z0-9]$ ]]; then
@@ -57,8 +57,12 @@ if [[ ! "$ENV_NAME" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]] && [[ ! "$ENV_NAME" =~ ^[
     exit 1
 fi
 
-# Check if environment already exists (we'll check this after setting up the repo)
-# This check will be moved later in the script
+# Check if environment already exists
+if [[ -d "$ENV_DIR" ]]; then
+    echo -e "${RED}❌ Environment '$ENV_NAME' already exists at $ENV_DIR${NC}"
+    echo "Use a different name or remove the existing environment first."
+    exit 1
+fi
 
 # Check if we're running from the correct repository
 if [[ ! -f "$REPO_DIR/chatd/bot.py" ]] || [[ ! -f "$REPO_DIR/sql/init/001_initial_schema.sql" ]]; then
@@ -102,6 +106,23 @@ fi
 # Generate secure database password
 DB_PASSWORD=$(generate_password)
 
+# Create environment directory by cloning chatd-internships
+echo -e "${YELLOW}📁 Creating environment by cloning ChatD repository...${NC}"
+
+# Determine the repository URL for chatd-internships
+CHATD_REPO_URL=$(git remote get-url origin 2>/dev/null || echo "https://github.com/builtbybob/chatd-internships.git")
+
+if ! sudo git clone "$CHATD_REPO_URL" "$ENV_DIR"; then
+    echo -e "${RED}❌ Failed to clone ChatD repository to $ENV_DIR${NC}"
+    echo "This creates the environment directory with all necessary scripts."
+    exit 1
+fi
+
+# Create additional directories
+sudo mkdir -p "$ENV_DIR/data" "$ENV_DIR/logs"
+echo -e "${GREEN}✅ Environment directory created with ChatD repository${NC}"
+
+echo ""
 echo -e "${BLUE}🚀 Setting up ChatD environment: $ENV_NAME${NC}"
 echo -e "${BLUE}📁 Directory: $ENV_DIR${NC}"
 echo -e "${BLUE}🐳 Container prefix: $ENV_NAME${NC}"
@@ -221,42 +242,6 @@ echo -e "  📦 Repository: $REPO_URL"
 echo -e "  🔒 Database password: [Generated securely]"
 echo ""
 
-# Create environment directory
-echo -e "${YELLOW}📁 Creating environment structure...${NC}"
-
-# Clone ChatD internships repository first to /opt
-CHATD_REPO_PATH="/opt/chatd-internships"
-if [[ ! -d "$CHATD_REPO_PATH" ]]; then
-    echo -e "${YELLOW}📥 Cloning ChatD repository to /opt...${NC}"
-    # Try to get it from the current git remote, fallback to GitHub
-    CHATD_REPO_URL=$(git remote get-url origin 2>/dev/null || echo "https://github.com/builtbybob/chatd-internships.git")
-    
-    if ! sudo git clone "$CHATD_REPO_URL" "$CHATD_REPO_PATH"; then
-        echo -e "${RED}❌ Failed to clone ChatD repository: $CHATD_REPO_URL${NC}"
-        echo "This is required for migration scripts and configuration."
-        exit 1
-    fi
-    echo -e "${GREEN}✅ ChatD repository cloned successfully${NC}"
-else
-    echo -e "${YELLOW}⚠️  ChatD repository already exists at $CHATD_REPO_PATH${NC}"
-fi
-
-# Create environment directory inside the ChatD repository
-ENV_DIR="$CHATD_REPO_PATH/environments/$ENV_NAME"
-
-# Check if environment already exists
-if [[ -d "$ENV_DIR" ]]; then
-    echo -e "${RED}❌ Environment '$ENV_NAME' already exists at $ENV_DIR${NC}"
-    echo "Use a different name or remove the existing environment first."
-    exit 1
-fi
-
-if ! sudo mkdir -p "$ENV_DIR" "$ENV_DIR/data" "$ENV_DIR/logs"; then
-    echo -e "${RED}❌ Failed to create environment directory: $ENV_DIR${NC}"
-    echo "Please check permissions and try again."
-    exit 1
-fi
-
 # Clone repository
 echo -e "${YELLOW}📥 Cloning repository...${NC}"
 REPO_DIR_NAME="Summer2026-Internships"
@@ -273,9 +258,6 @@ fi
 
 # Set proper ownership for the cloned repository
 sudo chown -R root:root "$ENV_DIR/$REPO_DIR_NAME"
-
-# Set proper ownership for the ChatD repository (already cloned to /opt)
-sudo chown -R root:root "$CHATD_REPO_PATH"
 
 # Copy and customize docker-compose.yml
 echo -e "${YELLOW}🐳 Setting up Docker configuration...${NC}"
@@ -294,7 +276,7 @@ services:
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     volumes:
       - ${ENV_NAME}_postgres_data:/var/lib/postgresql/data
-      - $CHATD_REPO_PATH/sql/init:/docker-entrypoint-initdb.d:ro
+      - $ENV_DIR/sql/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "${POSTGRES_PORT}:5432"
     networks:
@@ -312,7 +294,7 @@ services:
 
   ${ENV_NAME}-bot:
     build:
-      context: $CHATD_REPO_PATH
+      context: $ENV_DIR
       dockerfile: Dockerfile
     container_name: ${ENV_NAME}-bot
     restart: unless-stopped
@@ -483,7 +465,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 ENV_NAME="ENV_NAME_PLACEHOLDER"
-ENV_DIR="/opt/chatd-internships/environments/$ENV_NAME"
+ENV_DIR="/opt/$ENV_NAME"
 SERVICE_NAME="$ENV_NAME.service"
 
 # Determine which Docker Compose command to use
@@ -663,7 +645,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
             source "$VENV_DIR/bin/activate"
             
             echo -e "${BLUE}📦 Installing Python dependencies...${NC}"
-            if pip install -r "$CHATD_REPO_PATH/requirements.txt" > /dev/null 2>&1; then
+            if pip install -r "$ENV_DIR/requirements.txt" > /dev/null 2>&1; then
                 
                 # Start only the database for migration (not the bot!)
                 echo -e "${BLUE}🚀 Starting database for migration...${NC}"
@@ -694,14 +676,14 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                     
                     # Run migration
                     echo -e "${BLUE}🗃️  Running migration script...${NC}"
-                    # Run the migration script from the cloned ChatD repository
-                    cd "$CHATD_REPO_PATH"
+                    # Run the migration script from the environment's chatd repository
+                    cd "$ENV_DIR"
                     if python3 scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
                         echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
                         echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
                     else
                         echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
-                        echo "You can retry manually from $CHATD_REPO_PATH: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+                        echo "You can retry manually from $ENV_DIR: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
                     fi
                     
                     # Stop only the database (bot was never started)
