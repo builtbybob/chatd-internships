@@ -613,28 +613,36 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
             # Activate virtual environment and install requirements
             source "$VENV_DIR/bin/activate"
             
+            echo -e "${BLUE}📦 Installing Python dependencies...${NC}"
             if pip install -r requirements.txt > /dev/null 2>&1; then
-                echo -e "${BLUE}🗃️  Running migration script...${NC}"
                 
                 # Start only the database for migration (not the bot!)
                 echo -e "${BLUE}🚀 Starting database for migration...${NC}"
-                cd "$ENV_DIR" && sudo docker compose up -d "$ENV_NAME-postgres" > /dev/null 2>&1
-                
-                # Wait a moment for database to be ready
-                sleep 5
-                
-                # Run migration
-                if python3 scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
-                    echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
-                    echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
-                else
-                    echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
+                cd "$ENV_DIR"
+                if ! sudo docker compose up -d "$ENV_NAME-postgres"; then
+                    echo -e "${RED}❌ Failed to start database container${NC}"
+                    echo "Migration will be skipped. Check Docker logs for details."
                     echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+                else
+                    echo -e "${BLUE}⏳ Waiting for database to be ready...${NC}"
+                    echo -e "${BLUE}⏳ Waiting for database to be ready...${NC}"
+                    # Wait a moment for database to be ready
+                    sleep 5
+                    
+                    # Run migration
+                    echo -e "${BLUE}🗃️  Running migration script...${NC}"
+                    if python3 scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
+                        echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
+                        echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
+                    else
+                        echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
+                        echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+                    fi
+                    
+                    # Stop only the database (bot was never started)
+                    echo -e "${BLUE}🛑 Stopping database...${NC}"
+                    cd "$ENV_DIR" && sudo docker compose stop "$ENV_NAME-postgres" > /dev/null 2>&1
                 fi
-                
-                # Stop only the database (bot was never started)
-                echo -e "${BLUE}🛑 Stopping database...${NC}"
-                cd "$ENV_DIR" && sudo docker compose stop "$ENV_NAME-postgres" > /dev/null 2>&1
             else
                 echo -e "${RED}❌ Failed to install Python requirements${NC}"
                 echo "Migration will be skipped. Install requirements manually and run:"
