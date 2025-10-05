@@ -17,7 +17,6 @@ NC='\033[0m' # No Color
 # Script configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
-TEMPLATE_DIR="/opt/chatd"  # Use existing production as template
 
 # Usage function
 usage() {
@@ -64,10 +63,11 @@ if [[ -d "$ENV_DIR" ]]; then
     exit 1
 fi
 
-# Check if template exists
-if [[ ! -d "$TEMPLATE_DIR" ]]; then
-    echo -e "${RED}❌ Template directory not found: $TEMPLATE_DIR${NC}"
-    echo "Please ensure the base ChatD environment is set up first."
+# Check if we're running from the correct repository
+if [[ ! -f "$REPO_DIR/chatd/bot.py" ]] || [[ ! -f "$REPO_DIR/sql/init/001_initial_schema.sql" ]]; then
+    echo -e "${RED}❌ This script must be run from a ChatD repository${NC}"
+    echo "Missing required files: chatd/bot.py or sql/init/001_initial_schema.sql"
+    echo "Please run this script from the chatd-internships repository directory."
     exit 1
 fi
 
@@ -113,9 +113,11 @@ fi
 
 # Create environment directory
 echo -e "${YELLOW}📁 Creating environment directory...${NC}"
-sudo mkdir -p "$ENV_DIR"
-sudo mkdir -p "$ENV_DIR/data"
-sudo mkdir -p "$ENV_DIR/logs"
+if ! sudo mkdir -p "$ENV_DIR" "$ENV_DIR/data" "$ENV_DIR/logs"; then
+    echo -e "${RED}❌ Failed to create environment directory: $ENV_DIR${NC}"
+    echo "Please check permissions and try again."
+    exit 1
+fi
 
 # Copy and customize docker-compose.yml
 echo -e "${YELLOW}🐳 Setting up Docker configuration...${NC}"
