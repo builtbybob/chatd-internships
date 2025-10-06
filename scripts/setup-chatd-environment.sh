@@ -117,46 +117,6 @@ fi
 # Generate secure database password
 DB_PASSWORD=$(generate_password)
 
-# Create environment directory by cloning chatd-internships
-echo -e "${YELLOW}📁 Creating environment by cloning ChatD repository...${NC}"
-
-# Determine the repository URL for chatd-internships
-if git rev-parse --git-dir > /dev/null 2>&1; then
-    CHATD_REPO_URL=$(git remote get-url origin 2>/dev/null || echo "https://github.com/builtbybob/chatd-internships.git")
-else
-    CHATD_REPO_URL="https://github.com/builtbybob/chatd-internships.git"
-fi
-
-echo -e "${BLUE}📦 Repository: $CHATD_REPO_URL${NC}"
-echo -e "${BLUE}🌿 Branch: $CHATD_BRANCH${NC}"
-
-if ! sudo git clone -b "$CHATD_BRANCH" "$CHATD_REPO_URL" "$ENV_DIR"; then
-    echo -e "${RED}❌ Failed to clone ChatD repository to $ENV_DIR${NC}"
-    echo "This creates the environment directory with all necessary scripts."
-    exit 1
-fi
-
-# Create additional directories
-sudo mkdir -p "$ENV_DIR/data" "$ENV_DIR/logs"
-echo -e "${GREEN}✅ Environment directory created with ChatD repository${NC}"
-
-echo ""
-echo -e "${BLUE}🚀 Setting up ChatD environment: $ENV_NAME${NC}"
-echo -e "${BLUE}📁 Directory: $ENV_DIR${NC}"
-echo -e "${BLUE}🐳 Container prefix: $ENV_NAME${NC}"
-echo -e "${BLUE}🔌 PostgreSQL port: $POSTGRES_PORT${NC}"
-echo -e "${BLUE}🌐 Web port: $WEB_PORT${NC}"
-echo -e "${BLUE}🔒 Database password: [Generated securely]${NC}"
-echo ""
-
-# Confirm before proceeding
-read -p "Continue with setup? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Setup cancelled."
-    exit 0
-fi
-
 echo ""
 echo -e "${YELLOW}📝 Discord Bot Configuration${NC}"
 echo "Please provide your Discord bot details for this environment."
@@ -284,6 +244,46 @@ echo -e "  📦 Repository: $REPO_URL"
 echo -e "  🌿 ChatD Branch: $CHATD_BRANCH"
 echo -e "  🔒 Database password: [Generated securely]"
 echo ""
+
+# Create environment directory by cloning chatd-internships
+echo -e "${YELLOW}📁 Creating environment by cloning ChatD repository...${NC}"
+
+# Determine the repository URL for chatd-internships
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    CHATD_REPO_URL=$(git remote get-url origin 2>/dev/null || echo "https://github.com/builtbybob/chatd-internships.git")
+else
+    CHATD_REPO_URL="https://github.com/builtbybob/chatd-internships.git"
+fi
+
+echo -e "${BLUE}📦 Repository: $CHATD_REPO_URL${NC}"
+echo -e "${BLUE}🌿 Branch: $CHATD_BRANCH${NC}"
+
+if ! sudo git clone -b "$CHATD_BRANCH" "$CHATD_REPO_URL" "$ENV_DIR"; then
+    echo -e "${RED}❌ Failed to clone ChatD repository to $ENV_DIR${NC}"
+    echo "This creates the environment directory with all necessary scripts."
+    exit 1
+fi
+
+# Create additional directories
+sudo mkdir -p "$ENV_DIR/data" "$ENV_DIR/logs"
+echo -e "${GREEN}✅ Environment directory created with ChatD repository${NC}"
+
+echo ""
+echo -e "${BLUE}🚀 Setting up ChatD environment: $ENV_NAME${NC}"
+echo -e "${BLUE}📁 Directory: $ENV_DIR${NC}"
+echo -e "${BLUE}🐳 Container prefix: $ENV_NAME${NC}"
+echo -e "${BLUE}🔌 PostgreSQL port: $POSTGRES_PORT${NC}"
+echo -e "${BLUE}🌐 Web port: $WEB_PORT${NC}"
+echo -e "${BLUE}🔒 Database password: [Generated securely]${NC}"
+echo ""
+
+# Confirm before proceeding
+read -p "Continue with setup? (y/N): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Setup cancelled."
+    exit 0
+fi
 
 # Clone repository
 echo -e "${YELLOW}📥 Cloning repository...${NC}"
