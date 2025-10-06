@@ -447,7 +447,7 @@ EOF
 
 sudo mv "/tmp/.env-$ENV_NAME" "$ENV_DIR/.env"
 sudo chown $USER:docker "$ENV_DIR/.env"  # Match user ownership like production
-sudo chmod 600 "$ENV_DIR/.env"  # Secure environment file
+sudo chmod 640 "$ENV_DIR/.env"  # Secure environment file, readable by docker group
 
 # Create systemd service
 echo -e "${YELLOW}🔧 Creating systemd service...${NC}"
@@ -526,9 +526,9 @@ SERVICE_NAME="$ENV_NAME.service"
 
 # Determine which Docker Compose command to use
 if command -v docker-compose &> /dev/null; then
-    DOCKER_COMPOSE_CMD="docker-compose"
+    DOCKER_COMPOSE_CMD="docker-compose -f $ENV_DIR/docker-compose.yml --env-file $ENV_DIR/.env"
 elif docker compose version &> /dev/null; then
-    DOCKER_COMPOSE_CMD="docker compose"
+    DOCKER_COMPOSE_CMD="docker compose -f $ENV_DIR/docker-compose.yml --env-file $ENV_DIR/.env"
 else
     echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
     exit 1
@@ -664,7 +664,7 @@ echo -e "${YELLOW}🔐 Setting permissions...${NC}"
 sudo chown -R root:root "$ENV_DIR"
 sudo chmod 755 "$ENV_DIR"
 sudo chmod 644 "$ENV_DIR/docker-compose.yml"
-sudo chmod 600 "$ENV_DIR/.env"  # Secure environment file
+sudo chmod 640 "$ENV_DIR/.env"  # Secure environment file, readable by docker group
 
 # Reload systemd
 sudo systemctl daemon-reload
@@ -709,9 +709,9 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                 
                 # Check if docker-compose or docker compose is available
                 if command -v docker-compose &> /dev/null; then
-                    DOCKER_COMPOSE_CMD="docker-compose"
+                    DOCKER_COMPOSE_CMD="docker-compose -f $ENV_DIR/docker-compose.yml --env-file $ENV_DIR/.env"
                 elif docker compose version &> /dev/null; then
-                    DOCKER_COMPOSE_CMD="docker compose"
+                    DOCKER_COMPOSE_CMD="docker compose -f $ENV_DIR/docker-compose.yml --env-file $ENV_DIR/.env"
                 else
                     echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
                     echo "Migration will be skipped. Please install Docker Compose."
