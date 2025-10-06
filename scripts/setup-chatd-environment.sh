@@ -721,7 +721,8 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                     echo -e "${BLUE}🗃️  Running migration script...${NC}"
                     # Run the migration script from the environment's chatd repository
                     cd "$ENV_DIR"
-                    if python3 scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
+                    # Set DOCKER_CONTAINER=true to ensure it uses the DB_HOST from .env file
+                    if DOCKER_CONTAINER=true python3 scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
                         echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
                         echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
                     else
