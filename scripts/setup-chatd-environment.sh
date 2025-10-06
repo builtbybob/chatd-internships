@@ -32,6 +32,9 @@ usage() {
     echo ""
     echo "The script will:"
     echo "  - Create /opt/<environment-name>/ directory"
+    echo "  - Prompt for Discord bot configuration"
+    echo "  - Prompt for repository URL and ChatD branch"
+    echo "  - Clone ChatD repository with specified branch"
     echo "  - Setup isolated Docker containers with <environment-name> prefix"
     echo "  - Assign unique ports automatically"
     echo "  - Create environment-specific systemd service"
@@ -64,12 +67,20 @@ if [[ -d "$ENV_DIR" ]]; then
     exit 1
 fi
 
-# Check if we're running from the correct repository
-if [[ ! -f "$REPO_DIR/chatd/bot.py" ]] || [[ ! -f "$REPO_DIR/sql/init/001_initial_schema.sql" ]]; then
-    echo -e "${RED}❌ This script must be run from a ChatD repository${NC}"
-    echo "Missing required files: chatd/bot.py or sql/init/001_initial_schema.sql"
-    echo "Please run this script from the chatd-internships repository directory."
-    exit 1
+# Check if we're running from the correct repository (optional check)
+if [[ -f "$REPO_DIR/chatd/bot.py" ]] && [[ -f "$REPO_DIR/sql/init/001_initial_schema.sql" ]]; then
+    echo -e "${GREEN}✅ Running from ChatD repository${NC}"
+elif git rev-parse --git-dir > /dev/null 2>&1; then
+    echo -e "${YELLOW}⚠️  Warning: Not running from a ChatD repository${NC}"
+    echo "Some features may not work correctly. Consider running from the chatd-internships repository."
+    read -p "Continue anyway? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Setup cancelled."
+        exit 0
+    fi
+else
+    echo -e "${BLUE}ℹ️  Running standalone (not in a git repository)${NC}"
 fi
 
 # Function to generate a secure password
@@ -110,9 +121,16 @@ DB_PASSWORD=$(generate_password)
 echo -e "${YELLOW}📁 Creating environment by cloning ChatD repository...${NC}"
 
 # Determine the repository URL for chatd-internships
-CHATD_REPO_URL=$(git remote get-url origin 2>/dev/null || echo "https://github.com/builtbybob/chatd-internships.git")
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    CHATD_REPO_URL=$(git remote get-url origin 2>/dev/null || echo "https://github.com/builtbybob/chatd-internships.git")
+else
+    CHATD_REPO_URL="https://github.com/builtbybob/chatd-internships.git"
+fi
 
-if ! sudo git clone "$CHATD_REPO_URL" "$ENV_DIR"; then
+echo -e "${BLUE}📦 Repository: $CHATD_REPO_URL${NC}"
+echo -e "${BLUE}🌿 Branch: $CHATD_BRANCH${NC}"
+
+if ! sudo git clone -b "$CHATD_BRANCH" "$CHATD_REPO_URL" "$ENV_DIR"; then
     echo -e "${RED}❌ Failed to clone ChatD repository to $ENV_DIR${NC}"
     echo "This creates the environment directory with all necessary scripts."
     exit 1
@@ -235,10 +253,35 @@ else
 fi
 
 echo ""
+
+# Prompt for ChatD branch
+echo -e "${BLUE}🌿 ChatD Branch:${NC}"
+# Try to detect current branch, fallback to main if not in a git repo
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
+    echo "  (The branch of chatd-internships repository to clone)"
+    echo "  Current branch: $CURRENT_BRANCH"
+else
+    CURRENT_BRANCH="main"
+    echo "  (The branch of chatd-internships repository to clone)"
+    echo "  Default branch: $CURRENT_BRANCH (not in a git repository)"
+fi
+read -p "Enter branch name (or press Enter for $CURRENT_BRANCH): " BRANCH_INPUT
+
+if [[ -z "$BRANCH_INPUT" ]]; then
+    CHATD_BRANCH="$CURRENT_BRANCH"
+    echo -e "${GREEN}✅ Using branch: $CHATD_BRANCH${NC}"
+else
+    CHATD_BRANCH="$BRANCH_INPUT"
+    echo -e "${GREEN}✅ Using specified branch: $CHATD_BRANCH${NC}"
+fi
+
+echo ""
 echo -e "${GREEN}✅ Configuration collected:${NC}"
 echo -e "  🤖 Bot token: ${DISCORD_TOKEN:0:20}...***"
 echo -e "  📺 Channel(s): $CHANNEL_IDS"
 echo -e "  📦 Repository: $REPO_URL"
+echo -e "  🌿 ChatD Branch: $CHATD_BRANCH"
 echo -e "  🔒 Database password: [Generated securely]"
 echo ""
 
