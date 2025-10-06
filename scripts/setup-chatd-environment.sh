@@ -267,8 +267,8 @@ fi
 # Create additional directories
 sudo mkdir -p "$ENV_DIR/data" "$ENV_DIR/logs"
 
-# Set proper ownership for Docker containers (run as user 1000)
-sudo chown -R 1000:1000 "$ENV_DIR/data" "$ENV_DIR/logs" "$ENV_DIR/Summer2026-Internships"
+# Set proper ownership for Docker containers (run as user 1000) - data and logs only for now
+sudo chown -R 1000:1000 "$ENV_DIR/data" "$ENV_DIR/logs"
 echo -e "${GREEN}✅ Environment directory created with ChatD repository${NC}"
 
 echo ""
@@ -302,8 +302,8 @@ else
     echo -e "${YELLOW}⚠️  Repository directory already exists, skipping clone${NC}"
 fi
 
-# Set proper ownership for the cloned repository
-sudo chown -R root:root "$ENV_DIR/$REPO_DIR_NAME"
+# Set proper ownership for the cloned repository (Docker containers run as user 1000)
+sudo chown -R 1000:1000 "$ENV_DIR/$REPO_DIR_NAME"
 
 # Copy and customize docker-compose.yml
 echo -e "${YELLOW}🐳 Setting up Docker configuration...${NC}"
