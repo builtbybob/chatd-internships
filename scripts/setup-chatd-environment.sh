@@ -677,7 +677,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
     else
         # Create Python virtual environment for migration
         echo -e "${BLUE}📦 Setting up Python environment...${NC}"
-        VENV_DIR="$ENV_DIR/migration_venv"
+        VENV_DIR="$ENV_DIR/.venv"
         
         if ! python3 -m venv "$VENV_DIR"; then
             echo -e "${RED}❌ Failed to create Python virtual environment${NC}"
@@ -721,8 +721,8 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                     echo -e "${BLUE}🗃️  Running migration script...${NC}"
                     # Run the migration script from the environment's chatd repository
                     cd "$ENV_DIR"
-                    # Set DOCKER_CONTAINER=true to ensure it uses the DB_HOST from .env file
-                    if DOCKER_CONTAINER=true python3 scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
+                    # Use the venv's Python executable with sudo to access both packages and secure .env file
+                    if sudo DOCKER_CONTAINER=false DB_PORT="$POSTGRES_PORT" "$VENV_DIR/bin/python3" scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
                         echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
                         echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
                     else
