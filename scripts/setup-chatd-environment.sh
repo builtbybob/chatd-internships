@@ -449,9 +449,11 @@ echo -e "${YELLOW}🔧 Creating systemd service...${NC}"
 
 # Determine which Docker Compose command to use
 if command -v docker-compose &> /dev/null; then
-    COMPOSE_CMD="docker-compose"
+    COMPOSE_EXEC="/usr/bin/docker-compose"
+    COMPOSE_ARGS=""
 elif docker compose version &> /dev/null; then
-    COMPOSE_CMD="docker compose"
+    COMPOSE_EXEC="/usr/bin/docker"
+    COMPOSE_ARGS="compose"
 else
     echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
     echo "Please install Docker Compose and try again."
@@ -474,13 +476,13 @@ Group=root
 WorkingDirectory=$ENV_DIR
 
 # Start the service
-ExecStart=/usr/bin/$COMPOSE_CMD up -d
+ExecStart=$COMPOSE_EXEC $COMPOSE_ARGS up -d
 
 # Stop the service
-ExecStop=/usr/bin/$COMPOSE_CMD down
+ExecStop=$COMPOSE_EXEC $COMPOSE_ARGS down
 
 # Reload the service
-ExecReload=/usr/bin/$COMPOSE_CMD restart
+ExecReload=$COMPOSE_EXEC $COMPOSE_ARGS restart
 
 [Install]
 WantedBy=multi-user.target
