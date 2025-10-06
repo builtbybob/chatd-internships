@@ -266,6 +266,9 @@ fi
 
 # Create additional directories
 sudo mkdir -p "$ENV_DIR/data" "$ENV_DIR/logs"
+
+# Set proper ownership for Docker containers (run as user 1000)
+sudo chown -R 1000:1000 "$ENV_DIR/data" "$ENV_DIR/logs" "$ENV_DIR/Summer2026-Internships"
 echo -e "${GREEN}✅ Environment directory created with ChatD repository${NC}"
 
 echo ""
@@ -351,7 +354,7 @@ services:
     env_file:
       - .env
     volumes:
-      - $ENV_DIR/Summer2026-Internships:/app/Summer2026-Internships:ro
+      - $ENV_DIR/Summer2026-Internships:/app/Summer2026-Internships
       - ${ENV_NAME}_app_data:/app/data
       - $ENV_DIR/logs:/app/logs
     networks:
@@ -443,6 +446,8 @@ DB_BACKUP_RETENTION_DAYS=30
 EOF
 
 sudo mv "/tmp/.env-$ENV_NAME" "$ENV_DIR/.env"
+sudo chown $USER:docker "$ENV_DIR/.env"  # Match user ownership like production
+sudo chmod 600 "$ENV_DIR/.env"  # Secure environment file
 
 # Create systemd service
 echo -e "${YELLOW}🔧 Creating systemd service...${NC}"
@@ -451,9 +456,15 @@ echo -e "${YELLOW}🔧 Creating systemd service...${NC}"
 if command -v docker-compose &> /dev/null; then
     COMPOSE_EXEC="/usr/bin/docker-compose"
     COMPOSE_ARGS=""
+    COMPOSE_CMD_START="$COMPOSE_EXEC up -d"
+    COMPOSE_CMD_STOP="$COMPOSE_EXEC down"
+    COMPOSE_CMD_RESTART="$COMPOSE_EXEC restart"
 elif docker compose version &> /dev/null; then
     COMPOSE_EXEC="/usr/bin/docker"
     COMPOSE_ARGS="compose"
+    COMPOSE_CMD_START="$COMPOSE_EXEC $COMPOSE_ARGS up -d"
+    COMPOSE_CMD_STOP="$COMPOSE_EXEC $COMPOSE_ARGS down"
+    COMPOSE_CMD_RESTART="$COMPOSE_EXEC $COMPOSE_ARGS restart"
 else
     echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
     echo "Please install Docker Compose and try again."
@@ -476,13 +487,13 @@ Group=root
 WorkingDirectory=$ENV_DIR
 
 # Start the service
-ExecStart=$COMPOSE_EXEC $COMPOSE_ARGS up -d
+ExecStart=$COMPOSE_CMD_START
 
 # Stop the service
-ExecStop=$COMPOSE_EXEC $COMPOSE_ARGS down
+ExecStop=$COMPOSE_CMD_STOP
 
 # Reload the service
-ExecReload=$COMPOSE_EXEC $COMPOSE_ARGS restart
+ExecReload=$COMPOSE_CMD_RESTART
 
 [Install]
 WantedBy=multi-user.target
