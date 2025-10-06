@@ -713,9 +713,21 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                     echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
                 else
                     echo -e "${BLUE}⏳ Waiting for database to be ready...${NC}"
-                    echo -e "${BLUE}⏳ Waiting for database to be ready...${NC}"
-                    # Wait a moment for database to be ready
-                    sleep 5
+                    # Wait for database container to be healthy (up to 60 seconds)
+                    WAIT_COUNT=0
+                    while [ $WAIT_COUNT -lt 60 ]; do
+                        if sudo $DOCKER_COMPOSE_CMD ps "$ENV_NAME-postgres" | grep -q "healthy"; then
+                            echo -e "${GREEN}✅ Database is ready!${NC}"
+                            break
+                        fi
+                        echo -n "."
+                        sleep 1
+                        WAIT_COUNT=$((WAIT_COUNT + 1))
+                    done
+                    
+                    if [ $WAIT_COUNT -ge 60 ]; then
+                        echo -e "${YELLOW}⚠️  Database health check timed out, proceeding anyway...${NC}"
+                    fi
                     
                     # Run migration
                     echo -e "${BLUE}🗃️  Running migration script...${NC}"
