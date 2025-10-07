@@ -702,9 +702,6 @@ sudo chmod 755 "$ENV_DIR"
 sudo chmod 644 "$ENV_DIR/docker-compose.yml"
 sudo chmod 600 "$ENV_DIR/.env"  # Secure environment file
 
-# Reload systemd
-sudo systemctl daemon-reload
-
 echo ""
 # Database Migration (Optional)
 echo ""
@@ -753,7 +750,6 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                     echo "Migration will be skipped. Please install Docker Compose."
                     echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
                     deactivate
-                    continue
                 fi
                 
                 if ! sudo $DOCKER_COMPOSE_CMD up -d "$ENV_NAME-postgres"; then
@@ -808,6 +804,9 @@ else
     echo -e "${BLUE}ℹ️  Skipping database migration.${NC}"
     echo "You can run it later with: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
 fi
+
+# Reload systemd after all service files are finalized
+sudo systemctl daemon-reload
 
 echo ""
 echo -e "${GREEN}✅ ChatD environment '$ENV_NAME' has been created successfully!${NC}"
