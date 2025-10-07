@@ -654,6 +654,70 @@ case "${1:-}" in
         echo "Removing unused volumes (excluding data)..."
         docker volume prune -f
         ;;
+    "loglevel")
+        LEVEL="${2:-}"
+        CONTAINER_NAME="${ENV_NAME}-bot"
+        
+        # Check if container is running
+        if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo -e "${RED}❌ ${ENV_NAME} bot container is not running${NC}"
+            echo "   Start it with: $ENV_NAME start"
+            exit 1
+        fi
+        
+        case "${LEVEL:-}" in
+            debug|DEBUG)
+                echo "DEBUG" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
+                echo -e "${GREEN}📝 Log level changed to: DEBUG${NC}"
+                echo -e "${BLUE}   🔍 Debug logging enabled - very verbose output${NC}"
+                echo -e "${BLUE}   View logs with: $ENV_NAME logs bot${NC}"
+                ;;
+            info|INFO)
+                echo "INFO" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
+                echo -e "${GREEN}📝 Log level changed to: INFO${NC}"
+                echo -e "${BLUE}   ℹ️  Info logging enabled - normal operational messages${NC}"
+                ;;
+            warning|WARNING|warn|WARN)
+                echo "WARNING" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
+                echo -e "${GREEN}📝 Log level changed to: WARNING${NC}"
+                echo -e "${BLUE}   ⚠️  Warning logging enabled - warnings and errors only${NC}"
+                ;;
+            error|ERROR)
+                echo "ERROR" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
+                echo -e "${GREEN}📝 Log level changed to: ERROR${NC}"
+                echo -e "${BLUE}   ❌ Error logging enabled - errors and critical only${NC}"
+                ;;
+            critical|CRITICAL|crit|CRIT)
+                echo "CRITICAL" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
+                echo -e "${GREEN}📝 Log level changed to: CRITICAL${NC}"
+                echo -e "${BLUE}   🚨 Critical logging enabled - critical errors only${NC}"
+                ;;
+            "")
+                echo "Usage: $ENV_NAME loglevel <level>"
+                echo ""
+                echo "Available log levels:"
+                echo "  debug    - Very verbose, shows all debug information"
+                echo "  info     - Normal operations, startup/shutdown messages"
+                echo "  warning  - Warnings and more severe messages only"
+                echo "  error    - Error conditions and critical issues only"
+                echo "  critical - Only critical system failures"
+                echo ""
+                echo "Current container status:"
+                docker ps --format "  {{.Names}}: {{.Status}}" --filter name="${CONTAINER_NAME}"
+                exit 1
+                ;;
+            *)
+                echo -e "${RED}❌ Invalid log level: $LEVEL${NC}"
+                echo "   Valid levels: debug, info, warning, error, critical"
+                exit 1
+                ;;
+        esac
+        ;;
     *)
         echo "Usage: $ENV_NAME <command>"
         echo ""
@@ -667,6 +731,7 @@ case "${1:-}" in
         echo ""
         echo "Container Management:"
         echo "  logs [container]    Show logs (bot, postgres, or all)"
+        echo "  loglevel <level>    Change log level (debug, info, warning, error, critical)"
         echo "  build               Build containers"
         echo "  pull                Pull latest images"
         echo "  shell [container]   Open shell (default: bot)"
@@ -681,6 +746,7 @@ case "${1:-}" in
         echo "Examples:"
         echo "  $ENV_NAME status"
         echo "  $ENV_NAME logs bot"
+        echo "  $ENV_NAME loglevel debug"
         echo "  $ENV_NAME shell postgres"
         echo "  $ENV_NAME db"
         ;;

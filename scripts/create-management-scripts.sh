@@ -156,6 +156,24 @@ EOF
 # These scripts help manage the dockerized ChatD Internships bot
 #
 
+# Get environment name from command line argument, default to 'chatd'
+ENV_NAME="${1:-chatd}"
+ENV_DIR="/opt/$ENV_NAME"
+
+# Validate environment name
+if [[ ! "$ENV_NAME" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]] && [[ ! "$ENV_NAME" =~ ^[a-z0-9]$ ]]; then
+    echo "❌ Invalid environment name: $ENV_NAME"
+    echo "Environment name must:"
+    echo "  - Start and end with alphanumeric characters"
+    echo "  - Contain only lowercase letters, numbers, and hyphens"
+    echo "  - Examples: chatd, thatd, chatd-dev, newgrad-roles"
+    exit 1
+fi
+
+echo "Creating ChatD management scripts for environment: $ENV_NAME"
+echo "Working directory: $ENV_DIR"
+echo ""
+
 # Build script - Build Docker image only with smart commit-based detection
 create_chatd_build() {
     cat > /usr/local/bin/chatd-build << 'EOF'
@@ -337,7 +355,7 @@ fi
 if [[ ! -f ".env" ]]; then
     echo "⚠️  Warning: .env file not found in $WORK_DIR"
     echo "   Create .env file with your configuration before deployment"
-    echo "   Example: cp .env.example .env && nano .env"
+    echo "   Example: cp examples/.env.example .env && nano .env"
     exit 1
 fi
 
@@ -487,7 +505,7 @@ fi
 if [[ ! -f ".env" ]]; then
     echo "⚠️  Warning: .env file not found"
     echo "   Create .env file with your configuration before deployment"
-    echo "   Example: cp .env.example .env && nano .env"
+    echo "   Example: cp examples/.env.example .env && nano .env"
     exit 1
 fi
 
@@ -661,36 +679,36 @@ EOF
 
 # Dynamic log level control script
 create_chatd_loglevel() {
-    cat > /usr/local/bin/chatd-loglevel << 'EOF'
+    cat > "/usr/local/bin/${ENV_NAME}-loglevel" << EOF
 #!/bin/bash
 # ChatD Bot - Dynamic Log Level Control
 # Change log levels without restarting the bot
 
-CONTAINER_NAME="chatd-bot"
+CONTAINER_NAME="${ENV_NAME}-bot"
 
 # Check if container is running
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    echo "❌ ChatD bot container is not running"
-    echo "   Start it with: chatd start"
+if ! docker ps --format '{{.Names}}' | grep -q "^\${CONTAINER_NAME}\$"; then
+    echo "❌ \${ENV_NAME} bot container is not running"
+    echo "   Start it with: ${ENV_NAME} start"
     exit 1
 fi
 
 # Function to set log level
 set_log_level() {
-    local level="$1"
+    local level="\$1"
     
     # Write level to temp file and signal the container
-    echo "${level}" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+    echo "\${level}" | docker exec -i "\${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
     
     # Send SIGHUP signal to trigger level change (using docker kill instead of exec kill)
-    docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
+    docker kill --signal=HUP "\${CONTAINER_NAME}" > /dev/null
     
-    echo "📝 Log level changed to: ${level}"
-    echo "   View logs with: chatd-logs -f"
+    echo "📝 Log level changed to: \${level}"
+    echo "   View logs with: ${ENV_NAME} logs bot"
 }
 
 # Parse command line argument
-case "${1:-}" in
+case "\${1:-}" in
     debug|DEBUG)
         set_log_level "DEBUG"
         echo "   🔍 Debug logging enabled - very verbose output"
@@ -712,7 +730,7 @@ case "${1:-}" in
         echo "   🚨 Critical logging enabled - critical errors only"
         ;;
     "")
-        echo "Usage: chatd-loglevel <level>"
+        echo "Usage: ${ENV_NAME}-loglevel <level>"
         echo ""
         echo "Available log levels:"
         echo "  debug    - Very verbose, shows all debug information"
@@ -722,17 +740,17 @@ case "${1:-}" in
         echo "  critical - Only critical system failures"
         echo ""
         echo "Current container status:"
-        docker ps --format "  {{.Names}}: {{.Status}}" --filter name="${CONTAINER_NAME}"
+        docker ps --format "  {{.Names}}: {{.Status}}" --filter name="\${CONTAINER_NAME}"
         exit 1
         ;;
     *)
-        echo "❌ Invalid log level: $1"
+        echo "❌ Invalid log level: \$1"
         echo "   Valid levels: debug, info, warning, error, critical"
         exit 1
         ;;
 esac
 EOF
-    chmod +x /usr/local/bin/chatd-loglevel
+    chmod +x "/usr/local/bin/${ENV_NAME}-loglevel"
 }
 
 # Logs script - View bot logs
@@ -1137,7 +1155,7 @@ create_chatd_version
 echo "✅ Created chatd-version"
 
 create_chatd_loglevel
-echo "✅ Created chatd-loglevel"
+echo "✅ Created ${ENV_NAME}-loglevel"
 
 create_chatd_logs
 echo "✅ Created chatd-logs" 
@@ -1164,26 +1182,26 @@ create_chatd_disk
 echo "✅ Created chatd-disk"
 
 echo ""
-echo "🎉 All management scripts created successfully!"
+echo "🎉 All management scripts created successfully for environment: $ENV_NAME!"
 echo ""
 echo "📋 Directory Structure Information:"
-echo "   Working directory: /opt/chatd/"
-echo "   Run 'chatd build' to set up the working directory with latest source"
-echo "   The .env file should be placed in /opt/chatd/ alongside docker-compose.yml"
+echo "   Working directory: $ENV_DIR/"
+echo "   Run '${ENV_NAME} build' to set up the working directory with latest source"
+echo "   The .env file should be placed in $ENV_DIR/ alongside docker-compose.yml"
 echo ""
 echo "Available commands:"
-echo "  chatd start/stop/restart - Control the bot"
-echo "  chatd status            - Show service status"
-echo "  chatd enable/disable    - Enable/disable auto-start on boot"
-echo "  chatd logs [-f|-n N|--docker|--system] - View logs"
-echo "  chatd data              - Check bot data status"
-echo "  chatd backup            - Create data backup"
-echo "  chatd build [BRANCH]    - Build Docker image with smart detection"
-echo "  chatd deploy            - Deploy with existing image"
-echo "  chatd update [BRANCH]   - Build and deploy together"
-echo "  chatd version           - Show version and manage images"
-echo "  chatd cleanup [--count N|--dry-run] - Manual image cleanup"
-echo "  chatd images            - List all ChatD images with sizes"
-echo "  chatd prune             - Aggressive cleanup (keep only latest)"
-echo "  chatd disk [--metrics]  - Show disk usage and image status"
-echo "  chatd-loglevel <level>  - Change log level without restart"
+echo "  ${ENV_NAME} start/stop/restart - Control the bot"
+echo "  ${ENV_NAME} status            - Show service status"
+echo "  ${ENV_NAME} enable/disable    - Enable/disable auto-start on boot"
+echo "  ${ENV_NAME} logs [-f|-n N|--docker|--system] - View logs"
+echo "  ${ENV_NAME} data              - Check bot data status"
+echo "  ${ENV_NAME} backup            - Create data backup"
+echo "  ${ENV_NAME} build [BRANCH]    - Build Docker image with smart detection"
+echo "  ${ENV_NAME} deploy            - Deploy with existing image"
+echo "  ${ENV_NAME} update [BRANCH]   - Build and deploy together"
+echo "  ${ENV_NAME} version           - Show version and manage images"
+echo "  ${ENV_NAME} cleanup [--count N|--dry-run] - Manual image cleanup"
+echo "  ${ENV_NAME} images            - List all ChatD images with sizes"
+echo "  ${ENV_NAME} prune             - Aggressive cleanup (keep only latest)"
+echo "  ${ENV_NAME} disk [--metrics]  - Show disk usage and image status"
+echo "  ${ENV_NAME}-loglevel <level>  - Change log level without restart"

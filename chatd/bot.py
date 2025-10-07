@@ -9,6 +9,7 @@ import heapq
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Set, Optional, Tuple
+import time
 
 import aiohttp
 import discord
@@ -22,6 +23,174 @@ from chatd.storage_abstraction import DataStorage
 
 # Get logger
 logger = logging.getLogger(__name__)
+
+
+class ReactionQueue:
+    """
+    Manages background processing of Discord reactions with rate limiting and retry logic.
+    """
+    
+    def __init__(self):
+        """Initialize the reaction queue."""
+        self.task_queue: asyncio.Queue = asyncio.Queue()
+        self.is_running = False
+        self.processor_task: Optional[asyncio.Task] = None
+        self.stats = {
+            'queued': 0,
+            'processed': 0,
+            'failed': 0,
+            'retried': 0
+        }
+    
+    async def start(self):
+        """Start the background reaction processor."""
+        if self.is_running:
+            return
+        
+        self.is_running = True
+        self.processor_task = asyncio.create_task(self._process_reactions())
+        logger.debug("ReactionQueue processor started")
+    
+    async def stop(self):
+        """Stop the background reaction processor."""
+        if not self.is_running:
+            return
+        
+        self.is_running = False
+        
+        if self.processor_task:
+            self.processor_task.cancel()
+            try:
+                await self.processor_task
+            except asyncio.CancelledError:
+                pass
+        
+        logger.debug("ReactionQueue processor stopped")
+    
+    async def queue_reactions(self, message: discord.Message, reactions: List[str]) -> None:
+        """
+        Queue reactions for a message to be processed in the background.
+        
+        Args:
+            message: The Discord message to add reactions to
+            reactions: List of reaction emojis to add
+        """
+        reaction_task = {
+            'message': message,
+            'reactions': reactions,
+            'timestamp': time.time(),
+            'retry_count': 0
+        }
+        
+        await self.task_queue.put(reaction_task)
+        self.stats['queued'] += 1
+        logger.debug(f"Queued {len(reactions)} reactions for message {message.id}")
+    
+    async def _process_reactions(self):
+        """Background task processor for reaction queue."""
+        logger.debug("Starting reaction queue processor")
+        
+        while self.is_running:
+            try:
+                # Wait for reaction tasks with timeout
+                try:
+                    reaction_task = await asyncio.wait_for(
+                        self.task_queue.get(), 
+                        timeout=1.0
+                    )
+                except asyncio.TimeoutError:
+                    continue  # Continue the loop to check if we should stop
+                
+                # Process the reaction task
+                await self._process_single_reaction_task(reaction_task)
+                
+                # Rate limiting delay between reaction processing
+                await asyncio.sleep(config.batch_processing_delay)
+                
+            except asyncio.CancelledError:
+                logger.debug("Reaction processor cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in reaction processor: {e}")
+                await asyncio.sleep(1)  # Brief pause before retrying
+    
+    async def _process_single_reaction_task(self, reaction_task: Dict[str, Any]):
+        """
+        Process a single reaction task with error handling and retry logic.
+        
+        Args:
+            reaction_task: Dictionary containing message, reactions, and metadata
+        """
+        message = reaction_task['message']
+        reactions = reaction_task['reactions']
+        retry_count = reaction_task['retry_count']
+        
+        try:
+            # Add each reaction with individual error handling
+            failed_reactions = []
+            
+            for reaction in reactions:
+                try:
+                    await message.add_reaction(reaction)
+                    await asyncio.sleep(config.reaction_delay)
+                    logger.debug(f"Successfully added reaction {reaction} to message {message.id}")
+                    
+                except discord.HTTPException as e:
+                    if e.status == 429:  # Rate limited
+                        logger.warning(f"Rate limited adding reaction {reaction} to message {message.id}")
+                        failed_reactions.append(reaction)
+                    else:
+                        logger.warning(f"HTTP error adding reaction {reaction} to message {message.id}: {e}")
+                        failed_reactions.append(reaction)
+                
+                except discord.NotFound:
+                    logger.warning(f"Message {message.id} not found when adding reaction {reaction}")
+                    # Don't retry for not found errors
+                    break
+                
+                except discord.Forbidden:
+                    logger.warning(f"No permission to add reaction {reaction} to message {message.id}")
+                    # Don't retry for permission errors
+                    break
+                
+                except Exception as e:
+                    logger.warning(f"Unexpected error adding reaction {reaction} to message {message.id}: {e}")
+                    failed_reactions.append(reaction)
+            
+            # Handle retry logic for failed reactions
+            if failed_reactions and retry_count < 3:  # Max 3 retries
+                retry_task = {
+                    'message': message,
+                    'reactions': failed_reactions,
+                    'timestamp': time.time(),
+                    'retry_count': retry_count + 1
+                }
+                
+                # Exponential backoff delay before retry
+                retry_delay = (2 ** retry_count) * config.reaction_delay
+                await asyncio.sleep(retry_delay)
+                
+                await self.task_queue.put(retry_task)
+                self.stats['retried'] += 1
+                logger.debug(f"Retrying {len(failed_reactions)} failed reactions for message {message.id} (attempt {retry_count + 1})")
+            
+            elif failed_reactions:
+                logger.warning(f"Giving up on {len(failed_reactions)} reactions for message {message.id} after {retry_count} retries")
+                self.stats['failed'] += len(failed_reactions)
+            
+            self.stats['processed'] += 1
+            
+        except Exception as e:
+            logger.error(f"Critical error processing reactions for message {message.id}: {e}")
+            self.stats['failed'] += 1
+    
+    def get_stats(self) -> Dict[str, int]:
+        """Get current reaction queue statistics."""
+        return self.stats.copy()
+
+
+# Global reaction queue instance
+reaction_queue = ReactionQueue()
 
 # Storage will be initialized lazily to avoid import-time directory creation
 storage = None
@@ -114,7 +283,8 @@ async def send_message(message: str, channel_id: str, role_key: Optional[str] = 
 
 async def add_reactions_to_message(message: discord.Message) -> None:
     """
-    Add predefined reactions to a Discord message.
+    Queue reactions for a Discord message to be processed in the background.
+    This function returns immediately without blocking.
     
     Args:
         message: The Discord message to add reactions to
@@ -122,12 +292,9 @@ async def add_reactions_to_message(message: discord.Message) -> None:
     # Define reactions to add
     reactions = ['❓', '✅']
     
-    for reaction in reactions:
-        try:
-            await message.add_reaction(reaction)
-            await asyncio.sleep(config.reaction_delay)  # Configurable delay between reactions
-        except Exception as e:
-            logger.warning(f"Failed to add reaction {reaction} to message {message.id}: {e}")
+    # Queue the reactions for background processing
+    await reaction_queue.queue_reactions(message, reactions)
+    logger.debug(f"Queued reactions for message {message.id}")
 
 
 async def send_messages_to_channels(message: str, role_key: Optional[str] = None) -> List[discord.Message]:
@@ -327,6 +494,9 @@ async def on_ready() -> None:
     logger.info(f'Logged in as {bot.user}')
     logger.info(f'Bot is ready and monitoring {len(config.channel_ids)} channels')
 
+    # Start the reaction queue processor
+    await reaction_queue.start()
+
     # Initial check for new roles on startup
     await check_for_new_roles()
 
@@ -342,6 +512,15 @@ async def on_disconnect() -> None:
     Event handler for when the bot disconnects.
     """
     logger.info("Bot is disconnecting...")
+    
+    # Stop the reaction queue processor
+    await reaction_queue.stop()
+    
+    # Log reaction queue statistics
+    stats = reaction_queue.get_stats()
+    logger.info(f"Reaction queue stats - Queued: {stats['queued']}, "
+               f"Processed: {stats['processed']}, Failed: {stats['failed']}, "
+               f"Retried: {stats['retried']}")
     
     # Try to close any remaining HTTP sessions
     try:
@@ -423,6 +602,9 @@ def run_bot() -> None:
             await bot.start(config.discord_token)
         finally:
             logger.info("Starting bot cleanup...")
+            
+            # Stop the reaction queue processor
+            await reaction_queue.stop()
             
             # Close the Discord bot
             if not bot.is_closed():

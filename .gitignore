@@ -4,6 +4,9 @@ env/
 .venv/
 venv/
 
+# Environment-specific Docker configuration
+docker-compose.yml
+
 # Python
 __pycache__/
 *.py[cod]
