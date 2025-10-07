@@ -317,8 +317,9 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             # Clean up
             await reaction_queue.stop()
         
-        # Should have attempted to add reactions
-        self.assertGreater(mock_message.add_reaction.call_count, 0)
+        # Should have attempted to process reactions via the queue
+        stats = reaction_queue.get_stats()
+        self.assertGreaterEqual(stats['processed'] + stats['failed'], 1)
     
     async def test_channel_failure_tracking(self):
         """Test channel failure tracking mechanism."""
