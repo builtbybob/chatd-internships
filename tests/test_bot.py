@@ -152,6 +152,8 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             
             mock_bot.get_channel.return_value = mock_channel
             mock_config.enable_reactions = False
+            mock_config.message_post_delay = 0.1  # Add missing config property
+            mock_config.max_retries = 3  # Add missing config property
             
             # Mock storage
             mock_storage = Mock()
@@ -236,6 +238,8 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             
             mock_config.channel_ids = ['123456789', '987654321']
             mock_config.enable_reactions = False
+            mock_config.message_post_delay = 0.1  # Add missing config property
+            mock_config.max_retries = 3  # Add missing config property
             mock_bot.get_channel.side_effect = get_channel_side_effect
             
             # Mock storage
