@@ -9,8 +9,6 @@ import heapq
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Set, Optional, Tuple
-import queue
-import threading
 import time
 
 import aiohttp
