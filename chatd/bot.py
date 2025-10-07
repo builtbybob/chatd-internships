@@ -116,7 +116,7 @@ class ReactionQueue:
     
     async def _process_single_reaction_task(self, reaction_task: Dict[str, Any]):
         """
-        Process a single reaction task with error handling and retry logic.
+        Process a single reaction task with batch processing, error handling and retry logic.
         
         Args:
             reaction_task: Dictionary containing message, reactions, and metadata
@@ -126,39 +126,59 @@ class ReactionQueue:
         retry_count = reaction_task['retry_count']
         
         try:
-            # Add each reaction with individual error handling
+            # Section 4.3: Process reactions in batches for improved performance
+            batch_size = config.reaction_batch_size
             failed_reactions = []
             
-            for reaction in reactions:
-                try:
-                    await message.add_reaction(reaction)
-                    await asyncio.sleep(config.reaction_delay)
-                    logger.debug(f"Successfully added reaction {reaction} to message {message.id}")
+            logger.debug(f"Processing {len(reactions)} reactions in batches of {batch_size} for message {message.id}")
+            
+            # Process reactions in batches
+            for i in range(0, len(reactions), batch_size):
+                batch = reactions[i:i + batch_size]
+                batch_failures = []
+                
+                logger.debug(f"Processing batch {i//batch_size + 1}: {len(batch)} reactions")
+                
+                # Process current batch rapidly (no delays within batch)
+                for reaction in batch:
+                    try:
+                        await message.add_reaction(reaction)
+                        logger.debug(f"Successfully added reaction {reaction} to message {message.id}")
+                        
+                    except discord.NotFound:
+                        logger.warning(f"Message {message.id} not found when adding reaction {reaction}")
+                        # Don't retry for not found errors - stop processing this message entirely
+                        return
                     
-                except discord.HTTPException as e:
-                    if e.status == 429:  # Rate limited
-                        logger.warning(f"Rate limited adding reaction {reaction} to message {message.id}")
-                        failed_reactions.append(reaction)
-                    else:
-                        logger.warning(f"HTTP error adding reaction {reaction} to message {message.id}: {e}")
-                        failed_reactions.append(reaction)
+                    except discord.Forbidden:
+                        logger.warning(f"No permission to add reaction {reaction} to message {message.id}")
+                        # Don't retry for permission errors - stop processing this message entirely
+                        return
+                        
+                    except discord.HTTPException as e:
+                        if e.status == 429:  # Rate limited
+                            logger.warning(f"Rate limited adding reaction {reaction} to message {message.id}")
+                            batch_failures.append(reaction)
+                        else:
+                            logger.warning(f"HTTP error adding reaction {reaction} to message {message.id}: {e}")
+                            batch_failures.append(reaction)
+                    
+                    except Exception as e:
+                        logger.warning(f"Unexpected error adding reaction {reaction} to message {message.id}: {e}")
+                        batch_failures.append(reaction)
                 
-                except discord.NotFound:
-                    logger.warning(f"Message {message.id} not found when adding reaction {reaction}")
-                    # Don't retry for not found errors
-                    break
+                # Add batch failures to overall failed reactions
+                failed_reactions.extend(batch_failures)
                 
-                except discord.Forbidden:
-                    logger.warning(f"No permission to add reaction {reaction} to message {message.id}")
-                    # Don't retry for permission errors
-                    break
-                
-                except Exception as e:
-                    logger.warning(f"Unexpected error adding reaction {reaction} to message {message.id}: {e}")
-                    failed_reactions.append(reaction)
+                # Delay between batches (but not after the last batch)
+                if i + batch_size < len(reactions):
+                    logger.debug(f"Batch {i//batch_size + 1} complete, waiting {config.reaction_batch_delay}s before next batch")
+                    await asyncio.sleep(config.reaction_batch_delay)
+                else:
+                    logger.debug(f"Final batch {i//batch_size + 1} complete for message {message.id}")
             
             # Handle retry logic for failed reactions
-            if failed_reactions and retry_count < 3:  # Max 3 retries
+            if failed_reactions and retry_count < config.reaction_retry_count:
                 retry_task = {
                     'message': message,
                     'reactions': failed_reactions,
@@ -167,7 +187,8 @@ class ReactionQueue:
                 }
                 
                 # Exponential backoff delay before retry
-                retry_delay = (2 ** retry_count) * config.reaction_delay
+                retry_delay = (2 ** retry_count) * config.reaction_retry_delay
+                logger.debug(f"Scheduling retry for {len(failed_reactions)} failed reactions in {retry_delay:.1f}s (attempt {retry_count + 1})")
                 await asyncio.sleep(retry_delay)
                 
                 await self.task_queue.put(retry_task)

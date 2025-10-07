@@ -438,6 +438,15 @@ REACTION_DELAY_MS=500
 BATCH_PROCESSING_DELAY_MS=50
 
 ###############################################################
+# Reaction Batching Settings (from Section 4.3)
+###############################################################
+
+REACTION_BATCH_SIZE=5
+REACTION_BATCH_DELAY_MS=1000
+REACTION_RETRY_COUNT=3
+REACTION_RETRY_DELAY_MS=500
+
+###############################################################
 # Environment Settings
 ###############################################################
 

@@ -48,6 +48,11 @@ DEFAULT_CONFIG = {
     'MESSAGE_POST_DELAY_MS': '100',  # Delay between message posts in milliseconds
     'REACTION_DELAY_MS': '500',  # Delay between adding reactions in milliseconds
     'BATCH_PROCESSING_DELAY_MS': '50',  # Delay between batch operations in milliseconds
+    # Section 4.3: Reaction batching and rate limiting
+    'REACTION_BATCH_SIZE': '5',  # Number of reactions to process per batch
+    'REACTION_BATCH_DELAY_MS': '1000',  # Delay between reaction batches in milliseconds
+    'REACTION_RETRY_COUNT': '3',  # Maximum retry attempts for failed reactions
+    'REACTION_RETRY_DELAY_MS': '500',  # Base delay for reaction retries in milliseconds
 }
 
 # Required configuration values that must be set
@@ -115,6 +120,11 @@ class Config:
         self.message_post_delay = int(self.message_post_delay_ms) / 1000.0
         self.reaction_delay = int(self.reaction_delay_ms) / 1000.0
         self.batch_processing_delay = int(self.batch_processing_delay_ms) / 1000.0
+        # Section 4.3: Reaction batching and rate limiting configurations
+        self.reaction_batch_size = int(self.reaction_batch_size)
+        self.reaction_batch_delay = int(self.reaction_batch_delay_ms) / 1000.0
+        self.reaction_retry_count = int(self.reaction_retry_count)
+        self.reaction_retry_delay = int(self.reaction_retry_delay_ms) / 1000.0
         
         # Convert boolean values
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')
