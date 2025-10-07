@@ -21,7 +21,7 @@ chatd-internships/
 
 ## 🚀 Quick Start
 
-**For initial setup and installation, see [SETUP.md](docs/SETUP.md) for the complete step-by-step guide.**s
+**For initial setup and installation, see [SETUP.md](docs/SETUP.md) for the complete step-by-step guide.**
 [![Tests](https://github.com/builtbybob/chatd-internships/actions/workflows/coverage.yml/badge.svg)](https://github.com/builtbybob/chatd-internships/actions)
 
 ## Overview
