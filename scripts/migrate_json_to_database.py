@@ -449,19 +449,31 @@ class DataMigrator:
 def main():
     """Main entry point for the migration script."""
     parser = argparse.ArgumentParser(description='Migrate JSON data to PostgreSQL database')
-    parser.add_argument('--data-file', help='Path to JSON data file (default: use config or /opt/chatd/data/previous_data.json)')
+    parser.add_argument('--data-file', help='Path to JSON data file (default: use config or repo/.github/scripts/listings.json)')
     parser.add_argument('--messages-file', help='Path to message tracking JSON file (default: use config)')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without making actual changes')
     parser.add_argument('--no-backup', action='store_true', help='Skip creating backup files')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--repo-path', help='Path to the cloned repository (default: use config or current dir)')
     
     args = parser.parse_args()
     
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Use production path as default
-    data_file = args.data_file or "/opt/chatd/data/previous_data.json"
+    # Determine data file path
+    if args.data_file:
+        data_file = args.data_file
+    elif args.repo_path:
+        data_file = os.path.join(args.repo_path, '.github', 'scripts', 'listings.json')
+    else:
+        # Try to use config path or fallback to current directory
+        try:
+            from chatd.config import Config
+            config = Config()
+            data_file = config.json_file_path
+        except:
+            data_file = os.path.join(os.getcwd(), '.github', 'scripts', 'listings.json')
     
     migrator = DataMigrator(
         json_data_path=data_file,

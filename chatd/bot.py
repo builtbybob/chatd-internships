@@ -100,7 +100,7 @@ async def send_message(message: str, channel_id: str, role_key: Optional[str] = 
         if channel_id in channel_failure_counts:
             del channel_failure_counts[channel_id]
         
-        await asyncio.sleep(1)  # Rate limiting delay
+        await asyncio.sleep(config.message_post_delay)  # Configurable rate limiting delay
         return sent_message
         
     except Exception as e:
@@ -125,7 +125,7 @@ async def add_reactions_to_message(message: discord.Message) -> None:
     for reaction in reactions:
         try:
             await message.add_reaction(reaction)
-            await asyncio.sleep(0.5)  # Add a small delay between reactions
+            await asyncio.sleep(config.reaction_delay)  # Configurable delay between reactions
         except Exception as e:
             logger.warning(f"Failed to add reaction {reaction} to message {message.id}: {e}")
 

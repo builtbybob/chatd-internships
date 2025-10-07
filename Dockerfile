@@ -55,9 +55,5 @@ RUN chown -R chatd:chatd /app
 # Switch to non-root user
 USER chatd
 
-# Health check to ensure the bot is running properly
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
-
 # Set entrypoint
 ENTRYPOINT ["python", "main.py"]
