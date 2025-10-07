@@ -523,6 +523,9 @@ ExecStart=/usr/bin/docker-compose up -d
 ExecStartPost=/bin/sleep 15
 ExecStartPost=/usr/bin/docker exec ${ENV_NAME}-bot python -c "import sys; sys.exit(0)"
 
+# Stop all services when systemd stops the service
+ExecStop=/usr/bin/docker-compose down
+
 # Reload services (restart containers)
 ExecReload=/usr/bin/docker-compose restart
 
