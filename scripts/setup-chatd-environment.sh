@@ -21,14 +21,14 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Usage function
 usage() {
-    echo "Usage: $0 <environment-name>"
+    echo "Usage: sudo $0 <environment-name>"
     echo ""
     echo "Creates a new ChatD environment with isolated containers, database, and management."
     echo ""
     echo "Examples:"
-    echo "  $0 thatd-internships     # Creates /opt/thatd-internships (development)"
-    echo "  $0 newgrad-roles         # Creates /opt/newgrad-roles (new grad jobs)"
-    echo "  $0 chatd-fall2025        # Creates /opt/chatd-fall2025 (seasonal)"
+    echo "  sudo $0 thatd-internships     # Creates /opt/thatd-internships (development)"
+    echo "  sudo $0 newgrad-roles         # Creates /opt/newgrad-roles (new grad jobs)"
+    echo "  sudo $0 chatd-fall2025        # Creates /opt/chatd-fall2025 (seasonal)"
     echo ""
     echo "The script will:"
     echo "  - Create /opt/<environment-name>/ directory"

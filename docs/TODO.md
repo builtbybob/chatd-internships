@@ -2053,8 +2053,8 @@ sudo ./scripts/setup-chatd-environment.sh thatd-internships
 
 **Multi-Environment Setup Ready**:
 - **Script Available**: `scripts/setup-chatd-environment.sh` 
-- **Usage**: `./setup-chatd-environment.sh thatd-internships` (creates development environment)
-- **Usage**: `./setup-chatd-environment.sh newgrad-roles` (creates new grad environment)
+- **Usage**: `sudo ./setup-chatd-environment.sh thatd-internships` (creates development environment)
+- **Usage**: `sudo ./setup-chatd-environment.sh newgrad-roles` (creates new grad environment)
 - **Disk Space**: 69GB available (sufficient for 5+ environments)
 - **Hardware**: Powerful machine with PostgreSQL containerization support
 
