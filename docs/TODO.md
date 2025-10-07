@@ -167,10 +167,10 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [x] Add configurable message delay for fine-tuning rate limits
   - [x] Maintain Discord rate limit compliance while improving throughput
   - [ ] Add burst protection for large message batches
-- [ ] **4.2** Refactor reaction logic in `bot.py`
-  - [ ] Move reactions to background task queue using `asyncio.create_task()`
-  - [ ] Create `ReactionQueue` class for managing reaction tasks
-  - [ ] Update `add_reactions_to_message()` to return immediately after queuing
+- [x] **4.2** Refactor reaction logic in `bot.py` ✅ **COMPLETED**
+  - [x] Move reactions to background task queue using `asyncio.create_task()`
+  - [x] Create `ReactionQueue` class for managing reaction tasks
+  - [x] Update `add_reactions_to_message()` to return immediately after queuing
 - [ ] **4.3** Implement reaction batching and rate limiting
   - [ ] Queue reactions and process in configurable batches
   - [ ] Add delay between reaction batches to respect Discord rate limits
