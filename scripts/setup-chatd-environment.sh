@@ -389,17 +389,6 @@ EOF
 
 sudo mv "/tmp/docker-compose-$ENV_NAME.yml" "$ENV_DIR/docker-compose.yml"
 
-# Build Docker images
-echo -e "${YELLOW}🔨 Building Docker images...${NC}"
-cd "$ENV_DIR"
-if ! sudo docker-compose build; then
-    echo -e "${RED}❌ Failed to build Docker images${NC}"
-    echo "Please check the Dockerfile and requirements.txt, then try manually:"
-    echo "  cd $ENV_DIR && docker-compose build"
-    exit 1
-fi
-echo -e "${GREEN}✅ Docker images built successfully${NC}"
-
 # Create template .env file
 echo -e "${YELLOW}⚙️  Creating environment configuration...${NC}"
 cat > "/tmp/.env-$ENV_NAME" << EOF
@@ -469,6 +458,17 @@ EOF
 sudo mv "/tmp/.env-$ENV_NAME" "$ENV_DIR/.env"
 sudo chown $USER:docker "$ENV_DIR/.env"  # Match user ownership like production
 sudo chmod 600 "$ENV_DIR/.env"  # Secure environment file
+
+# Build Docker images (after .env file is in place)
+echo -e "${YELLOW}🔨 Building Docker images...${NC}"
+cd "$ENV_DIR"
+if ! sudo docker-compose build; then
+    echo -e "${RED}❌ Failed to build Docker images${NC}"
+    echo "Please check the Dockerfile and requirements.txt, then try manually:"
+    echo "  cd $ENV_DIR && docker-compose build"
+    exit 1
+fi
+echo -e "${GREEN}✅ Docker images built successfully${NC}"
 
 # Create systemd service
 echo -e "${YELLOW}🔧 Creating systemd service...${NC}"
