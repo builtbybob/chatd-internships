@@ -1,8 +1,6 @@
 ![Ch@d Internships Banner](ChatdInternshipsBanner.png)
 
-# Ch@d Inte   H --> M[message_tracking Table]
-```
-
+# Ch@d Internships
 ## 📁 Repository Structure
 
 The repository is organized to separate templates and examples from environment-specific configurations:
