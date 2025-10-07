@@ -1,5 +1,11 @@
 # Copilot Instructions for chatd-internships Project
 
+## Behavior
+- Provide clear, concise, and accurate code suggestions.
+- Follow best practices for Python, Docker, and related technologies.
+- Be objective and neutral in tone, avoid unnecessary compliments.
+- Prioritize security, efficiency, and maintainability in code suggestions.
+
 ## Virtual Environment Requirement
 **CRITICAL:** Always use the Python virtual environment when running Python commands, tests, or scripts in this project. The virtual environment is located at `.venv/` and must be activated before any Python operations.
 

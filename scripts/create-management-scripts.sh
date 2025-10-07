@@ -337,7 +337,7 @@ fi
 if [[ ! -f ".env" ]]; then
     echo "⚠️  Warning: .env file not found in $WORK_DIR"
     echo "   Create .env file with your configuration before deployment"
-    echo "   Example: cp .env.example .env && nano .env"
+    echo "   Example: cp examples/.env.example .env && nano .env"
     exit 1
 fi
 
@@ -487,7 +487,7 @@ fi
 if [[ ! -f ".env" ]]; then
     echo "⚠️  Warning: .env file not found"
     echo "   Create .env file with your configuration before deployment"
-    echo "   Example: cp .env.example .env && nano .env"
+    echo "   Example: cp examples/.env.example .env && nano .env"
     exit 1
 fi
 
