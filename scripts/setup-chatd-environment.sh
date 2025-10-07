@@ -332,6 +332,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -357,10 +358,17 @@ services:
       - $ENV_DIR/Summer2026-Internships:/app/Summer2026-Internships
       - ${ENV_NAME}_app_data:/app/data
       - $ENV_DIR/logs:/app/logs
+      # Mount timezone data for proper local time
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     networks:
       - ${ENV_NAME}-network
     healthcheck:
-      disable: true
+      test: ["CMD", "python3", "-c", "import os; exit(0 if os.path.exists('/app/main.py') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
@@ -380,6 +388,17 @@ volumes:
 EOF
 
 sudo mv "/tmp/docker-compose-$ENV_NAME.yml" "$ENV_DIR/docker-compose.yml"
+
+# Build Docker images
+echo -e "${YELLOW}🔨 Building Docker images...${NC}"
+cd "$ENV_DIR"
+if ! sudo docker-compose build; then
+    echo -e "${RED}❌ Failed to build Docker images${NC}"
+    echo "Please check the Dockerfile and requirements.txt, then try manually:"
+    echo "  cd $ENV_DIR && docker-compose build"
+    exit 1
+fi
+echo -e "${GREEN}✅ Docker images built successfully${NC}"
 
 # Create template .env file
 echo -e "${YELLOW}⚙️  Creating environment configuration...${NC}"
@@ -476,26 +495,36 @@ fi
 cat > "/tmp/$ENV_NAME.service" << EOF
 [Unit]
 Description=ChatD Bot - $ENV_NAME Environment
-After=docker.service
+Documentation=https://github.com/builtbybob/chatd-internships
+After=docker.service network.target
 Requires=docker.service
 StartLimitIntervalSec=0
 
 [Service]
-Type=forking
-Restart=always
-RestartSec=10
+Type=oneshot
+RemainAfterExit=yes
 User=root
 Group=root
+TimeoutStartSec=300
+TimeoutStopSec=30
 WorkingDirectory=$ENV_DIR
 
-# Start the service
-ExecStart=$COMPOSE_CMD_START
+# Create data directories if they don't exist
+ExecStartPre=/bin/mkdir -p $ENV_DIR/data $ENV_DIR/logs
+ExecStartPre=/bin/chown -R 1000:1000 $ENV_DIR/data $ENV_DIR/logs
 
-# Stop the service
-ExecStop=$COMPOSE_CMD_STOP
+# Stop any existing containers
+ExecStartPre=-/usr/bin/docker-compose down --remove-orphans
 
-# Reload the service
-ExecReload=$COMPOSE_CMD_RESTART
+# Start services with docker-compose (both bot and PostgreSQL)
+ExecStart=/usr/bin/docker-compose up -d
+
+# Health check for bot container
+ExecStartPost=/bin/sleep 15
+ExecStartPost=/usr/bin/docker exec ${ENV_NAME}-bot python -c "import sys; sys.exit(0)"
+
+# Reload services (restart containers)
+ExecReload=/usr/bin/docker-compose restart
 
 [Install]
 WantedBy=multi-user.target

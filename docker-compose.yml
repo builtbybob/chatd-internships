@@ -60,7 +60,7 @@ services:
       - chatd-network
     # Optional: add health check for the bot
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f python3 || exit 1"]
+      test: ["CMD", "python3", "-c", "import os; exit(0 if os.path.exists('/app/main.py') else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
