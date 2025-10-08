@@ -72,10 +72,6 @@ flowchart TB
    H --> M[message_tracking Table]
 ```
 
-## � Quick Start
-
-**For initial setup and installation, see [SETUP.md](docs/SETUP.md) for the complete step-by-step guide.**
-
 ## 🏗️ Storage Architecture
 
 Ch@d Internships uses a sophisticated dual-storage system designed for reliability and performance during migration from JSON to PostgreSQL.
