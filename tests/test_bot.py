@@ -1367,7 +1367,7 @@ class TestSection5CompanyInfo(unittest.IsolatedAsyncioTestCase):
             self.assertIn('Total Active Positions:** 3', first_call)
     
     async def test_send_enhanced_company_info_dm_job_families(self):
-        """Test job family formatting in enhanced company info DM."""
+        """Test simplified job position formatting in enhanced company info DM."""
         from chatd.bot import send_enhanced_company_info_dm
         
         mock_user = AsyncMock()
@@ -1375,29 +1375,10 @@ class TestSection5CompanyInfo(unittest.IsolatedAsyncioTestCase):
         
         sample_insights = {
             'company_name': 'TechCorp',
-            'total_positions': 1,
-            'location_analysis': {'location_counts': {'San Francisco, CA': 1}},
-            'term_analysis': {'term_counts': {'Summer 2026': 1}},
-            'job_families': {
-                'Intern': [
-                    {
-                        'title': 'Software Engineering Intern',
-                        'url': 'https://techcorp.com/job1',
-                        'locations': ['San Francisco, CA'],
-                        'terms': ['Summer 2026'],
-                        'date_posted': int(time.time()) - (1 * 24 * 60 * 60)
-                    }
-                ],
-                'New Grad': [
-                    {
-                        'title': 'Product Manager New Grad',
-                        'url': 'https://techcorp.com/job2',
-                        'locations': ['Austin, TX'],
-                        'terms': ['2026'],
-                        'date_posted': int(time.time()) - (2 * 24 * 60 * 60)
-                    }
-                ]
-            },
+            'total_positions': 2,
+            'recent_positions': 2,
+            'location_analysis': {'location_counts': {'San Francisco, CA': 1, 'Austin, TX': 1}},
+            'term_analysis': {'term_counts': {'Summer 2026': 1, '2026': 1}},
             'application_deadlines': [],
             'jobs': [
                 {
@@ -1406,6 +1387,13 @@ class TestSection5CompanyInfo(unittest.IsolatedAsyncioTestCase):
                     'locations': ['San Francisco, CA'],
                     'terms': ['Summer 2026'],
                     'date_posted': int(time.time()) - (1 * 24 * 60 * 60)
+                },
+                {
+                    'title': 'Product Manager New Grad',
+                    'url': 'https://techcorp.com/job2',
+                    'locations': ['Austin, TX'],
+                    'terms': ['2026'],
+                    'date_posted': int(time.time()) - (2 * 24 * 60 * 60)
                 }
             ]
         }
@@ -1418,12 +1406,11 @@ class TestSection5CompanyInfo(unittest.IsolatedAsyncioTestCase):
             # Should send at least one message
             self.assertGreater(mock_user.send.call_count, 0)
             
-            # Find message containing job families
+            # Find message containing job positions  
             all_messages = ''.join([call[0][0] for call in mock_user.send.call_args_list])
             
-            # Check that both job types are present
-            self.assertIn('Intern Positions', all_messages)
-            self.assertIn('New Grad Positions', all_messages)
+            # Check that simplified format is present
+            self.assertIn('Available Positions', all_messages)
             self.assertIn('Software Engineering Intern', all_messages)
             self.assertIn('Product Manager New Grad', all_messages)
     

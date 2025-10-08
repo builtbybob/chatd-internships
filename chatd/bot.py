@@ -1014,42 +1014,6 @@ async def get_enhanced_company_insights(company_name: str, days: int = 7) -> Dic
             recent_jobs = [job for job in jobs if job['date_posted'] >= (time.time() - 14*24*3600)]  # Last 2 weeks
             application_deadlines = sorted(recent_jobs, key=lambda x: x['date_posted'], reverse=True)[:5]
             
-            # Job family analysis (group by keywords in titles)
-            job_families = {
-                'Intern': [],
-                'New Grad': [],
-                'Full-time': [],
-                'Part-time': [],
-                'Contract': [],
-                'Other': []
-            }
-            
-            for job in jobs:
-                title_lower = job['title'].lower()
-                categorized = False
-                
-                if 'intern' in title_lower:
-                    job_families['Intern'].append(job)
-                    categorized = True
-                elif any(term in title_lower for term in ['new grad', 'graduate', 'entry level', 'junior']):
-                    job_families['New Grad'].append(job)
-                    categorized = True
-                elif any(term in title_lower for term in ['full time', 'full-time', 'permanent']):
-                    job_families['Full-time'].append(job)
-                    categorized = True
-                elif any(term in title_lower for term in ['part time', 'part-time']):
-                    job_families['Part-time'].append(job)
-                    categorized = True
-                elif any(term in title_lower for term in ['contract', 'contractor', 'consulting']):
-                    job_families['Contract'].append(job)
-                    categorized = True
-                    
-                if not categorized:
-                    job_families['Other'].append(job)
-            
-            # Remove empty job families
-            job_families = {k: v for k, v in job_families.items() if v}
-            
             return {
                 'total_positions': total_positions,
                 'recent_positions': len(jobs),
@@ -1057,7 +1021,6 @@ async def get_enhanced_company_insights(company_name: str, days: int = 7) -> Dic
                 'location_analysis': location_analysis,
                 'term_analysis': term_analysis,
                 'application_deadlines': application_deadlines,
-                'job_families': job_families,
                 'company_name': company_name,
                 'query_days': days
             }
@@ -1157,20 +1120,16 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
         
         dm_message.append("")
         
-        # Smart grouping by job families (intern, new grad, etc.)
-        job_families = insights.get('job_families', {})
-        for family_name, family_jobs in job_families.items():
-            if not family_jobs:
-                continue
-                
+        # Available Positions - simplified approach since dataset is internship-focused
+        jobs = insights.get('jobs', [])
+        if jobs:
             dm_message.extend([
-                f"## 💼 {family_name} Positions ({len(family_jobs)})",
+                f"## 💼 Available Positions ({len(jobs)})",
                 ""
             ])
             
-            # Show all jobs in the family (remove artificial limits)
-            jobs_shown = 0
-            for job in family_jobs:  # Show all jobs, not just first 5
+            # Show all positions
+            for job in jobs:
                 title = job.get('title', 'Not specified')
                 url = job.get('url', '')
                 locations = job.get('locations', [])
@@ -1236,7 +1195,6 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
                     dm_message.append(f"   {details_line}")
                 
                 dm_message.append("")
-                jobs_shown += 1
         
         # Section 5.6: Remove duplicate "Recently Posted" section to eliminate redundancy
         
