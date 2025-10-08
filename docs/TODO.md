@@ -327,37 +327,47 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [x] `ENABLE_COMPANY_INFO=true` (feature toggle) ✅
   - [x] `MAX_COMPANY_JOBS_IN_DM=10` (limit number of jobs shown in DM) ✅
   - [ ] `COMPANY_INFO_CACHE_MINUTES=30` (cache company data to reduce DB load)
-- [ ] **5.6** Database schema for application tracking
+- [ ] **5.6** Enhanced DM message formatting and readability
+  - [ ] Replace current emoji-heavy format with clean two-line layout
+  - [ ] Use markdown links with angle brackets to suppress Discord link previews: `[Title](<URL>)`
+  - [ ] Remove duplicate "Recently Posted (Apply Soon!)" section to eliminate redundancy
+  - [ ] Smart sponsorship display (only show when meaningful, hide "Other")
+  - [ ] Implement location overflow logic for long location lists
+  - [ ] Clean format: Job title on first line, details on second line
+  - [ ] Date format: "Today", "1d ago", "2d ago" for conciseness
+  - [ ] Keep section header emoji (💼) but remove individual job emojis
+  - [ ] Multi-line support: Break to separate lines when locations > 40 characters
+- [ ] **5.7** Database schema for application tracking
   - [ ] Create `student_applications` table for tracking ✅ reactions
   - [ ] Add foreign key relationship to `job_postings` table
   - [ ] Include timestamp, Discord user ID, and job ID fields
   - [ ] Add unique constraint to prevent duplicate applications
   - [ ] Create indexes for efficient querying by user_id and job_id
-- [ ] **5.7** Application tracking reaction handler
+- [ ] **5.8** Application tracking reaction handler
   - [ ] Detect '✅' reaction specifically (separate from '❓' handling)
   - [ ] Extract Discord user ID and job ID from reaction context
   - [ ] Insert application record into `student_applications` table
   - [ ] Handle duplicate application attempts gracefully
   - [ ] Log successful application tracking for monitoring
-- [ ] **5.8** Student application statistics aggregation
+- [ ] **5.9** Student application statistics aggregation
   - [ ] Create `get_student_application_stats()` function for database queries
   - [ ] Count total applications by Discord user ID
   - [ ] Query last 5 applications with job details and timestamps
   - [ ] Include company names, job titles, and application dates
   - [ ] Optimize queries with proper JOIN statements and LIMIT clauses
-- [ ] **5.9** Congratulatory DM formatting and content
+- [ ] **5.10** Congratulatory DM formatting and content
   - [ ] Create personalized congratulations message template
   - [ ] Display total application count prominently
   - [ ] Show last 5 applications with company, title, and date
   - [ ] Include encouraging messages and application tips
   - [ ] Add motivational content based on application milestones
-- [ ] **5.10** Error handling and edge cases for application tracking
+- [ ] **5.11** Error handling and edge cases for application tracking
   - [ ] Handle database connection failures gracefully
   - [ ] Deal with deleted job postings or invalid job IDs
   - [ ] Manage rate limiting for congratulatory DMs
   - [ ] Handle users who have disabled DMs
   - [ ] Prevent spam from repeated reaction add/remove cycles
-- [ ] **5.11** Configuration options for application tracking
+- [ ] **5.12** Configuration options for application tracking
   - [ ] `ENABLE_APPLICATION_TRACKING=true` (feature toggle)
   - [ ] `APPLICATION_REACTION_EMOJI=✅` (emoji that triggers application tracking)
   - [ ] `CONGRATULATION_DM_ENABLED=true` (toggle for DM responses)
