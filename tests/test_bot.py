@@ -552,22 +552,27 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
         bot.failed_channels.clear()
         bot.channel_failure_counts.clear()
     
-    async def test_on_reaction_add_valid_reaction(self):
-        """Test reaction event handler with valid reaction."""
-        from chatd.bot import on_reaction_add
+    async def test_on_raw_reaction_add_valid_reaction(self):
+        """Test raw reaction event handler with valid reaction."""
+        from chatd.bot import on_raw_reaction_add
         
         # Mock Discord objects
         mock_user = MagicMock(spec=discord.Member)
         mock_user.id = 67890  # Different from bot ID
         mock_user.display_name = 'TestUser'
         
+        mock_channel = MagicMock()
         mock_message = MagicMock()
         mock_message.id = 12345
         mock_message.author.id = 98765  # Bot's ID
         
-        mock_reaction = MagicMock()
-        mock_reaction.emoji = '❓'
-        mock_reaction.message = mock_message
+        # Create RawReactionActionEvent payload
+        mock_payload = MagicMock()
+        mock_payload.user_id = 67890  # User's ID
+        mock_payload.emoji = '❓'
+        mock_payload.message_id = 12345
+        mock_payload.channel_id = 98765
+        mock_payload.guild_id = 11111
         
         role_data = {
             'company_name': 'Test Company',
@@ -579,10 +584,19 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
             
             mock_config.enable_reactions = True
             mock_bot.user.id = 98765  # Bot's ID
+            mock_bot.user = MagicMock()  # Ensure bot.user exists
+            mock_bot.user.id = 98765
+            mock_bot.get_channel.return_value = mock_channel
+            mock_bot.get_guild.return_value.get_member.return_value = mock_user
+            
+            # Make fetch_message async
+            async def mock_fetch_message(message_id):
+                return mock_message
+            mock_channel.fetch_message = mock_fetch_message
             
             with patch('chatd.bot.get_role_data_by_message_id', return_value=role_data):
-                with patch('chatd.bot.send_dm_with_job_info') as mock_send_dm:
-                    await on_reaction_add(mock_reaction, mock_user)
+                with patch('chatd.bot.send_enhanced_company_info_dm') as mock_send_dm:
+                    await on_raw_reaction_add(mock_payload)
                     
                     mock_send_dm.assert_called_once_with(mock_user, role_data)
     
@@ -591,37 +605,44 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
         'CHANNEL_IDS': '123456789',
         'ENABLE_REACTIONS': 'false'
     })
-    async def test_on_reaction_add_reactions_disabled(self):
-        """Test reaction handler when reactions are disabled."""
+    async def test_on_raw_reaction_add_reactions_disabled(self):
+        """Test raw reaction handler when reactions are disabled."""
         from chatd.config import Config
-        from chatd.bot import on_reaction_add
+        from chatd.bot import on_raw_reaction_add
         
         # Reset config
         Config._instance = None
         
-        mock_user = MagicMock()
-        mock_reaction = MagicMock()
+        mock_payload = MagicMock()
+        mock_payload.user_id = 67890
+        mock_payload.emoji = '❓'
         
-        with patch('chatd.bot.get_role_data_by_message_id') as mock_get_role:
-            await on_reaction_add(mock_reaction, mock_user)
+        with patch('chatd.bot.get_role_data_by_message_id') as mock_get_role, \
+             patch('chatd.bot.config') as mock_config, \
+             patch('chatd.bot.bot') as mock_bot:
+            
+            mock_config.enable_reactions = False
+            mock_bot.user = MagicMock()  # Ensure bot.user exists
+            mock_bot.user.id = 12345
+            await on_raw_reaction_add(mock_payload)
             
             # Should return early, not call get_role_data
             mock_get_role.assert_not_called()
     
-    async def test_on_reaction_add_bot_reaction(self):
-        """Test reaction handler ignoring bot's own reactions."""
-        from chatd.bot import on_reaction_add
+    async def test_on_raw_reaction_add_bot_reaction(self):
+        """Test raw reaction handler ignoring bot's own reactions."""
+        from chatd.bot import on_raw_reaction_add
         
-        mock_user = MagicMock()
-        mock_user.id = 98765  # Same as bot ID
-        
-        mock_reaction = MagicMock()
+        mock_payload = MagicMock()
+        mock_payload.user_id = 98765  # Same as bot ID
+        mock_payload.emoji = '❓'
         
         with patch('chatd.bot.bot') as mock_bot:
+            mock_bot.user = MagicMock()  # Ensure bot.user exists
             mock_bot.user.id = 98765
             
             with patch('chatd.bot.get_role_data_by_message_id') as mock_get_role:
-                await on_reaction_add(mock_reaction, mock_user)
+                await on_raw_reaction_add(mock_payload)
                 
                 # Should ignore bot's own reactions
                 mock_get_role.assert_not_called()
@@ -1342,7 +1363,7 @@ class TestSection5CompanyInfo(unittest.IsolatedAsyncioTestCase):
             # Check content of first message
             first_call = mock_user.send.call_args_list[0][0][0]
             self.assertIn('TechCorp', first_call)
-            self.assertIn('📊 Company Snapshot', first_call)
+            self.assertIn('🌐 Company Snapshot', first_call)
             self.assertIn('Total Active Positions:** 3', first_call)
     
     async def test_send_enhanced_company_info_dm_job_families(self):

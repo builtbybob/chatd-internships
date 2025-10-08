@@ -588,7 +588,7 @@ async def add_reactions_to_message(message: discord.Message) -> None:
     
     # Queue the reactions for background processing
     await reaction_queue.queue_reactions(message, reactions)
-    logger.debug(f"Queued reactions for message {message.id}")
+    logger.debug(f"🎯 Bot queuing reactions {reactions} for message {message.id} (Bot ID: {bot.user.id if bot.user else 'Not initialized'})")
 
 
 async def send_messages_to_channels(message: str, role_key: Optional[str] = None) -> List[discord.Message]:
@@ -1357,9 +1357,14 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
         logger.debug(f"❌ Reactions disabled in config")
         return
         
-    # Ignore bot's own reactions
+    # Ignore bot's own reactions - enhanced check with detailed logging
     if payload.user_id == bot.user.id:
-        logger.debug(f"❌ Ignoring bot's own reaction")
+        logger.debug(f"❌ Ignoring bot's own reaction (User ID: {payload.user_id}, Bot ID: {bot.user.id})")
+        return
+    
+    # Additional safety check - ignore if bot.user is not initialized
+    if not bot.user:
+        logger.warning(f"❌ Bot user not initialized, skipping reaction processing")
         return
     
     # Section 5.1: Selective processing - only respond to ❓ reactions
@@ -1428,59 +1433,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
         # Section 5.2: Send enhanced company info instead of individual job info
         logger.info(f"📨 Sending enhanced company info DM to {user.display_name}")
         await send_enhanced_company_info_dm(user, role_data)
-    else:
-        logger.warning(f"Could not find role data for message {message.id}")
-
-
-@bot.event
-async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
-    """
-    Event handler for when a reaction is added to a message.
-    Enhanced with selective processing - only ❓ reactions trigger company info.
-    
-    Args:
-        reaction: The reaction that was added
-        user: The user who added the reaction
-    """
-    logger.debug(f"🎯 on_reaction_add triggered! User: {user.display_name}, Emoji: {reaction.emoji}, Message: {reaction.message.id}")
-    
-    # Skip if reactions are disabled
-    if not config.enable_reactions:
-        logger.debug(f"❌ Reactions disabled in config")
-        return
-        
-    # Ignore bot's own reactions
-    if user.id == bot.user.id:
-        logger.debug(f"❌ Ignoring bot's own reaction")
-        return
-    
-    # Get the message and channel
-    message = reaction.message
-    logger.debug(f"🔍 Message author: {message.author.id}, Bot ID: {bot.user.id}")
-    
-    # Check if this is a bot message (we only process reactions to our own messages)
-    if message.author.id != bot.user.id:
-        logger.debug(f"❌ Ignoring reaction to non-bot message")
-        return
-    
-    # Section 5.1: Selective processing - only respond to ❓ reactions
-    if str(reaction.emoji) != '❓':
-        logger.debug(f"❌ Ignoring non-❓ reaction {reaction.emoji} from {user.display_name}")
-        return
-    
-    logger.info(f"✅ Processing ❓ reaction from {user.display_name} on message {message.id}")
-    
-    # Get role data by message ID
-    role_data = await get_role_data_by_message_id(str(message.id))
-    logger.debug(f"🔍 Role data found: {role_data is not None}")
-    
-    if role_data:
-        # Section 5.2: Send enhanced company info instead of individual job info
-        if isinstance(user, discord.Member):  # Only discord.Member objects have DM capabilities
-            logger.info(f"📨 Sending enhanced company info DM to {user.display_name}")
-            await send_enhanced_company_info_dm(user, role_data)
-        else:
-            logger.warning(f"User {user.id} is not a Member, cannot send DM")
     else:
         logger.warning(f"Could not find role data for message {message.id}")
 
