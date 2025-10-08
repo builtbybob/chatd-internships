@@ -53,6 +53,13 @@ DEFAULT_CONFIG = {
     'REACTION_BATCH_DELAY_MS': '1000',  # Delay between reaction batches in milliseconds
     'REACTION_RETRY_COUNT': '3',  # Maximum retry attempts for failed reactions
     'REACTION_RETRY_DELAY_MS': '500',  # Base delay for reaction retries in milliseconds
+    # Section 4.4: Enhanced failure handling and health monitoring
+    'HEALTH_WINDOW_SIZE': '100',  # Size of rolling window for failure rate calculation
+    'DEGRADATION_THRESHOLD': '0.5',  # Failure rate threshold (50%) to enter degraded mode
+    'RECOVERY_THRESHOLD': '0.2',  # Failure rate threshold (20%) to exit degraded mode
+    'CIRCUIT_BREAKER_THRESHOLD': '10',  # Consecutive failures to trigger circuit breaker
+    'CIRCUIT_BREAKER_TIMEOUT_SECONDS': '300',  # Time to wait before retrying after circuit break (5 minutes)
+    'HEALTH_CHECK_INTERVAL_SECONDS': '60',  # How often to log health statistics
 }
 
 # Required configuration values that must be set
@@ -125,6 +132,13 @@ class Config:
         self.reaction_batch_delay = int(self.reaction_batch_delay_ms) / 1000.0
         self.reaction_retry_count = int(self.reaction_retry_count)
         self.reaction_retry_delay = int(self.reaction_retry_delay_ms) / 1000.0
+        # Section 4.4: Enhanced failure handling and health monitoring configurations
+        self.health_window_size = int(self.health_window_size)
+        self.degradation_threshold = float(self.degradation_threshold)
+        self.recovery_threshold = float(self.recovery_threshold)
+        self.circuit_breaker_threshold = int(self.circuit_breaker_threshold)
+        self.circuit_breaker_timeout = int(self.circuit_breaker_timeout_seconds)
+        self.health_check_interval = int(self.health_check_interval_seconds)
         
         # Convert boolean values
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')

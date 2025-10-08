@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any, Set, Optional, Tuple
 import time
+from enum import Enum
+from collections import defaultdict, deque
 
 import aiohttp
 import discord
@@ -25,22 +27,55 @@ from chatd.storage_abstraction import DataStorage
 logger = logging.getLogger(__name__)
 
 
+class ReactionFailureType(Enum):
+    """Classification of different reaction failure types for appropriate handling."""
+    RATE_LIMITED = "rate_limited"      # 429 errors - retry with longer delay
+    NETWORK_ERROR = "network_error"    # Connection issues - retry normally
+    PERMANENT_ERROR = "permanent"      # 403/404 - don't retry
+    SERVER_ERROR = "server_error"      # 5xx errors - retry with backoff
+    UNKNOWN_ERROR = "unknown"          # Other errors - limited retry
+
+
 class ReactionQueue:
     """
     Manages background processing of Discord reactions with rate limiting and retry logic.
+    Section 4.4: Enhanced with failure classification, health monitoring, and graceful degradation.
     """
     
     def __init__(self):
-        """Initialize the reaction queue."""
+        """Initialize the reaction queue with enhanced monitoring."""
         self.task_queue: asyncio.Queue = asyncio.Queue()
         self.is_running = False
         self.processor_task: Optional[asyncio.Task] = None
+        
+        # Basic statistics (Section 4.3)
         self.stats = {
             'queued': 0,
             'processed': 0,
             'failed': 0,
             'retried': 0
         }
+        
+        # Section 4.4: Enhanced health monitoring and failure handling
+        self.enhanced_stats = {
+            'total_attempts': 0,
+            'successful_reactions': 0,
+            'failed_reactions': 0,
+            'failure_by_type': defaultdict(int),
+            'avg_retry_count': 0.0,
+            'health_score': 1.0,  # Start with perfect health
+            'failure_rate_window': deque(maxlen=config.health_window_size),  # Rolling window for failure rate
+            'degradation_events': 0,
+            'consecutive_failures': 0,
+            'degraded_mode': False,
+            'last_failure_time': None
+        }
+        
+        # Health monitoring configuration
+        self.failure_rate_window_size = 50  # Track last 50 attempts for health calculation
+        self.degradation_threshold = 0.5   # 50% failure rate triggers degradation
+        self.recovery_threshold = 0.2      # 20% failure rate allows recovery
+        self.circuit_breaker_threshold = 10  # Consecutive failures to trigger circuit breaker
     
     async def start(self):
         """Start the background reaction processor."""
@@ -66,6 +101,146 @@ class ReactionQueue:
                 pass
         
         logger.debug("ReactionQueue processor stopped")
+    
+    def _classify_failure(self, exception: Exception) -> ReactionFailureType:
+        """
+        Classify the type of failure for appropriate handling strategy.
+        
+        Args:
+            exception: The exception that occurred
+            
+        Returns:
+            ReactionFailureType: Classification of the failure
+        """
+        if isinstance(exception, discord.NotFound):
+            return ReactionFailureType.PERMANENT_ERROR
+        elif isinstance(exception, discord.Forbidden):
+            return ReactionFailureType.PERMANENT_ERROR
+        elif isinstance(exception, discord.HTTPException):
+            if exception.status == 429:  # Rate limited
+                return ReactionFailureType.RATE_LIMITED
+            elif 500 <= exception.status < 600:  # Server errors
+                return ReactionFailureType.SERVER_ERROR
+            else:
+                return ReactionFailureType.NETWORK_ERROR
+        elif isinstance(exception, (aiohttp.ClientError, asyncio.TimeoutError)):
+            return ReactionFailureType.NETWORK_ERROR
+        else:
+            return ReactionFailureType.UNKNOWN_ERROR
+    
+    def _update_health_metrics(self, success: bool, failure_type: Optional[ReactionFailureType] = None):
+        """
+        Update health monitoring metrics based on reaction attempt result.
+        
+        Args:
+            success: Whether the reaction was successful
+            failure_type: Type of failure if unsuccessful
+        """
+        self.enhanced_stats['total_attempts'] += 1
+        
+        if success:
+            self.enhanced_stats['successful_reactions'] += 1
+            self.enhanced_stats['consecutive_failures'] = 0
+            self.enhanced_stats['failure_rate_window'].append(False)
+        else:
+            self.enhanced_stats['failed_reactions'] += 1
+            self.enhanced_stats['consecutive_failures'] += 1
+            self.enhanced_stats['last_failure_time'] = time.time()
+            self.enhanced_stats['failure_rate_window'].append(True)
+            
+            if failure_type:
+                self.enhanced_stats['failure_by_type'][failure_type.value] += 1
+        
+        # Maintain rolling window size
+        if len(self.enhanced_stats['failure_rate_window']) > config.health_window_size:
+            self.enhanced_stats['failure_rate_window'].pop(0)
+        
+        # Calculate health score
+        self._calculate_health_score()
+        
+        # Check for degradation mode changes
+        self._check_degradation_mode()
+    
+    def _calculate_health_score(self):
+        """Calculate current health score based on recent failure rate."""
+        if not self.enhanced_stats['failure_rate_window']:
+            self.enhanced_stats['health_score'] = 1.0
+            return
+        
+        failure_count = sum(self.enhanced_stats['failure_rate_window'])
+        total_count = len(self.enhanced_stats['failure_rate_window'])
+        failure_rate = failure_count / total_count
+        
+        # Health score is inverse of failure rate
+        self.enhanced_stats['health_score'] = max(0.0, 1.0 - failure_rate)
+    
+    def _check_degradation_mode(self):
+        """Check if degradation mode should be activated or deactivated."""
+        failure_rate = self._get_current_failure_rate()
+        
+        if not self.enhanced_stats['degraded_mode'] and failure_rate >= config.degradation_threshold:
+            self.enhanced_stats['degraded_mode'] = True
+            self.enhanced_stats['degradation_events'] += 1
+            logger.warning(f"🚨 Entering degraded mode due to {failure_rate:.1%} failure rate")
+            
+        elif self.enhanced_stats['degraded_mode'] and failure_rate <= config.recovery_threshold:
+            self.enhanced_stats['degraded_mode'] = False
+            logger.info(f"✅ Exiting degraded mode - failure rate improved to {failure_rate:.1%}")
+    
+    def _get_current_failure_rate(self) -> float:
+        """Get current failure rate from rolling window."""
+        if not self.enhanced_stats['failure_rate_window']:
+            return 0.0
+        
+        failure_count = sum(self.enhanced_stats['failure_rate_window'])
+        total_count = len(self.enhanced_stats['failure_rate_window'])
+        return failure_count / total_count
+    
+    def _should_circuit_break(self) -> bool:
+        """Check if circuit breaker should activate due to consecutive failures."""
+        # Check if we're in circuit breaker timeout period
+        if (self.enhanced_stats['last_failure_time'] and 
+            self.enhanced_stats['consecutive_failures'] >= config.circuit_breaker_threshold):
+            # Check if timeout period has elapsed
+            time_since_last_failure = time.time() - self.enhanced_stats['last_failure_time']
+            if time_since_last_failure < config.circuit_breaker_timeout:
+                return True  # Still in circuit breaker timeout
+            else:
+                # Timeout expired - reset consecutive failures to allow retry
+                self.enhanced_stats['consecutive_failures'] = 0
+                logger.info(f"Circuit breaker timeout expired after {config.circuit_breaker_timeout}s - allowing retry")
+                return False
+        
+        return self.enhanced_stats['consecutive_failures'] >= config.circuit_breaker_threshold
+    
+    def _get_retry_delay(self, failure_type: ReactionFailureType, retry_count: int) -> float:
+        """
+        Calculate retry delay based on failure type and retry count.
+        
+        Args:
+            failure_type: Type of failure that occurred
+            retry_count: Current retry attempt number
+            
+        Returns:
+            Delay in seconds before retry
+        """
+        base_delay = config.reaction_retry_delay
+        
+        if failure_type == ReactionFailureType.PERMANENT_ERROR:
+            # No retry for permanent errors (forbidden, not found, etc.)
+            return 0.0
+        elif failure_type == ReactionFailureType.RATE_LIMITED:
+            # Longer delays for rate limits
+            return min(base_delay * (3 ** retry_count), 30.0)
+        elif failure_type == ReactionFailureType.SERVER_ERROR:
+            # Exponential backoff for server errors
+            return min(base_delay * (2 ** retry_count), 16.0)
+        elif failure_type == ReactionFailureType.NETWORK_ERROR:
+            # Standard exponential backoff for network issues
+            return min(base_delay * (2 ** retry_count), 8.0)
+        else:
+            # Conservative retry for unknown errors
+            return min(base_delay * (1.5 ** retry_count), 5.0)
     
     async def queue_reactions(self, message: discord.Message, reactions: List[str]) -> None:
         """
@@ -116,7 +291,8 @@ class ReactionQueue:
     
     async def _process_single_reaction_task(self, reaction_task: Dict[str, Any]):
         """
-        Process a single reaction task with batch processing, error handling and retry logic.
+        Process a single reaction task with enhanced failure handling, monitoring and degradation.
+        Section 4.4: Enhanced with failure classification, health monitoring, and circuit breaker.
         
         Args:
             reaction_task: Dictionary containing message, reactions, and metadata
@@ -125,10 +301,23 @@ class ReactionQueue:
         reactions = reaction_task['reactions']
         retry_count = reaction_task['retry_count']
         
+        # Circuit breaker check
+        if self._should_circuit_break():
+            logger.error(f"🚨 Circuit breaker activated - skipping reactions for message {message.id}")
+            self._update_health_metrics(False, ReactionFailureType.PERMANENT_ERROR)
+            self.stats['failed'] += len(reactions)
+            return
+        
+        # Degraded mode - use simplified reaction set
+        if self.enhanced_stats['degraded_mode']:
+            reactions = ['👍']  # Only use simple reactions in degraded mode
+            logger.debug(f"Operating in degraded mode - using simplified reactions for message {message.id}")
+        
         try:
             # Section 4.3: Process reactions in batches for improved performance
             batch_size = config.reaction_batch_size
             failed_reactions = []
+            failed_reaction_types = []
             
             logger.debug(f"Processing {len(reactions)} reactions in batches of {batch_size} for message {message.id}")
             
@@ -136,6 +325,7 @@ class ReactionQueue:
             for i in range(0, len(reactions), batch_size):
                 batch = reactions[i:i + batch_size]
                 batch_failures = []
+                batch_failure_types = []
                 
                 logger.debug(f"Processing batch {i//batch_size + 1}: {len(batch)} reactions")
                 
@@ -144,31 +334,38 @@ class ReactionQueue:
                     try:
                         await message.add_reaction(reaction)
                         logger.debug(f"Successfully added reaction {reaction} to message {message.id}")
+                        self._update_health_metrics(True)
                         
                     except discord.NotFound:
                         logger.warning(f"Message {message.id} not found when adding reaction {reaction}")
-                        # Don't retry for not found errors - stop processing this message entirely
+                        # Section 4.4: Enhanced early termination with health tracking
+                        failure_type = self._classify_failure(discord.NotFound())
+                        self._update_health_metrics(False, failure_type)
                         return
                     
                     except discord.Forbidden:
                         logger.warning(f"No permission to add reaction {reaction} to message {message.id}")
-                        # Don't retry for permission errors - stop processing this message entirely
+                        # Section 4.4: Enhanced early termination with health tracking
+                        failure_type = self._classify_failure(discord.Forbidden())
+                        self._update_health_metrics(False, failure_type)
                         return
                         
-                    except discord.HTTPException as e:
-                        if e.status == 429:  # Rate limited
-                            logger.warning(f"Rate limited adding reaction {reaction} to message {message.id}")
-                            batch_failures.append(reaction)
-                        else:
-                            logger.warning(f"HTTP error adding reaction {reaction} to message {message.id}: {e}")
-                            batch_failures.append(reaction)
-                    
                     except Exception as e:
-                        logger.warning(f"Unexpected error adding reaction {reaction} to message {message.id}: {e}")
-                        batch_failures.append(reaction)
+                        # Section 4.4: Enhanced error classification and handling
+                        failure_type = self._classify_failure(e)
+                        self._update_health_metrics(False, failure_type)
+                        
+                        if failure_type == ReactionFailureType.PERMANENT_ERROR:
+                            logger.warning(f"Permanent error adding reaction {reaction} to message {message.id}: {e}")
+                            return  # Stop processing for permanent errors
+                        else:
+                            logger.warning(f"Recoverable error adding reaction {reaction} to message {message.id}: {e}")
+                            batch_failures.append(reaction)
+                            batch_failure_types.append(failure_type)
                 
                 # Add batch failures to overall failed reactions
                 failed_reactions.extend(batch_failures)
+                failed_reaction_types.extend(batch_failure_types)
                 
                 # Delay between batches (but not after the last batch)
                 if i + batch_size < len(reactions):
@@ -177,8 +374,19 @@ class ReactionQueue:
                 else:
                     logger.debug(f"Final batch {i//batch_size + 1} complete for message {message.id}")
             
-            # Handle retry logic for failed reactions
+            # Section 4.4: Enhanced retry logic with failure-type-specific delays
             if failed_reactions and retry_count < config.reaction_retry_count:
+                # Determine the most severe failure type for retry delay calculation
+                most_severe_failure = max(failed_reaction_types, 
+                                       key=lambda ft: [ReactionFailureType.RATE_LIMITED, 
+                                                     ReactionFailureType.SERVER_ERROR,
+                                                     ReactionFailureType.NETWORK_ERROR,
+                                                     ReactionFailureType.UNKNOWN_ERROR].index(ft) 
+                                       if ft in [ReactionFailureType.RATE_LIMITED, 
+                                               ReactionFailureType.SERVER_ERROR,
+                                               ReactionFailureType.NETWORK_ERROR,
+                                               ReactionFailureType.UNKNOWN_ERROR] else 0)
+                
                 retry_task = {
                     'message': message,
                     'reactions': failed_reactions,
@@ -186,13 +394,15 @@ class ReactionQueue:
                     'retry_count': retry_count + 1
                 }
                 
-                # Exponential backoff delay before retry
-                retry_delay = (2 ** retry_count) * config.reaction_retry_delay
-                logger.debug(f"Scheduling retry for {len(failed_reactions)} failed reactions in {retry_delay:.1f}s (attempt {retry_count + 1})")
+                # Section 4.4: Failure-type-specific retry delay
+                retry_delay = self._get_retry_delay(most_severe_failure, retry_count)
+                logger.debug(f"Scheduling retry for {len(failed_reactions)} failed reactions in {retry_delay:.1f}s "
+                           f"(attempt {retry_count + 1}, failure type: {most_severe_failure.value})")
                 await asyncio.sleep(retry_delay)
                 
                 await self.task_queue.put(retry_task)
                 self.stats['retried'] += 1
+                self.enhanced_stats['avg_retry_count'] = (self.enhanced_stats['avg_retry_count'] * self.stats['processed'] + (retry_count + 1)) / (self.stats['processed'] + 1)
                 logger.debug(f"Retrying {len(failed_reactions)} failed reactions for message {message.id} (attempt {retry_count + 1})")
             
             elif failed_reactions:
@@ -203,11 +413,74 @@ class ReactionQueue:
             
         except Exception as e:
             logger.error(f"Critical error processing reactions for message {message.id}: {e}")
+            failure_type = self._classify_failure(e)
+            self._update_health_metrics(False, failure_type)
             self.stats['failed'] += 1
     
-    def get_stats(self) -> Dict[str, int]:
-        """Get current reaction queue statistics."""
-        return self.stats.copy()
+    def get_stats(self) -> Dict[str, Any]:
+        """Get current reaction queue statistics including Section 4.4 enhancements."""
+        basic_stats = self.stats.copy()
+        
+        # Add Section 4.4 enhanced statistics
+        enhanced_stats = {
+            'enhanced_metrics': {
+                'total_attempts': self.enhanced_stats['total_attempts'],
+                'successful_reactions': self.enhanced_stats['successful_reactions'],
+                'failed_reactions': self.enhanced_stats['failed_reactions'],
+                'failure_by_type': dict(self.enhanced_stats['failure_by_type']),
+                'avg_retry_count': round(self.enhanced_stats['avg_retry_count'], 2),
+                'degradation_events': self.enhanced_stats['degradation_events'],
+                'health_score': round(self.enhanced_stats['health_score'], 3),
+                'current_failure_rate': round(self._get_current_failure_rate(), 3),
+                'consecutive_failures': self.enhanced_stats['consecutive_failures'],
+                'degraded_mode': self.enhanced_stats['degraded_mode'],
+                'last_failure_time': self.enhanced_stats['last_failure_time']
+            }
+        }
+        
+        return {**basic_stats, **enhanced_stats}
+    
+    def get_health_summary(self) -> Dict[str, Any]:
+        """Get a concise health summary for monitoring dashboards."""
+        return {
+            'health_score': round(self.enhanced_stats['health_score'], 3),
+            'failure_rate': round(self._get_current_failure_rate(), 3),
+            'degraded_mode': self.enhanced_stats['degraded_mode'],
+            'consecutive_failures': self.enhanced_stats['consecutive_failures'],
+            'circuit_breaker_active': self._should_circuit_break(),
+            'total_attempts': self.enhanced_stats['total_attempts'],
+            'success_rate': round(
+                self.enhanced_stats['successful_reactions'] / max(1, self.enhanced_stats['total_attempts']), 
+                3
+            )
+        }
+    
+    def _get_current_failure_rate(self) -> float:
+        """Calculate current failure rate from rolling window."""
+        if not self.enhanced_stats['failure_rate_window']:
+            return 0.0
+        
+        return len([f for f in self.enhanced_stats['failure_rate_window'] if f]) / len(self.enhanced_stats['failure_rate_window'])
+    
+    def reset_circuit_breaker(self):
+        """Manually reset circuit breaker - useful for administrative control."""
+        self.enhanced_stats['consecutive_failures'] = 0
+        self.enhanced_stats['degraded_mode'] = False
+        self.enhanced_stats['last_failure_time'] = None
+        self.logger.info("Circuit breaker manually reset")
+    
+    def log_health_summary(self):
+        """Log periodic health summary for monitoring."""
+        health_summary = self.get_health_summary()
+        
+        if health_summary['degraded_mode']:
+            self.logger.warning(f"🚨 Health Check - DEGRADED MODE: {health_summary}")
+        elif health_summary['health_score'] < 0.8:
+            self.logger.warning(f"⚠️  Health Check - POOR HEALTH: {health_summary}")
+        else:
+            self.logger.info(f"✅ Health Check - GOOD: {health_summary}")
+        
+        return health_summary
 
 
 # Global reaction queue instance
