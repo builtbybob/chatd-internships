@@ -1,6 +1,8 @@
 ![Ch@d Internships Banner](ChatdInternshipsBanner.png)
 
 # Ch@d Internships
+[![Tests](https://github.com/builtbybob/chatd-internships/actions/workflows/coverage.yml/badge.svg)](https://github.com/builtbybob/chatd-internships/actions)
+
 ## 📁 Repository Structure
 
 The repository is organized to separate templates and examples from environment-specific configurations:
@@ -22,7 +24,6 @@ chatd-internships/
 ## 🚀 Quick Start
 
 **For initial setup and installation, see [SETUP.md](docs/SETUP.md) for the complete step-by-step guide.**
-[![Tests](https://github.com/builtbybob/chatd-internships/actions/workflows/coverage.yml/badge.svg)](https://github.com/builtbybob/chatd-internships/actions)
 
 ## Overview
 
