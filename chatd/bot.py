@@ -1398,13 +1398,31 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
     
     # Get the user who reacted
     guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+    user = None
+    
+    # Try multiple ways to get the user
     if guild:
         user = guild.get_member(payload.user_id)
-    else:
-        user = bot.get_user(payload.user_id)
+        logger.debug(f"🔍 Guild member lookup: {user is not None}")
     
     if not user:
-        logger.warning(f"Could not find user {payload.user_id}")
+        user = bot.get_user(payload.user_id)
+        logger.debug(f"🔍 Bot user lookup: {user is not None}")
+    
+    if not user:
+        # Try fetching the user from Discord API
+        try:
+            user = await bot.fetch_user(payload.user_id)
+            logger.debug(f"🔍 Fetch user lookup: {user is not None}")
+        except discord.NotFound:
+            logger.warning(f"User {payload.user_id} not found via API")
+        except discord.Forbidden:
+            logger.warning(f"No permission to fetch user {payload.user_id}")
+        except Exception as e:
+            logger.warning(f"Error fetching user {payload.user_id}: {e}")
+    
+    if not user:
+        logger.warning(f"Could not find user {payload.user_id} via any method")
         return
     
     logger.info(f"✅ Processing ❓ reaction from {user.display_name} on message {message.id}")
@@ -1415,11 +1433,8 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
     
     if role_data:
         # Section 5.2: Send enhanced company info instead of individual job info
-        if isinstance(user, discord.Member):  # Only discord.Member objects have DM capabilities
-            logger.info(f"📨 Sending enhanced company info DM to {user.display_name}")
-            await send_enhanced_company_info_dm(user, role_data)
-        else:
-            logger.warning(f"User {user.id} is not a Member, cannot send DM")
+        logger.info(f"📨 Sending enhanced company info DM to {user.display_name}")
+        await send_enhanced_company_info_dm(user, role_data)
     else:
         logger.warning(f"Could not find role data for message {message.id}")
 
