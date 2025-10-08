@@ -79,16 +79,22 @@ class ReactionQueue:
     
     async def start(self):
         """Start the background reaction processor."""
+        logger.debug(f"🚀 ReactionQueue.start() called - currently running: {self.is_running}")
+        
         if self.is_running:
+            logger.warning("⚠️ ReactionQueue already running, skipping start")
             return
         
         self.is_running = True
         self.processor_task = asyncio.create_task(self._process_reactions())
-        logger.debug("ReactionQueue processor started")
+        logger.info("✅ ReactionQueue processor started successfully")
     
     async def stop(self):
         """Stop the background reaction processor."""
+        logger.debug(f"🛑 ReactionQueue.stop() called - currently running: {self.is_running}")
+        
         if not self.is_running:
+            logger.debug("⚠️ ReactionQueue already stopped")
             return
         
         self.is_running = False
@@ -98,9 +104,10 @@ class ReactionQueue:
             try:
                 await self.processor_task
             except asyncio.CancelledError:
-                pass
+                logger.debug("ReactionQueue processor task cancelled")
+            self.processor_task = None
         
-        logger.debug("ReactionQueue processor stopped")
+        logger.info("✅ ReactionQueue processor stopped")
     
     def _classify_failure(self, exception: Exception) -> ReactionFailureType:
         """
@@ -259,35 +266,42 @@ class ReactionQueue:
         
         await self.task_queue.put(reaction_task)
         self.stats['queued'] += 1
-        logger.debug(f"Queued {len(reactions)} reactions for message {message.id}")
+        logger.info(f"📤 Queued {len(reactions)} reactions for message {message.id} (total queued: {self.stats['queued']})")
     
     async def _process_reactions(self):
         """Background task processor for reaction queue."""
-        logger.debug("Starting reaction queue processor")
+        logger.info("🚀 Starting reaction queue processor task")
         
         while self.is_running:
             try:
                 # Wait for reaction tasks with timeout
                 try:
+                    logger.debug("Waiting for reaction tasks in queue...")
                     reaction_task = await asyncio.wait_for(
                         self.task_queue.get(), 
                         timeout=1.0
                     )
+                    logger.info(f"📥 Received reaction task for message {reaction_task['message'].id}")
                 except asyncio.TimeoutError:
+                    logger.debug("No reaction tasks in queue, continuing...")
                     continue  # Continue the loop to check if we should stop
                 
                 # Process the reaction task
+                logger.info(f"🔄 Processing reaction task for message {reaction_task['message'].id}")
                 await self._process_single_reaction_task(reaction_task)
+                logger.info(f"✅ Completed processing reaction task for message {reaction_task['message'].id}")
                 
                 # Rate limiting delay between reaction processing
                 await asyncio.sleep(config.batch_processing_delay)
                 
             except asyncio.CancelledError:
-                logger.debug("Reaction processor cancelled")
+                logger.info("❌ Reaction processor cancelled - stopping gracefully")
                 break
             except Exception as e:
-                logger.error(f"Error in reaction processor: {e}")
+                logger.error(f"💥 Critical error in reaction processor: {e}", exc_info=True)
                 await asyncio.sleep(1)  # Brief pause before retrying
+        
+        logger.info("🏁 Reaction queue processor task ended")
     
     async def _process_single_reaction_task(self, reaction_task: Dict[str, Any]):
         """
@@ -1275,12 +1289,17 @@ async def on_ready() -> None:
         # Every 60 seconds, log queue health status
         if loop_counter % 60 == 0:
             stats = reaction_queue.get_stats()
+            processor_status = "RUNNING" if reaction_queue.is_running else "STOPPED"
+            task_status = "ACTIVE" if reaction_queue.processor_task and not reaction_queue.processor_task.done() else "INACTIVE"
+            
             if stats['queued'] > stats['processed']:
                 unprocessed = stats['queued'] - stats['processed']
                 logger.warning(f"🚨 Reaction queue health check: {unprocessed} unprocessed reactions "
-                             f"(Queued: {stats['queued']}, Processed: {stats['processed']})")
+                             f"(Queued: {stats['queued']}, Processed: {stats['processed']}) "
+                             f"Processor: {processor_status}, Task: {task_status}")
             else:
-                logger.debug(f"✅ Reaction queue healthy: {stats['processed']} processed, {stats['queued']} total")
+                logger.debug(f"✅ Reaction queue healthy: {stats['processed']} processed, {stats['queued']} total "
+                           f"Processor: {processor_status}, Task: {task_status}")
         
         loop_counter += 1
         await asyncio.sleep(1)  # Small delay to prevent busy-waiting
@@ -1318,12 +1337,21 @@ async def on_resume() -> None:
     Event handler for when the bot resumes connection after disconnect.
     This is critical for restarting the reaction queue processor.
     """
-    logger.info("Bot connection resumed - restarting reaction queue processor")
+    logger.info("🔄 Bot connection resumed - checking reaction queue state")
     
-    # Restart the reaction queue processor after reconnection
+    # Get current queue stats
+    stats = reaction_queue.get_stats()
+    logger.info(f"📊 Pre-resume queue stats - Queued: {stats['queued']}, "
+               f"Processed: {stats['processed']}, Running: {reaction_queue.is_running}")
+    
+    # Force restart the reaction queue processor after reconnection
+    if reaction_queue.is_running:
+        logger.warning("⚠️ Queue processor still marked as running, stopping first")
+        await reaction_queue.stop()
+    
     await reaction_queue.start()
     
-    logger.info("Reaction queue processor restarted successfully")
+    logger.info("✅ Reaction queue processor restarted successfully")
 
 
 @bot.event
