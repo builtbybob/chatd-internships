@@ -17,45 +17,11 @@ from discord.ext import commands
 import sys
 from pathlib import Path
 
-# Create a comprehensive mock for JsonStorageBackend that doesn't create directories
-class MockJsonStorageBackend:
-    def __init__(self, *args, **kwargs):
-        pass  # Don't create any directories or files
+# Import the comprehensive mock
+from tests.mock_datastorage import MockDataStorage, setup_mock_datastorage
 
-# Create a comprehensive mock for DataStorage 
-class MockDataStorage:
-    def __init__(self, *args, **kwargs):
-        pass  # Don't create any backends
-
-# Patch the classes at the module level before any imports
-original_JsonStorageBackend = None
-original_DataStorage = None
-
-def setup_storage_mocks():
-    global original_JsonStorageBackend, original_DataStorage
-    if 'chatd.storage_abstraction' in sys.modules:
-        storage_module = sys.modules['chatd.storage_abstraction']
-        original_JsonStorageBackend = getattr(storage_module, 'JsonStorageBackend', None)
-        original_DataStorage = getattr(storage_module, 'DataStorage', None)
-        storage_module.JsonStorageBackend = MockJsonStorageBackend
-        storage_module.DataStorage = MockDataStorage
-    else:
-        # Patch before import
-        import chatd.storage_abstraction
-        original_JsonStorageBackend = chatd.storage_abstraction.JsonStorageBackend
-        original_DataStorage = chatd.storage_abstraction.DataStorage
-        chatd.storage_abstraction.JsonStorageBackend = MockJsonStorageBackend
-        chatd.storage_abstraction.DataStorage = MockDataStorage
-
-def teardown_storage_mocks():
-    global original_JsonStorageBackend, original_DataStorage
-    if 'chatd.storage_abstraction' in sys.modules and original_JsonStorageBackend and original_DataStorage:
-        storage_module = sys.modules['chatd.storage_abstraction']
-        storage_module.JsonStorageBackend = original_JsonStorageBackend
-        storage_module.DataStorage = original_DataStorage
-
-# Apply the mocks immediately
-setup_storage_mocks()
+# Set up the mock before any imports that might use DataStorage
+setup_mock_datastorage()
 
 
 class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
@@ -1195,6 +1161,266 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
         mock_logger.warning.assert_called()
         warning_msg = mock_logger.warning.call_args[0][0]
         self.assertIn("Health Check - DEGRADED MODE", warning_msg)
+
+
+class TestSection5CompanyInfo(unittest.IsolatedAsyncioTestCase):
+    """Test cases for Section 5.3 and 5.4 enhanced company information features."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Mock environment
+        self.env_patcher = patch.dict(os.environ, {
+            'DISCORD_TOKEN': 'test-token',
+            'CHANNEL_IDS': '123456789',
+            'ENABLE_REACTIONS': 'true',
+            'ENABLE_COMPANY_INFO': 'true',
+            'INFO_REACTION_EMOJI': '❓',
+            'COMPANY_INFO_DAYS': '7',
+            'MAX_COMPANY_JOBS_IN_DM': '10',
+            'MIGRATION_MODE': 'database_only',
+            'DATA_FILE': '/tmp/test_data.json',
+            'MESSAGES_FILE': '/tmp/test_messages.json'
+        })
+        self.env_patcher.start()
+        
+        # Reset config singleton
+        from chatd.config import Config
+        Config._instance = None
+        
+        # Mock the get_storage function to avoid file system operations
+        self.storage_patcher = patch('chatd.bot.get_storage')
+        self.storage_patcher.start()
+        
+        # Sample company data for testing
+        self.sample_company_data = [
+            {
+                'id': 'job1',
+                'company_name': 'TechCorp',
+                'title': 'Software Engineering Intern',
+                'url': 'https://techcorp.com/job1',
+                'date_posted': int(time.time()) - (2 * 24 * 60 * 60),  # 2 days ago
+                'date_updated': int(time.time()) - (1 * 24 * 60 * 60),  # 1 day ago
+                'active': True,
+                'is_visible': True,
+                'sponsorship': 'Available',
+                'locations': ['San Francisco, CA', 'Seattle, WA'],
+                'terms': ['Summer 2026', 'Fall 2026']
+            },
+            {
+                'id': 'job2',
+                'company_name': 'TechCorp',
+                'title': 'Data Science Intern',
+                'url': 'https://techcorp.com/job2',
+                'date_posted': int(time.time()) - (3 * 24 * 60 * 60),  # 3 days ago
+                'date_updated': int(time.time()) - (1 * 24 * 60 * 60),  # 1 day ago
+                'active': True,
+                'is_visible': True,
+                'sponsorship': 'Not Available',
+                'locations': ['New York, NY'],
+                'terms': ['Summer 2026']
+            },
+            {
+                'id': 'job3',
+                'company_name': 'TechCorp',
+                'title': 'Product Manager New Grad',
+                'url': 'https://techcorp.com/job3',
+                'date_posted': int(time.time()) - (1 * 24 * 60 * 60),  # 1 day ago
+                'date_updated': int(time.time()) - (1 * 24 * 60 * 60),  # 1 day ago
+                'active': True,
+                'is_visible': True,
+                'sponsorship': 'Available',
+                'locations': ['Austin, TX'],
+                'terms': ['2026']
+            }
+        ]
+    
+    def tearDown(self):
+        """Clean up after tests."""
+        self.env_patcher.stop()
+        self.storage_patcher.stop()
+        from chatd.config import Config
+        Config._instance = None
+    
+    async def test_get_enhanced_company_insights_basic(self):
+        """Test basic functionality of get_enhanced_company_insights."""
+        from chatd.bot import get_enhanced_company_insights
+        
+        # Mock storage to not have database backend, forcing fallback to get_company_jobs_from_database
+        mock_storage = Mock()
+        mock_storage.database_backend = None
+        
+        with patch('chatd.bot.get_storage', return_value=mock_storage):
+            with patch('chatd.bot.get_company_jobs_from_database', new_callable=AsyncMock, return_value=self.sample_company_data) as mock_get_jobs:
+                insights = await get_enhanced_company_insights('TechCorp')
+                
+                # Verify the function was called correctly
+                mock_get_jobs.assert_called_once_with('TechCorp', 7)
+                
+                # Verify basic structure (fallback mode)
+                self.assertIsInstance(insights, dict)
+                self.assertIn('total_positions', insights)
+                self.assertIn('location_analysis', insights)
+                self.assertIn('term_analysis', insights)
+                self.assertIn('job_families', insights)
+                self.assertIn('application_deadlines', insights)
+                self.assertIn('jobs', insights)
+                
+                # Verify content (fallback mode returns simplified structure)
+                self.assertEqual(insights['total_positions'], 3)
+                self.assertIsInstance(insights['jobs'], list)
+                self.assertEqual(len(insights['jobs']), 3)
+                self.assertEqual(insights['location_analysis'], {})
+                self.assertEqual(insights['term_analysis'], {})
+                self.assertEqual(insights['application_deadlines'], [])
+                self.assertIn('Other', insights['job_families'])
+    
+    async def test_get_enhanced_company_insights_location_analysis(self):
+        """Test location analysis in enhanced company insights."""
+        from chatd.bot import get_enhanced_company_insights
+        
+        # Mock storage to not have database backend, forcing fallback mode
+        mock_storage = Mock()
+        mock_storage.database_backend = None
+        
+        with patch('chatd.bot.get_storage', return_value=mock_storage):
+            with patch('chatd.bot.get_company_jobs_from_database', new_callable=AsyncMock, return_value=self.sample_company_data):
+                insights = await get_enhanced_company_insights('TechCorp')
+                
+                # In fallback mode, location_analysis is empty
+                self.assertEqual(insights['location_analysis'], {})
+    
+    async def test_get_enhanced_company_insights_job_families(self):
+        """Test job family categorization in enhanced company insights."""
+        from chatd.bot import get_enhanced_company_insights
+        
+        # Mock storage to not have database backend, forcing fallback mode
+        mock_storage = Mock()
+        mock_storage.database_backend = None
+        
+        with patch('chatd.bot.get_storage', return_value=mock_storage):
+            with patch('chatd.bot.get_company_jobs_from_database', new_callable=AsyncMock, return_value=self.sample_company_data):
+                insights = await get_enhanced_company_insights('TechCorp')
+                
+                job_families = insights['job_families']
+                
+                # In fallback mode, all jobs go to 'Other' category
+                self.assertIn('Other', job_families)
+                self.assertEqual(len(job_families['Other']), 3)
+    
+    async def test_send_enhanced_company_info_dm_basic(self):
+        """Test basic functionality of send_enhanced_company_info_dm."""
+        from chatd.bot import send_enhanced_company_info_dm
+        
+        mock_user = AsyncMock()
+        mock_user.send = AsyncMock()
+        
+        sample_insights = {
+            'company_name': 'TechCorp',
+            'total_positions': 3,
+            'location_analysis': {
+                'location_counts': {'San Francisco, CA': 2, 'New York, NY': 1}
+            },
+            'term_analysis': {
+                'term_counts': {'Summer 2026': 2, 'Fall 2026': 1}
+            },
+            'job_families': {
+                'Intern': self.sample_company_data[:2],
+                'New Grad': self.sample_company_data[2:]
+            },
+            'application_deadlines': [],
+            'jobs': self.sample_company_data
+        }
+        
+        with patch('chatd.bot.get_enhanced_company_insights', new_callable=AsyncMock, return_value=sample_insights):
+            # Pass proper role_data with company_name
+            role_data = {'company_name': 'TechCorp', 'title': 'Software Engineer'}
+            await send_enhanced_company_info_dm(mock_user, role_data)
+            
+            # Should send at least one message
+            self.assertGreater(mock_user.send.call_count, 0)
+            
+            # Check content of first message
+            first_call = mock_user.send.call_args_list[0][0][0]
+            self.assertIn('TechCorp', first_call)
+            self.assertIn('📊 Company Snapshot', first_call)
+            self.assertIn('Total Active Positions:** 3', first_call)
+    
+    async def test_send_enhanced_company_info_dm_job_families(self):
+        """Test job family formatting in enhanced company info DM."""
+        from chatd.bot import send_enhanced_company_info_dm
+        
+        mock_user = AsyncMock()
+        mock_user.send = AsyncMock()
+        
+        sample_insights = {
+            'company_name': 'TechCorp',
+            'total_positions': 1,
+            'location_analysis': {'location_counts': {'San Francisco, CA': 1}},
+            'term_analysis': {'term_counts': {'Summer 2026': 1}},
+            'job_families': {
+                'Intern': [
+                    {
+                        'title': 'Software Engineering Intern',
+                        'url': 'https://techcorp.com/job1',
+                        'locations': ['San Francisco, CA'],
+                        'terms': ['Summer 2026'],
+                        'date_posted': int(time.time()) - (1 * 24 * 60 * 60)
+                    }
+                ],
+                'New Grad': [
+                    {
+                        'title': 'Product Manager New Grad',
+                        'url': 'https://techcorp.com/job2',
+                        'locations': ['Austin, TX'],
+                        'terms': ['2026'],
+                        'date_posted': int(time.time()) - (2 * 24 * 60 * 60)
+                    }
+                ]
+            },
+            'application_deadlines': [],
+            'jobs': [
+                {
+                    'title': 'Software Engineering Intern',
+                    'url': 'https://techcorp.com/job1',
+                    'locations': ['San Francisco, CA'],
+                    'terms': ['Summer 2026'],
+                    'date_posted': int(time.time()) - (1 * 24 * 60 * 60)
+                }
+            ]
+        }
+        
+        with patch('chatd.bot.get_enhanced_company_insights', new_callable=AsyncMock, return_value=sample_insights):
+            # Pass proper role_data with company_name
+            role_data = {'company_name': 'TechCorp', 'title': 'Software Engineer'}
+            await send_enhanced_company_info_dm(mock_user, role_data)
+            
+            # Should send at least one message
+            self.assertGreater(mock_user.send.call_count, 0)
+            
+            # Find message containing job families
+            all_messages = ''.join([call[0][0] for call in mock_user.send.call_args_list])
+            
+            # Check that both job types are present
+            self.assertIn('Intern Positions', all_messages)
+            self.assertIn('New Grad Positions', all_messages)
+            self.assertIn('Software Engineering Intern', all_messages)
+            self.assertIn('Product Manager New Grad', all_messages)
+    
+    async def test_send_enhanced_company_info_dm_error_handling(self):
+        """Test error handling in send_enhanced_company_info_dm."""
+        from chatd.bot import send_enhanced_company_info_dm
+        
+        mock_user = AsyncMock()
+        mock_user.send = AsyncMock(side_effect=discord.Forbidden(Mock(), "Cannot send DM"))
+        
+        with patch('chatd.bot.get_enhanced_company_insights') as mock_insights:
+            mock_insights.side_effect = Exception("Insights error")
+            
+            # Should not raise exception even if insights fail
+            await send_enhanced_company_info_dm(mock_user, {'company_name': 'TechCorp'})
+            
+            # Should attempt to get insights
+            mock_insights.assert_called_once_with('TechCorp', days=7)
 
 
 if __name__ == '__main__':

@@ -336,17 +336,17 @@ class ReactionQueue:
                         logger.debug(f"Successfully added reaction {reaction} to message {message.id}")
                         self._update_health_metrics(True)
                         
-                    except discord.NotFound:
+                    except discord.NotFound as e:
                         logger.warning(f"Message {message.id} not found when adding reaction {reaction}")
                         # Section 4.4: Enhanced early termination with health tracking
-                        failure_type = self._classify_failure(discord.NotFound())
+                        failure_type = self._classify_failure(e)
                         self._update_health_metrics(False, failure_type)
                         return
                     
-                    except discord.Forbidden:
+                    except discord.Forbidden as e:
                         logger.warning(f"No permission to add reaction {reaction} to message {message.id}")
                         # Section 4.4: Enhanced early termination with health tracking
-                        failure_type = self._classify_failure(discord.Forbidden())
+                        failure_type = self._classify_failure(e)
                         self._update_health_metrics(False, failure_type)
                         return
                         
@@ -875,14 +875,217 @@ async def get_company_jobs_from_database(company_name: str, days: int = 7) -> Li
         return []
 
 
+async def get_enhanced_company_insights(company_name: str, days: int = 7) -> Dict[str, Any]:
+    """
+    Get comprehensive company insights with SQL aggregation.
+    
+    Args:
+        company_name: The company name to search for
+        days: Number of days to look back for recent jobs (default: 7)
+        
+    Returns:
+        Dictionary containing enhanced company insights:
+        - total_positions: Total number of active positions
+        - jobs: List of job dictionaries
+        - location_analysis: Dictionary with location counts and top locations
+        - term_analysis: Dictionary with term counts and breakdown
+        - application_deadlines: List of jobs with upcoming deadlines
+        - job_families: Jobs grouped by type (intern, new grad, etc.)
+    """
+    from chatd.config import config
+    
+    try:
+        # Check if company info is enabled
+        if not config.enable_company_info:
+            return {}
+            
+        # Use storage abstraction to get database backend
+        storage = get_storage()
+        if not hasattr(storage, 'database_backend') or not storage.database_backend:
+            # Fallback to basic job list
+            basic_jobs = await get_company_jobs_from_database(company_name, days)
+            return {
+                'total_positions': len(basic_jobs),
+                'jobs': basic_jobs,
+                'location_analysis': {},
+                'term_analysis': {},
+                'application_deadlines': [],
+                'job_families': {'Other': basic_jobs}
+            }
+            
+        # Calculate cutoff timestamp
+        cutoff_timestamp = int(time.time() - (days * 24 * 3600))
+        
+        # Get database manager
+        db_manager = storage.database_backend.db_manager
+        
+        with db_manager.get_session() as session:
+            from chatd.database import JobPosting, JobLocation, JobTerm
+            from sqlalchemy import and_, func, distinct
+            
+            # Main query for jobs with JOIN for efficient data retrieval
+            jobs_query = session.query(
+                JobPosting,
+                func.array_agg(distinct(JobLocation.location)).label('locations'),
+                func.array_agg(distinct(JobTerm.term)).label('terms')
+            ).outerjoin(
+                JobLocation, JobPosting.id == JobLocation.id
+            ).outerjoin(
+                JobTerm, JobPosting.id == JobTerm.id
+            ).filter(
+                and_(
+                    JobPosting.company_name.ilike(f'%{company_name}%'),
+                    JobPosting.active == True,
+                    JobPosting.is_visible == True,
+                    JobPosting.date_posted >= cutoff_timestamp
+                )
+            ).group_by(JobPosting.id).order_by(JobPosting.date_posted.desc())
+            
+            # Execute query and build jobs list
+            jobs = []
+            all_locations = []
+            all_terms = []
+            
+            for result in jobs_query.all():
+                job = result.JobPosting
+                locations = [loc for loc in (result.locations or []) if loc is not None]
+                terms = [term for term in (result.terms or []) if term is not None]
+                
+                job_dict = {
+                    'id': str(job.id),
+                    'company_name': job.company_name,
+                    'title': job.title,
+                    'url': job.url,
+                    'sponsorship': job.sponsorship,
+                    'active': job.active,
+                    'source': job.source,
+                    'date_posted': job.date_posted,
+                    'company_url': job.company_url,
+                    'is_visible': job.is_visible,
+                    'date_updated': job.date_updated,
+                    'locations': locations,
+                    'terms': terms
+                }
+                
+                jobs.append(job_dict)
+                all_locations.extend(locations)
+                all_terms.extend(terms)
+            
+            # Count total active positions by company (including different filters)
+            total_positions = session.query(func.count(JobPosting.id)).filter(
+                and_(
+                    JobPosting.company_name.ilike(f'%{company_name}%'),
+                    JobPosting.active == True,
+                    JobPosting.is_visible == True
+                )
+            ).scalar() or 0
+            
+            # Location analysis with counts
+            location_counts = {}
+            for location in all_locations:
+                if location:
+                    location_counts[location] = location_counts.get(location, 0) + 1
+            
+            # Sort locations by frequency
+            top_locations = sorted(location_counts.items(), key=lambda x: x[1], reverse=True)
+            location_analysis = {
+                'total_locations': len(location_counts),
+                'location_counts': location_counts,
+                'top_locations': top_locations[:5],  # Top 5 locations
+                'has_remote': any('remote' in loc.lower() for loc in location_counts.keys())
+            }
+            
+            # Term analysis (internship cycles, etc.)
+            term_counts = {}
+            for term in all_terms:
+                if term:
+                    term_counts[term] = term_counts.get(term, 0) + 1
+            
+            # Sort terms by frequency
+            top_terms = sorted(term_counts.items(), key=lambda x: x[1], reverse=True)
+            term_analysis = {
+                'total_terms': len(term_counts),
+                'term_counts': term_counts,
+                'top_terms': top_terms[:3],  # Top 3 terms
+                'current_cycle': top_terms[0][0] if top_terms else None
+            }
+            
+            # Application deadlines (look for jobs posted recently - they often have near-term deadlines)
+            recent_jobs = [job for job in jobs if job['date_posted'] >= (time.time() - 14*24*3600)]  # Last 2 weeks
+            application_deadlines = sorted(recent_jobs, key=lambda x: x['date_posted'], reverse=True)[:5]
+            
+            # Job family analysis (group by keywords in titles)
+            job_families = {
+                'Intern': [],
+                'New Grad': [],
+                'Full-time': [],
+                'Part-time': [],
+                'Contract': [],
+                'Other': []
+            }
+            
+            for job in jobs:
+                title_lower = job['title'].lower()
+                categorized = False
+                
+                if 'intern' in title_lower:
+                    job_families['Intern'].append(job)
+                    categorized = True
+                elif any(term in title_lower for term in ['new grad', 'graduate', 'entry level', 'junior']):
+                    job_families['New Grad'].append(job)
+                    categorized = True
+                elif any(term in title_lower for term in ['full time', 'full-time', 'permanent']):
+                    job_families['Full-time'].append(job)
+                    categorized = True
+                elif any(term in title_lower for term in ['part time', 'part-time']):
+                    job_families['Part-time'].append(job)
+                    categorized = True
+                elif any(term in title_lower for term in ['contract', 'contractor', 'consulting']):
+                    job_families['Contract'].append(job)
+                    categorized = True
+                    
+                if not categorized:
+                    job_families['Other'].append(job)
+            
+            # Remove empty job families
+            job_families = {k: v for k, v in job_families.items() if v}
+            
+            return {
+                'total_positions': total_positions,
+                'recent_positions': len(jobs),
+                'jobs': jobs,
+                'location_analysis': location_analysis,
+                'term_analysis': term_analysis,
+                'application_deadlines': application_deadlines,
+                'job_families': job_families,
+                'company_name': company_name,
+                'query_days': days
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting enhanced company insights: {e}")
+        # Fallback to basic data
+        basic_jobs = await get_company_jobs_from_database(company_name, days)
+        return {
+            'total_positions': len(basic_jobs),
+            'jobs': basic_jobs,
+            'location_analysis': {},
+            'term_analysis': {},
+            'application_deadlines': [],
+            'job_families': {'Other': basic_jobs} if basic_jobs else {}
+        }
+
+
 async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[str, Any]) -> None:
     """
-    Send an enhanced DM with comprehensive company information.
+    Send an enhanced DM with comprehensive company information and rich formatting.
     
     Args:
         user: The Discord user to send the DM to
         role_data: The original job role data that triggered the reaction
     """
+    from chatd.config import config
+    
     try:
         company_name = role_data.get('company_name', '')
         if not company_name:
@@ -890,80 +1093,205 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
             await send_dm_with_job_info(user, role_data)
             return
         
-        # Get all recent jobs from this company
-        company_jobs = await get_company_jobs_from_database(company_name, days=7)
+        # Get enhanced company insights with SQL aggregation
+        insights = await get_enhanced_company_insights(company_name, days=config.company_info_days)
         
-        if not company_jobs:
+        if not insights or not insights.get('jobs'):
             # Fallback to individual job info if no company data found
             await send_dm_with_job_info(user, role_data)
             return
         
-        # Build enhanced company info message
+        # Build enhanced company info message with comprehensive data
         dm_message = [
-            f"# 🏢 {company_name} - Company Overview",
+            f"# 🏢 {company_name} - Comprehensive Overview",
             "",
-            f"Here's comprehensive information about **{company_name}** and their current opportunities:",
-            "",
-            f"**📊 Total Active Positions:** {len(company_jobs)}",
+            f"Here's everything you need to know about **{company_name}** and their opportunities:",
+            ""
         ]
         
-        # Collect unique locations and terms
-        all_locations = set()
-        all_terms = set()
-        for job in company_jobs:
-            all_locations.update(job.get('locations', []))
-            all_terms.update(job.get('terms', []))
-        
-        if all_locations:
-            locations_str = ', '.join(sorted(all_locations)[:5])  # Limit to 5 locations
-            if len(all_locations) > 5:
-                locations_str += f" and {len(all_locations) - 5} more"
-            dm_message.append(f"**📍 Locations:** {locations_str}")
-        
-        if all_terms:
-            terms_str = ', '.join(sorted(all_terms)[:3])  # Limit to 3 terms
-            if len(all_terms) > 3:
-                terms_str += f" and {len(all_terms) - 3} more"
-            dm_message.append(f"**📅 Terms:** {terms_str}")
+        # Company overview section with job count and locations
+        total_positions = insights.get('total_positions', 0)
+        recent_positions = insights.get('recent_positions', 0)
         
         dm_message.extend([
-            "",
-            "## 💼 Current Opportunities",
-            ""
+            "## 📊 Company Snapshot",
+            f"**📈 Total Active Positions:** {total_positions}",
+            f"**📅 Recent Postings ({config.company_info_days} days):** {recent_positions}",
         ])
         
-        # List up to 10 jobs
-        max_jobs_shown = min(10, len(company_jobs))
-        for i, job in enumerate(company_jobs[:max_jobs_shown]):
-            title = job.get('title', 'Not specified')
-            url = job.get('url', '')
-            locations = job.get('locations', [])
-            location_str = ', '.join(locations[:2]) if locations else 'Remote/Multiple'
-            if len(locations) > 2:
-                location_str += f" +{len(locations) - 2} more"
+        # Location analysis
+        location_analysis = insights.get('location_analysis', {})
+        if location_analysis.get('top_locations'):
+            top_locations = location_analysis['top_locations'][:3]  # Top 3 locations
+            location_text = ', '.join([f"{loc} ({count})" for loc, count in top_locations])
+            total_locations = location_analysis.get('total_locations', 0)
             
-            dm_message.append(f"**{i+1}. {title}**")
-            dm_message.append(f"   📍 {location_str}")
-            if url:
-                dm_message.append(f"   🔗 [Apply Here]({url})")
-            dm_message.append("")
+            if total_locations > 3:
+                location_text += f" and {total_locations - 3} more locations"
+            
+            dm_message.append(f"**📍 Top Locations:** {location_text}")
+            
+            if location_analysis.get('has_remote'):
+                dm_message.append("**🏠 Remote Work:** Available")
         
-        if len(company_jobs) > max_jobs_shown:
-            dm_message.append(f"*...and {len(company_jobs) - max_jobs_shown} more positions*")
-            dm_message.append("")
+        # Term analysis
+        term_analysis = insights.get('term_analysis', {})
+        if term_analysis.get('top_terms'):
+            top_terms = term_analysis['top_terms'][:2]  # Top 2 terms
+            terms_text = ', '.join([f"{term} ({count})" for term, count in top_terms])
+            dm_message.append(f"**📅 Main Cycles:** {terms_text}")
         
-        # Add footer
+        dm_message.append("")
+        
+        # Smart grouping by job families (intern, new grad, etc.)
+        job_families = insights.get('job_families', {})
+        for family_name, family_jobs in job_families.items():
+            if not family_jobs:
+                continue
+                
+            dm_message.extend([
+                f"## 💼 {family_name} Positions ({len(family_jobs)})",
+                ""
+            ])
+            
+            # Show up to 5 jobs per family, respecting MAX_COMPANY_JOBS_IN_DM limit
+            max_jobs_per_family = min(5, config.max_company_jobs_in_dm // len(job_families))
+            max_jobs_per_family = max(1, max_jobs_per_family)  # At least 1 job per family
+            
+            jobs_shown = 0
+            for job in family_jobs[:max_jobs_per_family]:
+                title = job.get('title', 'Not specified')
+                url = job.get('url', '')
+                locations = job.get('locations', [])
+                terms = job.get('terms', [])
+                sponsorship = job.get('sponsorship', '')
+                
+                # Format location
+                location_str = ', '.join(locations[:2]) if locations else 'Remote/Multiple'
+                if len(locations) > 2:
+                    location_str += f" +{len(locations) - 2}"
+                
+                # Format posting date
+                date_posted = job.get('date_posted', 0)
+                if date_posted:
+                    import datetime
+                    posted_date = datetime.datetime.fromtimestamp(date_posted)
+                    days_ago = (datetime.datetime.now() - posted_date).days
+                    if days_ago == 0:
+                        date_str = "Posted today"
+                    elif days_ago == 1:
+                        date_str = "Posted yesterday"
+                    else:
+                        date_str = f"Posted {days_ago} days ago"
+                else:
+                    date_str = "Posted recently"
+                
+                dm_message.append(f"**• {title}**")
+                dm_message.append(f"  📍 {location_str}")
+                dm_message.append(f"  📅 {date_str}")
+                
+                if sponsorship:
+                    dm_message.append(f"  🏛️ Sponsorship: {sponsorship}")
+                
+                if terms:
+                    terms_str = ', '.join(terms[:2])
+                    if len(terms) > 2:
+                        terms_str += f" +{len(terms) - 2}"
+                    dm_message.append(f"  🗓️ Terms: {terms_str}")
+                
+                if url:
+                    dm_message.append(f"  🔗 [Apply Here]({url})")
+                
+                dm_message.append("")
+                jobs_shown += 1
+            
+            if len(family_jobs) > max_jobs_per_family:
+                dm_message.append(f"*...and {len(family_jobs) - max_jobs_per_family} more {family_name.lower()} positions*")
+                dm_message.append("")
+        
+        # Application deadlines and posting dates section
+        application_deadlines = insights.get('application_deadlines', [])
+        if application_deadlines:
+            dm_message.extend([
+                "## ⏰ Recently Posted (Apply Soon!)",
+                ""
+            ])
+            
+            for job in application_deadlines[:3]:  # Top 3 recent postings
+                title = job.get('title', 'Not specified')
+                url = job.get('url', '')
+                date_posted = job.get('date_posted', 0)
+                
+                if date_posted:
+                    import datetime
+                    posted_date = datetime.datetime.fromtimestamp(date_posted)
+                    days_ago = (datetime.datetime.now() - posted_date).days
+                    urgency = "🔥 " if days_ago <= 3 else "⚡ " if days_ago <= 7 else ""
+                    
+                    dm_message.append(f"{urgency}**{title}**")
+                    if url:
+                        dm_message.append(f"  🔗 [Apply Now]({url})")
+                    dm_message.append(f"  📅 Posted {days_ago} days ago")
+                    dm_message.append("")
+        
+        # Direct links to all company applications
+        company_url = None
+        for job in insights.get('jobs', []):
+            if job.get('company_url'):
+                company_url = job['company_url']
+                break
+        
+        if company_url:
+            dm_message.extend([
+                "## 🌐 Company Resources",
+                f"**Company Website:** [Visit {company_name}]({company_url})",
+                ""
+            ])
+        
+        # Enhanced footer with tips
         dm_message.extend([
             "---",
             "",
-            "💡 **Tip:** Apply to multiple positions at the same company to increase your chances!",
+            "## 💡 Application Strategy Tips",
+            f"• **Cast a wide net:** Apply to multiple {company_name} positions that match your skills",
+            "• **Timing matters:** Recent postings (🔥) may have earlier deadlines",
+            "• **Location flexibility:** Consider remote or multiple location options",
+            "• **Follow up:** Check application status after 1-2 weeks",
             "",
-            "🚀 **Good luck with your applications!**"
+            "🚀 **Good luck with your applications!**",
+            "",
+            f"*This overview covers {recent_positions} recent positions from {company_name}. Data updated every {config.company_info_days} days.*"
         ])
         
         # Send the enhanced DM
-        await user.send("\n".join(dm_message))
-        logger.info(f"Sent enhanced company info DM for {company_name} to {user.display_name}#{user.discriminator} ({len(company_jobs)} jobs)")
+        full_message = "\n".join(dm_message)
+        
+        # Discord has a 2000 character limit, so we may need to split the message
+        if len(full_message) <= 2000:
+            await user.send(full_message)
+        else:
+            # Split into multiple messages
+            messages = []
+            current_message = ""
+            
+            for line in dm_message:
+                if len(current_message) + len(line) + 1 <= 1900:  # Leave some buffer
+                    current_message += line + "\n"
+                else:
+                    if current_message:
+                        messages.append(current_message.strip())
+                    current_message = line + "\n"
+            
+            if current_message:
+                messages.append(current_message.strip())
+            
+            # Send each message part
+            for i, message_part in enumerate(messages):
+                await user.send(message_part)
+                if i < len(messages) - 1:
+                    await asyncio.sleep(1)  # Small delay between messages
+        
+        logger.info(f"Sent enhanced company insights DM for {company_name} to {user.display_name}#{user.discriminator} ({recent_positions} recent jobs, {total_positions} total)")
         
     except Exception as e:
         logger.error(f"Failed to send enhanced company info DM to {user.display_name}#{user.discriminator}: {e}")

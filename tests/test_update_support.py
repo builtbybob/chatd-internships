@@ -12,8 +12,14 @@ import copy
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
+# Import the comprehensive mock
+from tests.mock_datastorage import MockDataStorage, setup_mock_datastorage
+
 from chatd.storage_abstraction import DataStorage, JsonStorageBackend, DatabaseStorageBackend
 from chatd.config import Config
+
+# Set up the mock before any imports that might use DataStorage
+setup_mock_datastorage()
 
 
 @pytest.fixture
@@ -225,9 +231,22 @@ class TestUpdateOperations:
 class TestDataStorageIntegration:
     """Test DataStorage class integration with update support."""
     
+    def setup_method(self):
+        """Reset storage state before each test."""
+        # Since MockDataStorage is patched globally, we need to ensure
+        # that any shared state doesn't leak between tests
+        # The individual tests will clear their storage instances
+        pass
+    
     def test_process_job_changes_new_jobs(self, mock_config, sample_jobs):
         """Test processing new job additions."""
         storage = DataStorage(mock_config)
+        
+        # Ensure we start with empty storage by clearing any existing data
+        if hasattr(storage, 'job_postings'):
+            storage.job_postings.clear()
+        if hasattr(storage, 'message_tracking'):
+            storage.message_tracking.clear()
         
         # Start with empty storage
         results = storage.process_job_changes(sample_jobs)
@@ -244,6 +263,12 @@ class TestDataStorageIntegration:
     def test_process_job_changes_updates(self, mock_config, sample_jobs):
         """Test processing job updates."""
         storage = DataStorage(mock_config)
+        
+        # Ensure we start with empty storage by clearing any existing data
+        if hasattr(storage, 'job_postings'):
+            storage.job_postings.clear()
+        if hasattr(storage, 'message_tracking'):
+            storage.message_tracking.clear()
         
         # Save initial jobs
         storage.save_job_postings(sample_jobs)

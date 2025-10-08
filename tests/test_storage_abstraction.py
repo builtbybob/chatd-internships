@@ -20,9 +20,15 @@ from unittest.mock import Mock, patch, MagicMock
 # Add the chatd module to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Import the comprehensive mock
+from tests.mock_datastorage import MockDataStorage, setup_mock_datastorage
+
 from chatd.storage_abstraction import DataStorage, JsonStorageBackend, DatabaseStorageBackend
 from chatd.database import create_database_manager
 from chatd.config import config
+
+# Set up the mock before any imports that might use DataStorage
+setup_mock_datastorage()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
