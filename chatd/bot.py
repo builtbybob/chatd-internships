@@ -1349,6 +1349,82 @@ async def on_disconnect() -> None:
 
 
 @bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
+    """
+    Event handler for raw reaction add events (works for uncached messages).
+    This handles reactions to messages that may not be in the bot's cache.
+    
+    Args:
+        payload: The raw reaction event payload
+    """
+    logger.debug(f"🎯 on_raw_reaction_add triggered! User: {payload.user_id}, Emoji: {payload.emoji}, Message: {payload.message_id}")
+    
+    # Skip if reactions are disabled
+    if not config.enable_reactions:
+        logger.debug(f"❌ Reactions disabled in config")
+        return
+        
+    # Ignore bot's own reactions
+    if payload.user_id == bot.user.id:
+        logger.debug(f"❌ Ignoring bot's own reaction")
+        return
+    
+    # Section 5.1: Selective processing - only respond to ❓ reactions
+    if str(payload.emoji) != '❓':
+        logger.debug(f"❌ Ignoring non-❓ reaction {payload.emoji}")
+        return
+    
+    # Get the channel and message
+    channel = bot.get_channel(payload.channel_id)
+    if not channel:
+        logger.warning(f"Could not find channel {payload.channel_id}")
+        return
+    
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except discord.NotFound:
+        logger.warning(f"Could not find message {payload.message_id}")
+        return
+    except discord.Forbidden:
+        logger.warning(f"No permission to fetch message {payload.message_id}")
+        return
+    
+    logger.debug(f"🔍 Message author: {message.author.id}, Bot ID: {bot.user.id}")
+    
+    # Check if this is a bot message (we only process reactions to our own messages)
+    if message.author.id != bot.user.id:
+        logger.debug(f"❌ Ignoring reaction to non-bot message")
+        return
+    
+    # Get the user who reacted
+    guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+    if guild:
+        user = guild.get_member(payload.user_id)
+    else:
+        user = bot.get_user(payload.user_id)
+    
+    if not user:
+        logger.warning(f"Could not find user {payload.user_id}")
+        return
+    
+    logger.info(f"✅ Processing ❓ reaction from {user.display_name} on message {message.id}")
+    
+    # Get role data by message ID
+    role_data = await get_role_data_by_message_id(str(message.id))
+    logger.debug(f"🔍 Role data found: {role_data is not None}")
+    
+    if role_data:
+        # Section 5.2: Send enhanced company info instead of individual job info
+        if isinstance(user, discord.Member):  # Only discord.Member objects have DM capabilities
+            logger.info(f"📨 Sending enhanced company info DM to {user.display_name}")
+            await send_enhanced_company_info_dm(user, role_data)
+        else:
+            logger.warning(f"User {user.id} is not a Member, cannot send DM")
+    else:
+        logger.warning(f"Could not find role data for message {message.id}")
+
+
+@bot.event
 async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
     """
     Event handler for when a reaction is added to a message.
