@@ -327,15 +327,6 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [x] `ENABLE_COMPANY_INFO=true` (feature toggle) ✅
   - [x] `MAX_COMPANY_JOBS_IN_DM=10` (limit number of jobs shown in DM) ✅
   - [ ] `COMPANY_INFO_CACHE_MINUTES=30` (cache company data to reduce DB load)
-
-**Sections 5.1-5.2 Results Achieved**:
-- **Selective reaction processing**: Only ❓ reactions trigger enhanced company info (reduces Discord API load by ~90%)
-- **Database-powered queries**: SQL-optimized company job searches with intelligent fallback to JSON data
-- **Enhanced DM system**: Comprehensive company overview messages with job aggregation and location/term analysis
-- **Performance optimization**: Uses connection pooling and proper database indexes for efficient queries
-- **Configuration-driven**: All Section 5 features controlled by environment variables
-- **Production ready**: All existing tests pass, proper git workflow with feature branch
-- **Storage abstraction integration**: Works seamlessly with database_only, dual_write, and json_only modes
 - [ ] **5.6** Database schema for application tracking
   - [ ] Create `student_applications` table for tracking ✅ reactions
   - [ ] Add foreign key relationship to `job_postings` table
@@ -372,6 +363,15 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [ ] `CONGRATULATION_DM_ENABLED=true` (toggle for DM responses)
   - [ ] `MAX_RECENT_APPLICATIONS_SHOWN=5` (number of recent apps in DM)
   - [ ] `APPLICATION_MILESTONE_MESSAGES=true` (special messages for 1st, 5th, 10th applications)
+
+**Sections 5.1-5.2 Results Achieved**:
+- **Selective reaction processing**: Only ❓ reactions trigger enhanced company info (reduces Discord API load by ~90%)
+- **Database-powered queries**: SQL-optimized company job searches with intelligent fallback to JSON data
+- **Enhanced DM system**: Comprehensive company overview messages with job aggregation and location/term analysis
+- **Performance optimization**: Uses connection pooling and proper database indexes for efficient queries
+- **Configuration-driven**: All Section 5 features controlled by environment variables
+- **Production ready**: All existing tests pass, proper git workflow with feature branch
+- **Storage abstraction integration**: Works seamlessly with database_only, dual_write, and json_only modes
 
 **Database Schema Utilization**:
 ```sql
