@@ -1310,8 +1310,21 @@ async def on_ready() -> None:
     await check_for_new_roles()
 
     # Start the scheduled job loop
+    loop_counter = 0
     while True:
         schedule.run_pending()  # This will respect the CHECK_INTERVAL_MINUTES setting
+        
+        # Every 60 seconds, log queue health status
+        if loop_counter % 60 == 0:
+            stats = reaction_queue.get_stats()
+            if stats['queued'] > stats['processed']:
+                unprocessed = stats['queued'] - stats['processed']
+                logger.warning(f"🚨 Reaction queue health check: {unprocessed} unprocessed reactions "
+                             f"(Queued: {stats['queued']}, Processed: {stats['processed']})")
+            else:
+                logger.debug(f"✅ Reaction queue healthy: {stats['processed']} processed, {stats['queued']} total")
+        
+        loop_counter += 1
         await asyncio.sleep(1)  # Small delay to prevent busy-waiting
 
 
@@ -1339,6 +1352,20 @@ async def on_disconnect() -> None:
                 logger.debug("Discord HTTP session closed")
     except Exception as e:
         logger.debug(f"Note: HTTP session cleanup issue (non-critical): {e}")
+
+
+@bot.event
+async def on_resume() -> None:
+    """
+    Event handler for when the bot resumes connection after disconnect.
+    This is critical for restarting the reaction queue processor.
+    """
+    logger.info("Bot connection resumed - restarting reaction queue processor")
+    
+    # Restart the reaction queue processor after reconnection
+    await reaction_queue.start()
+    
+    logger.info("Reaction queue processor restarted successfully")
 
 
 @bot.event
