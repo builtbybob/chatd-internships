@@ -34,3 +34,37 @@ When running Python commands in the terminal, ensure you use:
 3. Use semantic_search for codebase exploration
 4. Mock external dependencies (Discord API, file system, database) in tests
 5. Maintain backwards compatibility with existing data formats
+
+## Git Workflow and Branch Protection
+**CRITICAL:** Always verify you're on the correct branch before committing and pushing changes.
+
+### Branch Protection Standards
+- **Never push directly to `main`** - use feature branches and pull requests
+- **Always check current branch** with `git branch` or `git status` before committing
+- **Create feature branches** for all changes: `git checkout -b feature/description`
+- **Push feature branches** first: `git push origin feature/branch-name`
+- **Create pull requests** to merge into main via GitHub web interface
+
+### Required Git Commands Before Any Commit
+```bash
+# 1. Always check current branch first
+git branch
+# or
+git status
+
+# 2. If on main, create and switch to feature branch
+git checkout -b feature/your-feature-name
+
+# 3. After committing, push to feature branch (not main)
+git push origin feature/your-feature-name
+
+# 4. Create pull request via GitHub web interface
+```
+
+### Branch Naming Convention
+- `feature/description` - for new features
+- `bugfix/description` - for bug fixes  
+- `docs/description` - for documentation updates
+- `refactor/description` - for code refactoring
+
+**Remember**: Main branch should only receive changes via reviewed pull requests.
