@@ -1166,41 +1166,63 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
                 terms = job.get('terms', [])
                 sponsorship = job.get('sponsorship', '')
                 
-                # Format location
-                location_str = ', '.join(locations[:2]) if locations else 'Remote/Multiple'
-                if len(locations) > 2:
-                    location_str += f" +{len(locations) - 2}"
+                # Format location string with full locations (no truncation)
+                location_str = ', '.join(locations) if locations else 'Remote/Multiple'
                 
-                # Format posting date
+                # Format posting date - concise format
                 date_posted = job.get('date_posted', 0)
                 if date_posted:
                     import datetime
                     posted_date = datetime.datetime.fromtimestamp(date_posted)
                     days_ago = (datetime.datetime.now() - posted_date).days
                     if days_ago == 0:
-                        date_str = "Posted today"
+                        date_str = "Today"
                     elif days_ago == 1:
-                        date_str = "Posted yesterday"
+                        date_str = "1d ago"
                     else:
-                        date_str = f"Posted {days_ago} days ago"
+                        date_str = f"{days_ago}d ago"
                 else:
-                    date_str = "Posted recently"
+                    date_str = "Recently"
                 
-                dm_message.append(f"**• {title}**")
-                dm_message.append(f"  📍 {location_str}")
-                dm_message.append(f"  📅 {date_str}")
-                
-                if sponsorship:
-                    dm_message.append(f"  🏛️ Sponsorship: {sponsorship}")
+                # Build details line with smart sponsorship
+                details_parts = []
+                details_parts.append(location_str)
                 
                 if terms:
-                    terms_str = ', '.join(terms[:2])
-                    if len(terms) > 2:
-                        terms_str += f" +{len(terms) - 2}"
-                    dm_message.append(f"  🗓️ Terms: {terms_str}")
+                    terms_str = ', '.join(terms)
+                    details_parts.append(terms_str)
                 
+                # Only show sponsorship if it's meaningful (not "Other")
+                if sponsorship and sponsorship.lower() != 'other':
+                    details_parts.append(f"Sponsored" if 'sponsor' in sponsorship.lower() else sponsorship)
+                
+                details_parts.append(date_str)
+                
+                # Check if location line would be too long (>40 chars) for overflow logic
+                details_line = ' • '.join(details_parts)
+                
+                # Section 5.6: Clean two-line format with link preview suppression
                 if url:
-                    dm_message.append(f"  🔗 [Apply Here]({url})")
+                    dm_message.append(f"**[{title}](<{url}>)**")  # Suppress previews with angle brackets
+                else:
+                    dm_message.append(f"**{title}**")
+                
+                # Handle location overflow logic
+                if len(location_str) > 40 and len(locations) > 1:
+                    # Multi-line format for long locations
+                    dm_message.append(f"   {location_str}")
+                    # Build remaining details without location
+                    remaining_details = []
+                    if terms:
+                        remaining_details.append(terms_str)
+                    if sponsorship and sponsorship.lower() != 'other':
+                        remaining_details.append(f"Sponsored" if 'sponsor' in sponsorship.lower() else sponsorship)
+                    remaining_details.append(date_str)
+                    if remaining_details:
+                        dm_message.append(f"   {' • '.join(remaining_details)}")
+                else:
+                    # Single line format
+                    dm_message.append(f"   {details_line}")
                 
                 dm_message.append("")
                 jobs_shown += 1
@@ -1209,32 +1231,9 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
                 dm_message.append(f"*...and {len(family_jobs) - max_jobs_per_family} more {family_name.lower()} positions*")
                 dm_message.append("")
         
-        # Application deadlines and posting dates section
-        application_deadlines = insights.get('application_deadlines', [])
-        if application_deadlines:
-            dm_message.extend([
-                "## ⏰ Recently Posted (Apply Soon!)",
-                ""
-            ])
-            
-            for job in application_deadlines[:3]:  # Top 3 recent postings
-                title = job.get('title', 'Not specified')
-                url = job.get('url', '')
-                date_posted = job.get('date_posted', 0)
-                
-                if date_posted:
-                    import datetime
-                    posted_date = datetime.datetime.fromtimestamp(date_posted)
-                    days_ago = (datetime.datetime.now() - posted_date).days
-                    urgency = "🔥 " if days_ago <= 3 else "⚡ " if days_ago <= 7 else ""
-                    
-                    dm_message.append(f"{urgency}**{title}**")
-                    if url:
-                        dm_message.append(f"  🔗 [Apply Now]({url})")
-                    dm_message.append(f"  📅 Posted {days_ago} days ago")
-                    dm_message.append("")
+        # Section 5.6: Remove duplicate "Recently Posted" section to eliminate redundancy
         
-        # Direct links to all company applications
+        # Direct links to all company applications (with preview suppression)
         company_url = None
         for job in insights.get('jobs', []):
             if job.get('company_url'):
@@ -1244,7 +1243,7 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
         if company_url:
             dm_message.extend([
                 "## 🌐 Company Resources",
-                f"**Company Website:** [Visit {company_name}]({company_url})",
+                f"**Company Website:** [Visit {company_name}](<{company_url}>)",  # Suppress previews
                 ""
             ])
         
