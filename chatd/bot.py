@@ -780,6 +780,200 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
     return None
 
 
+async def get_company_jobs_from_database(company_name: str, days: int = 7) -> List[Dict[str, Any]]:
+    """
+    Get all recent jobs from a company using database queries.
+    
+    Args:
+        company_name: The company name to search for
+        days: Number of days back to search (default: 7)
+        
+    Returns:
+        List[Dict[str, Any]]: List of job postings from the company
+    """
+    try:
+        storage = get_storage()
+        
+        # If we're using database storage, use optimized SQL queries
+        if hasattr(storage, 'database_backend') and storage.database_backend:
+            from chatd.database import DatabaseManager
+            
+            # Calculate cutoff timestamp
+            cutoff_timestamp = int(time.time() - (days * 24 * 3600))
+            
+            # Get database manager
+            db_manager = storage.database_backend.db_manager
+            
+            with db_manager.get_session() as session:
+                # Query for jobs from this company
+                from chatd.database import JobPosting, JobLocation, JobTerm
+                from sqlalchemy import and_
+                
+                jobs_query = session.query(JobPosting).filter(
+                    and_(
+                        JobPosting.company_name.ilike(f'%{company_name}%'),
+                        JobPosting.active == True,
+                        JobPosting.is_visible == True,
+                        JobPosting.date_posted >= cutoff_timestamp
+                    )
+                ).order_by(JobPosting.date_posted.desc())
+                
+                jobs = []
+                for job in jobs_query.all():
+                    # Convert ORM object to dictionary
+                    job_dict = {
+                        'id': str(job.id),
+                        'company_name': job.company_name,
+                        'title': job.title,
+                        'url': job.url,
+                        'sponsorship': job.sponsorship,
+                        'active': job.active,
+                        'source': job.source,
+                        'date_posted': job.date_posted,
+                        'company_url': job.company_url,
+                        'is_visible': job.is_visible,
+                        'date_updated': job.date_updated
+                    }
+                    
+                    # Get locations
+                    locations = session.query(JobLocation.location).filter(
+                        JobLocation.id == job.id
+                    ).all()
+                    job_dict['locations'] = [loc[0] for loc in locations]
+                    
+                    # Get terms
+                    terms = session.query(JobTerm.term).filter(
+                        JobTerm.id == job.id
+                    ).all()
+                    job_dict['terms'] = [term[0] for term in terms]
+                    
+                    jobs.append(job_dict)
+                
+                logger.debug(f"Found {len(jobs)} jobs for company '{company_name}' via database query")
+                return jobs
+        
+        # Fallback to JSON data search
+        all_jobs = storage.get_job_postings()
+        cutoff_timestamp = int(time.time() - (days * 24 * 3600))
+        
+        company_jobs = []
+        for job in all_jobs:
+            if (job.get('company_name', '').lower() == company_name.lower() and
+                job.get('active', True) and
+                job.get('is_visible', True) and
+                job.get('date_posted', 0) >= cutoff_timestamp):
+                company_jobs.append(job)
+        
+        # Sort by date_posted descending
+        company_jobs.sort(key=lambda x: x.get('date_posted', 0), reverse=True)
+        
+        logger.debug(f"Found {len(company_jobs)} jobs for company '{company_name}' via JSON search")
+        return company_jobs
+        
+    except Exception as e:
+        logger.error(f"Error fetching company jobs for '{company_name}': {e}")
+        return []
+
+
+async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[str, Any]) -> None:
+    """
+    Send an enhanced DM with comprehensive company information.
+    
+    Args:
+        user: The Discord user to send the DM to
+        role_data: The original job role data that triggered the reaction
+    """
+    try:
+        company_name = role_data.get('company_name', '')
+        if not company_name:
+            # Fallback to individual job info
+            await send_dm_with_job_info(user, role_data)
+            return
+        
+        # Get all recent jobs from this company
+        company_jobs = await get_company_jobs_from_database(company_name, days=7)
+        
+        if not company_jobs:
+            # Fallback to individual job info if no company data found
+            await send_dm_with_job_info(user, role_data)
+            return
+        
+        # Build enhanced company info message
+        dm_message = [
+            f"# 🏢 {company_name} - Company Overview",
+            "",
+            f"Here's comprehensive information about **{company_name}** and their current opportunities:",
+            "",
+            f"**📊 Total Active Positions:** {len(company_jobs)}",
+        ]
+        
+        # Collect unique locations and terms
+        all_locations = set()
+        all_terms = set()
+        for job in company_jobs:
+            all_locations.update(job.get('locations', []))
+            all_terms.update(job.get('terms', []))
+        
+        if all_locations:
+            locations_str = ', '.join(sorted(all_locations)[:5])  # Limit to 5 locations
+            if len(all_locations) > 5:
+                locations_str += f" and {len(all_locations) - 5} more"
+            dm_message.append(f"**📍 Locations:** {locations_str}")
+        
+        if all_terms:
+            terms_str = ', '.join(sorted(all_terms)[:3])  # Limit to 3 terms
+            if len(all_terms) > 3:
+                terms_str += f" and {len(all_terms) - 3} more"
+            dm_message.append(f"**📅 Terms:** {terms_str}")
+        
+        dm_message.extend([
+            "",
+            "## 💼 Current Opportunities",
+            ""
+        ])
+        
+        # List up to 10 jobs
+        max_jobs_shown = min(10, len(company_jobs))
+        for i, job in enumerate(company_jobs[:max_jobs_shown]):
+            title = job.get('title', 'Not specified')
+            url = job.get('url', '')
+            locations = job.get('locations', [])
+            location_str = ', '.join(locations[:2]) if locations else 'Remote/Multiple'
+            if len(locations) > 2:
+                location_str += f" +{len(locations) - 2} more"
+            
+            dm_message.append(f"**{i+1}. {title}**")
+            dm_message.append(f"   📍 {location_str}")
+            if url:
+                dm_message.append(f"   🔗 [Apply Here]({url})")
+            dm_message.append("")
+        
+        if len(company_jobs) > max_jobs_shown:
+            dm_message.append(f"*...and {len(company_jobs) - max_jobs_shown} more positions*")
+            dm_message.append("")
+        
+        # Add footer
+        dm_message.extend([
+            "---",
+            "",
+            "💡 **Tip:** Apply to multiple positions at the same company to increase your chances!",
+            "",
+            "🚀 **Good luck with your applications!**"
+        ])
+        
+        # Send the enhanced DM
+        await user.send("\n".join(dm_message))
+        logger.info(f"Sent enhanced company info DM for {company_name} to {user.display_name}#{user.discriminator} ({len(company_jobs)} jobs)")
+        
+    except Exception as e:
+        logger.error(f"Failed to send enhanced company info DM to {user.display_name}#{user.discriminator}: {e}")
+        # Fallback to individual job info
+        try:
+            await send_dm_with_job_info(user, role_data)
+        except Exception as fallback_error:
+            logger.error(f"Fallback DM also failed: {fallback_error}")
+
+
 @bot.event
 async def on_ready() -> None:
     """
@@ -830,6 +1024,7 @@ async def on_disconnect() -> None:
 async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
     """
     Event handler for when a reaction is added to a message.
+    Enhanced with selective processing - only ❓ reactions trigger company info.
     
     Args:
         reaction: The reaction that was added
@@ -850,15 +1045,20 @@ async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> Non
     if message.author.id != bot.user.id:
         return
     
-    logger.debug(f"Reaction {reaction.emoji} added by {user.display_name} to message {message.id}")
+    # Section 5.1: Selective processing - only respond to ❓ reactions
+    if str(reaction.emoji) != '❓':
+        logger.debug(f"Ignoring non-❓ reaction {reaction.emoji} from {user.display_name}")
+        return
+    
+    logger.debug(f"Processing ❓ reaction from {user.display_name} on message {message.id}")
     
     # Get role data by message ID
     role_data = await get_role_data_by_message_id(str(message.id))
     
     if role_data:
-        # Send DM with job details
+        # Section 5.2: Send enhanced company info instead of individual job info
         if isinstance(user, discord.Member):  # Only discord.Member objects have DM capabilities
-            await send_dm_with_job_info(user, role_data)
+            await send_enhanced_company_info_dm(user, role_data)
         else:
             logger.warning(f"User {user.id} is not a Member, cannot send DM")
     else:

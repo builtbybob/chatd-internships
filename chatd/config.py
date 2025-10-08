@@ -60,6 +60,11 @@ DEFAULT_CONFIG = {
     'CIRCUIT_BREAKER_THRESHOLD': '10',  # Consecutive failures to trigger circuit breaker
     'CIRCUIT_BREAKER_TIMEOUT_SECONDS': '300',  # Time to wait before retrying after circuit break (5 minutes)
     'HEALTH_CHECK_INTERVAL_SECONDS': '60',  # How often to log health statistics
+    # Section 5: Smart Reaction-Based Info Sharing
+    'COMPANY_INFO_DAYS': '7',  # Time window for recent jobs query (days)
+    'INFO_REACTION_EMOJI': '❓',  # Emoji that triggers enhanced company info
+    'ENABLE_COMPANY_INFO': 'true',  # Feature toggle for enhanced company info
+    'MAX_COMPANY_JOBS_IN_DM': '10',  # Limit number of jobs shown in DM
 }
 
 # Required configuration values that must be set
@@ -140,9 +145,14 @@ class Config:
         self.circuit_breaker_timeout = int(self.circuit_breaker_timeout_seconds)
         self.health_check_interval = int(self.health_check_interval_seconds)
         
+        # Section 5: Smart Reaction-Based Info Sharing configurations
+        self.company_info_days = int(self.company_info_days)
+        self.max_company_jobs_in_dm = int(self.max_company_jobs_in_dm)
+        
         # Convert boolean values
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')
         self.db_auto_vacuum = self.db_auto_vacuum.lower() in ('true', '1', 'yes', 'on')
+        self.enable_company_info = self.enable_company_info.lower() in ('true', '1', 'yes', 'on')
         
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')
