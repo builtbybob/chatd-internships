@@ -1109,14 +1109,28 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
             ""
         ]
         
+        # Get company URL first for Company Snapshot
+        company_url = None
+        for job in insights.get('jobs', []):
+            if job.get('company_url'):
+                company_url = job['company_url']
+                break
+        
         # Company overview section with job count and locations
         total_positions = insights.get('total_positions', 0)
         recent_positions = insights.get('recent_positions', 0)
         
         dm_message.extend([
-            "## 📊 Company Snapshot",
-            f"**📈 Total Active Positions:** {total_positions}",
-            f"**📅 Recent Postings ({config.company_info_days} days):** {recent_positions}",
+            "## 🌐 Company Snapshot",
+        ])
+        
+        # Add company website as first item if available
+        if company_url:
+            dm_message.append(f"**Company Website:** [Visit {company_name}](<{company_url}>)")
+        
+        dm_message.extend([
+            f"**Total Active Positions:** {total_positions}",
+            f"**Recent Postings ({config.company_info_days} days):** {recent_positions}",
         ])
         
         # Location analysis
@@ -1129,17 +1143,17 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
             if total_locations > 3:
                 location_text += f" and {total_locations - 3} more locations"
             
-            dm_message.append(f"**📍 Top Locations:** {location_text}")
+            dm_message.append(f"**Top Locations:** {location_text}")
             
             if location_analysis.get('has_remote'):
-                dm_message.append("**🏠 Remote Work:** Available")
+                dm_message.append("**Remote Work:** Available")
         
         # Term analysis
         term_analysis = insights.get('term_analysis', {})
         if term_analysis.get('top_terms'):
             top_terms = term_analysis['top_terms'][:2]  # Top 2 terms
             terms_text = ', '.join([f"{term} ({count})" for term, count in top_terms])
-            dm_message.append(f"**📅 Main Cycles:** {terms_text}")
+            dm_message.append(f"**Main Cycles:** {terms_text}")
         
         dm_message.append("")
         
@@ -1154,12 +1168,9 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
                 ""
             ])
             
-            # Show up to 5 jobs per family, respecting MAX_COMPANY_JOBS_IN_DM limit
-            max_jobs_per_family = min(5, config.max_company_jobs_in_dm // len(job_families))
-            max_jobs_per_family = max(1, max_jobs_per_family)  # At least 1 job per family
-            
+            # Show all jobs in the family (remove artificial limits)
             jobs_shown = 0
-            for job in family_jobs[:max_jobs_per_family]:
+            for job in family_jobs:  # Show all jobs, not just first 5
                 title = job.get('title', 'Not specified')
                 url = job.get('url', '')
                 locations = job.get('locations', [])
@@ -1226,10 +1237,6 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
                 
                 dm_message.append("")
                 jobs_shown += 1
-            
-            if len(family_jobs) > max_jobs_per_family:
-                dm_message.append(f"*...and {len(family_jobs) - max_jobs_per_family} more {family_name.lower()} positions*")
-                dm_message.append("")
         
         # Section 5.6: Remove duplicate "Recently Posted" section to eliminate redundancy
         
@@ -1240,22 +1247,9 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
                 company_url = job['company_url']
                 break
         
-        if company_url:
-            dm_message.extend([
-                "## 🌐 Company Resources",
-                f"**Company Website:** [Visit {company_name}](<{company_url}>)",  # Suppress previews
-                ""
-            ])
-        
-        # Enhanced footer with tips
+        # Enhanced footer
         dm_message.extend([
             "---",
-            "",
-            "## 💡 Application Strategy Tips",
-            f"• **Cast a wide net:** Apply to multiple {company_name} positions that match your skills",
-            "• **Timing matters:** Recent postings (🔥) may have earlier deadlines",
-            "• **Location flexibility:** Consider remote or multiple location options",
-            "• **Follow up:** Check application status after 1-2 weeks",
             "",
             "🚀 **Good luck with your applications!**",
             "",
