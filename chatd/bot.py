@@ -1332,7 +1332,7 @@ async def on_disconnect() -> None:
 
 
 @bot.event
-async def on_resume() -> None:
+async def on_resumed() -> None:
     """
     Event handler for when the bot resumes connection after disconnect.
     This is critical for restarting the reaction queue processor.

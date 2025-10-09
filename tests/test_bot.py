@@ -1431,5 +1431,88 @@ class TestSection5CompanyInfo(unittest.IsolatedAsyncioTestCase):
             mock_insights.assert_called_once_with('TechCorp', days=7)
 
 
+class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
+    """Test cases for bot event handlers."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Mock environment
+        self.env_patcher = patch.dict(os.environ, {
+            'DISCORD_TOKEN': 'test-token',
+            'CHANNEL_IDS': '123456789',
+            'ENABLE_REACTIONS': 'true',
+            'MIGRATION_MODE': 'database_only',
+            'DATA_FILE': '/tmp/test_data.json',
+            'MESSAGES_FILE': '/tmp/test_messages.json'
+        })
+        self.env_patcher.start()
+        
+        # Reset config singleton
+        from chatd.config import Config
+        Config._instance = None
+        
+    def tearDown(self):
+        """Clean up test environment."""
+        self.env_patcher.stop()
+        
+        # Reset config singleton
+        from chatd.config import Config
+        Config._instance = None
+    
+    async def test_on_resumed_restarts_reaction_queue(self):
+        """Test that on_resumed event properly restarts the reaction queue processor."""
+        from chatd.bot import bot, reaction_queue, on_resumed
+        
+        # Mock the reaction queue
+        with patch.object(reaction_queue, 'get_stats') as mock_get_stats, \
+             patch.object(reaction_queue, 'is_running', True), \
+             patch.object(reaction_queue, 'stop') as mock_stop, \
+             patch.object(reaction_queue, 'start') as mock_start:
+            
+            # Mock queue stats
+            mock_get_stats.return_value = {
+                'queued': 5,
+                'processed': 4
+            }
+            
+            # Call the on_resumed handler
+            await on_resumed()
+            
+            # Verify that the queue was stopped and restarted
+            mock_stop.assert_called_once()
+            mock_start.assert_called_once()
+            
+            # Verify get_stats was called
+            mock_get_stats.assert_called_once()
+    
+    async def test_on_resumed_starts_queue_when_not_running(self):
+        """Test that on_resumed starts the queue when it's not already running."""
+        from chatd.bot import bot, reaction_queue, on_resumed
+        
+        # Mock the reaction queue as not running
+        with patch.object(reaction_queue, 'get_stats') as mock_get_stats, \
+             patch.object(reaction_queue, 'is_running', False), \
+             patch.object(reaction_queue, 'stop') as mock_stop, \
+             patch.object(reaction_queue, 'start') as mock_start:
+            
+            # Mock queue stats
+            mock_get_stats.return_value = {
+                'queued': 2,
+                'processed': 2
+            }
+            
+            # Call the on_resumed handler
+            await on_resumed()
+            
+            # Verify that stop was NOT called since queue wasn't running
+            mock_stop.assert_not_called()
+            
+            # Verify that start was called
+            mock_start.assert_called_once()
+            
+            # Verify get_stats was called
+            mock_get_stats.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main()
