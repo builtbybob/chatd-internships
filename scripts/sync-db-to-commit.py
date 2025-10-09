@@ -40,7 +40,7 @@ def run_git_command(cmd, repo_path):
 
 def get_listings_at_commit(commit_hash, repo_path):
     """Get the listings.json content at a specific commit."""
-    cmd = ['git', 'show', f'{commit_hash}:listings.json']
+    cmd = ['git', 'show', f'{commit_hash}:.github/scripts/listings.json']
     try:
         result = subprocess.run(
             cmd,
