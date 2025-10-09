@@ -109,7 +109,7 @@ def main():
     parser.add_argument('commit', nargs='?', help='Git commit hash or reference (e.g., HEAD~5)')
     parser.add_argument('--list-commits', action='store_true', help='List recent commits')
     parser.add_argument('--repo-path', help='Path to the git repository', 
-                       default='/opt/thatd/Summer2026-Internships')
+                       default='/app/Summer2026-Internships')
     
     args = parser.parse_args()
     
