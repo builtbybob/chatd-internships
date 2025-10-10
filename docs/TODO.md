@@ -377,17 +377,37 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [x] Keep section header emoji (💼) but remove individual job emojis ✅
   - [x] Multi-line support: Break to separate lines when locations > 40 characters ✅
 - [ ] **5.7** Database schema for application tracking
-  - [ ] Create `student_applications` table for tracking ✅ reactions
-  - [ ] Add foreign key relationship to `job_postings` table
-  - [ ] Include timestamp, Discord user ID, and job ID fields
-  - [ ] Add unique constraint to prevent duplicate applications
-  - [ ] Create indexes for efficient querying by user_id and job_id
+  - [ ] **5.7.1** Add soft delete support to existing `job_postings` table
+    - [ ] Add `is_deleted BOOLEAN DEFAULT false` column to `job_postings` table
+    - [ ] Update sync logic to set `is_deleted=true` instead of hard deletion when jobs removed from listings.json
+    - [ ] Preserve CASCADE DELETE on foreign key constraints for referential integrity
+    - [ ] Create database migration script for adding `is_deleted` column
+  - [ ] **5.7.2** Create `student_applications` table for tracking ✅ reactions
+    - [ ] Schema: `id UUID PRIMARY KEY`, `job_id UUID REFERENCES job_postings(id) ON DELETE CASCADE`
+    - [ ] Fields: `discord_user_id TEXT NOT NULL`, `applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+    - [ ] Add `UNIQUE(job_id, discord_user_id)` constraint to prevent duplicate applications
+    - [ ] Create indexes: `idx_student_applications_user_id`, `idx_student_applications_applied_at`, `idx_student_applications_job_id`
+  - [ ] **5.7.3** Database migration implementation
+    - [ ] Create migration script in `scripts/` directory for schema updates
+    - [ ] Add validation to ensure existing data integrity during migration
+    - [ ] Test migration on development database before production deployment
 - [ ] **5.8** Application tracking reaction handler
-  - [ ] Detect '✅' reaction specifically (separate from '❓' handling)
-  - [ ] Extract Discord user ID and job ID from reaction context
-  - [ ] Insert application record into `student_applications` table
-  - [ ] Handle duplicate application attempts gracefully
-  - [ ] Log successful application tracking for monitoring
+  - [ ] **5.8.1** Detect and process ✅ reactions specifically
+    - [ ] Separate ✅ reaction handling from ❓ info request handling
+    - [ ] Extract Discord user ID and job ID from reaction context
+    - [ ] Validate that reaction is on a job posting message (not other bot messages)
+    - [ ] Add reaction emoji configuration: `APPLICATION_REACTION_EMOJI=✅`
+  - [ ] **5.8.2** Application record management
+    - [ ] Insert new application record into `student_applications` table
+    - [ ] Handle duplicate application attempts gracefully (UNIQUE constraint violations)
+    - [ ] Fetch Discord username via Discord API (avoid storing redundant data)
+    - [ ] Log successful application tracking with user and job details for monitoring
+  - [ ] **5.8.3** Job removal and soft delete handling
+    - [ ] Update sync logic in storage abstraction to use soft delete pattern
+    - [ ] When job removed from listings.json: set `is_deleted=true` instead of hard deletion
+    - [ ] Preserve application history: student_applications records remain intact via CASCADE DELETE avoidance
+    - [ ] Filter queries to exclude soft-deleted jobs: `WHERE is_deleted=false OR is_deleted IS NULL`
+    - [ ] Add configuration option: `ENABLE_SOFT_DELETE=true` for feature toggle
 - [ ] **5.9** Student application statistics aggregation
   - [ ] Create `get_student_application_stats()` function for database queries
   - [ ] Count total applications by Discord user ID
@@ -412,6 +432,12 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [ ] `CONGRATULATION_DM_ENABLED=true` (toggle for DM responses)
   - [ ] `MAX_RECENT_APPLICATIONS_SHOWN=5` (number of recent apps in DM)
   - [ ] `APPLICATION_MILESTONE_MESSAGES=true` (special messages for 1st, 5th, 10th applications)
+- [x] **5.13** Configurable reaction set for job posting messages ✅ **COMPLETED**
+  - [x] `MESSAGE_REACTIONS=❓,✅` (comma-separated list of reactions to add to each job posting)
+  - [x] Support for both emoji and custom Discord emoji formats
+  - [x] Easy configuration changes without code modifications
+  - [x] Validation to ensure reaction emojis are properly formatted
+  - [x] Backward compatibility with existing reaction handling logic
 
 **Sections 5.1-5.4 Results Achieved**:
 - **Selective reaction processing**: Only ❓ reactions trigger enhanced company info (reduces Discord API load by ~90%)
@@ -433,6 +459,16 @@ sudo chatd disk --alert              # Check if cleanup needed
 - **Improved readability**: Clean, scannable format that reduces message length while maintaining all critical information
 - **Enhanced user experience**: Professional DM layout focused on actionable job information without unnecessary content
 
+**Section 5.13 Results Achieved** ✅:
+- **Configurable reaction system**: `MESSAGE_REACTIONS` environment variable supporting comma-separated emoji lists
+- **Flexible emoji support**: Standard Unicode emojis and custom Discord emojis (`<:name:id>`) fully supported
+- **Comprehensive validation**: Format checking, duplicate detection, and length limits prevent invalid configurations
+- **Bot integration**: Updated `add_reactions_to_message()` to use configurable reactions instead of hardcoded values
+- **Backward compatibility**: Existing setups continue working with default `❓,✅` configuration
+- **Easy maintenance**: Add/remove reactions without code changes - just update environment variable
+- **Production ready**: 20 comprehensive tests passing (5 existing + 11 config + 4 integration tests)
+- **Professional validation**: Clear error messages and whitespace handling for robust configuration management
+
 **Database Schema Utilization**:
 ```sql
 -- Example query for company jobs:
@@ -448,7 +484,12 @@ WHERE jp.company_name = ?
 GROUP BY jp.id
 ORDER BY jp.date_posted DESC;
 
--- New student_applications table schema:
+-- New student_applications table schema (with soft delete support):
+CREATE TABLE job_postings (
+    -- existing fields...
+    is_deleted BOOLEAN DEFAULT false  -- Soft delete flag for listings.json sync
+);
+
 CREATE TABLE student_applications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     job_id UUID NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
@@ -462,13 +503,19 @@ CREATE INDEX idx_student_applications_user_id ON student_applications(discord_us
 CREATE INDEX idx_student_applications_applied_at ON student_applications(applied_at DESC);
 CREATE INDEX idx_student_applications_job_id ON student_applications(job_id);
 
--- Example query for student application statistics:
+-- Example query for student application statistics (excluding soft-deleted jobs):
 SELECT sa.*, jp.company_name, jp.title, jp.url
 FROM student_applications sa
 JOIN job_postings jp ON sa.job_id = jp.id
-WHERE sa.discord_user_id = ?
+WHERE sa.discord_user_id = ? 
+  AND (jp.is_deleted = false OR jp.is_deleted IS NULL)
 ORDER BY sa.applied_at DESC
 LIMIT 5;
+
+-- Soft delete sync logic (preserve application history):
+-- When job removed from listings.json:
+UPDATE job_postings SET is_deleted = true WHERE id = ?;
+-- Instead of: DELETE FROM job_postings WHERE id = ?;
 ```
 
 **Expected User Experience Improvements**:
