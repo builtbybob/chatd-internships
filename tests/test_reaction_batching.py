@@ -84,7 +84,7 @@ class TestReactionBatching:
         
         # Verify statistics
         stats = reaction_queue.get_stats()
-        assert stats['queued'] == 1
+        assert stats['total_queued'] == 1
         assert stats['processed'] == 1
     
     @pytest.mark.asyncio
@@ -110,7 +110,7 @@ class TestReactionBatching:
         
         # Verify statistics
         stats = reaction_queue.get_stats()
-        assert stats['queued'] == 1
+        assert stats['total_queued'] == 1
         assert stats['processed'] == 1
     
     @pytest.mark.asyncio
@@ -138,7 +138,7 @@ class TestReactionBatching:
         
         # Verify statistics show some failures
         stats = reaction_queue.get_stats()
-        assert stats['queued'] >= 1
+        assert stats['total_queued'] >= 1
         assert stats['retried'] >= 1 or stats['failed'] >= 1
     
     @pytest.mark.asyncio
@@ -378,6 +378,6 @@ class TestPerformanceImprovement:
         
         # Verify statistics
         stats = reaction_queue.get_stats()
-        assert stats['queued'] == 2  # 2 tasks queued
+        assert stats['total_queued'] == 2  # 2 tasks queued
         assert stats['processed'] == 2  # 2 tasks processed
         assert mock_message.add_reaction.call_count == 5  # 5 total reactions

@@ -50,10 +50,10 @@ class ReactionQueue:
         
         # Basic statistics (Section 4.3)
         self.stats = {
-            'queued': 0,
-            'processed': 0,
-            'failed': 0,
-            'retried': 0
+            'total_queued': 0,      # Total tasks ever queued
+            'processed': 0,         # Total tasks completed
+            'failed': 0,            # Total tasks failed
+            'retried': 0           # Total retry attempts
         }
         
         # Section 4.4: Enhanced health monitoring and failure handling
@@ -265,8 +265,12 @@ class ReactionQueue:
         }
         
         await self.task_queue.put(reaction_task)
-        self.stats['queued'] += 1
-        logger.info(f"📤 Queued {len(reactions)} reactions for message {message.id} (total queued: {self.stats['queued']})")
+        self.stats['total_queued'] += 1
+        
+        # Get current queue size for more accurate logging
+        current_queue_size = self.task_queue.qsize()
+        logger.info(f"📤 Queued {len(reactions)} reactions for message {message.id} "
+                   f"(queue size: {current_queue_size}, total queued: {self.stats['total_queued']})")
     
     async def _process_reactions(self):
         """Background task processor for reaction queue."""
@@ -434,6 +438,9 @@ class ReactionQueue:
     def get_stats(self) -> Dict[str, Any]:
         """Get current reaction queue statistics including Section 4.4 enhancements."""
         basic_stats = self.stats.copy()
+        
+        # Add current queue size for better monitoring
+        basic_stats['current_queue_size'] = self.task_queue.qsize()
         
         # Add Section 4.4 enhanced statistics
         enhanced_stats = {
@@ -1292,13 +1299,13 @@ async def on_ready() -> None:
             processor_status = "RUNNING" if reaction_queue.is_running else "STOPPED"
             task_status = "ACTIVE" if reaction_queue.processor_task and not reaction_queue.processor_task.done() else "INACTIVE"
             
-            if stats['queued'] > stats['processed']:
-                unprocessed = stats['queued'] - stats['processed']
-                logger.warning(f"🚨 Reaction queue health check: {unprocessed} unprocessed reactions "
-                             f"(Queued: {stats['queued']}, Processed: {stats['processed']}) "
+            current_queue_size = stats['current_queue_size']
+            if current_queue_size > 0:
+                logger.warning(f"🚨 Reaction queue health check: {current_queue_size} pending reactions "
+                             f"(Total queued: {stats['total_queued']}, Processed: {stats['processed']}) "
                              f"Processor: {processor_status}, Task: {task_status}")
             else:
-                logger.debug(f"✅ Reaction queue healthy: {stats['processed']} processed, {stats['queued']} total "
+                logger.debug(f"✅ Reaction queue healthy: {stats['processed']} processed, {stats['total_queued']} total queued "
                            f"Processor: {processor_status}, Task: {task_status}")
         
         loop_counter += 1
@@ -1317,9 +1324,9 @@ async def on_disconnect() -> None:
     
     # Log reaction queue statistics
     stats = reaction_queue.get_stats()
-    logger.info(f"Reaction queue stats - Queued: {stats['queued']}, "
-               f"Processed: {stats['processed']}, Failed: {stats['failed']}, "
-               f"Retried: {stats['retried']}")
+    logger.info(f"Reaction queue stats - Queue size: {stats['current_queue_size']}, "
+               f"Total queued: {stats['total_queued']}, Processed: {stats['processed']}, "
+               f"Failed: {stats['failed']}, Retried: {stats['retried']}")
     
     # Try to close any remaining HTTP sessions
     try:
@@ -1341,8 +1348,9 @@ async def on_resumed() -> None:
     
     # Get current queue stats
     stats = reaction_queue.get_stats()
-    logger.info(f"📊 Pre-resume queue stats - Queued: {stats['queued']}, "
-               f"Processed: {stats['processed']}, Running: {reaction_queue.is_running}")
+    logger.info(f"📊 Pre-resume queue stats - Queue size: {stats['current_queue_size']}, "
+               f"Total queued: {stats['total_queued']}, Processed: {stats['processed']}, "
+               f"Running: {reaction_queue.is_running}")
     
     # Force restart the reaction queue processor after reconnection
     if reaction_queue.is_running:

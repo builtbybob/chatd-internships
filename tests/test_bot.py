@@ -241,7 +241,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         mock_message.id = '12345'
         
         # Reset stats and start the reaction queue for testing
-        reaction_queue.stats = {'queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
+        reaction_queue.stats = {'total_queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
         await reaction_queue.start()
         
         try:
@@ -253,7 +253,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             
             # Check that reactions were queued
             stats = reaction_queue.get_stats()
-            self.assertEqual(stats['queued'], 1)  # One reaction task queued
+            self.assertEqual(stats['total_queued'], 1)  # One reaction task queued
             
         finally:
             # Clean up
@@ -267,7 +267,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         mock_message.id = '12345'
         
         # Reset stats and start the reaction queue for testing
-        reaction_queue.stats = {'queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
+        reaction_queue.stats = {'total_queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
         await reaction_queue.start()
         
         try:
@@ -279,7 +279,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             
             # Verify queuing succeeded
             stats = reaction_queue.get_stats()
-            self.assertGreaterEqual(stats['queued'], 1)
+            self.assertGreaterEqual(stats['total_queued'], 1)
             
         finally:
             # Clean up
@@ -672,7 +672,7 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
         
         queue = ReactionQueue()
         # Reset stats
-        queue.stats = {'queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
+        queue.stats = {'total_queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
         await queue.start()
         
         try:
@@ -690,7 +690,7 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
             
             # Check stats
             stats = queue.get_stats()
-            self.assertEqual(stats['queued'], 1)
+            self.assertEqual(stats['total_queued'], 1)
             self.assertGreaterEqual(stats['processed'], 0)  # May not be processed yet due to timing
             
         finally:
@@ -703,7 +703,7 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
         
         queue = ReactionQueue()
         # Reset stats
-        queue.stats = {'queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
+        queue.stats = {'total_queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
         await queue.start()
         
         try:
@@ -721,7 +721,7 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
             
             # Check that retries were attempted
             stats = queue.get_stats()
-            self.assertEqual(stats['queued'], 1)
+            self.assertEqual(stats['total_queued'], 1)
             # Note: May have retries depending on timing
             
         finally:
@@ -1471,8 +1471,9 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
             
             # Mock queue stats
             mock_get_stats.return_value = {
-                'queued': 5,
-                'processed': 4
+                'total_queued': 5,
+                'processed': 4,
+                'current_queue_size': 1
             }
             
             # Call the on_resumed handler
@@ -1497,8 +1498,9 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
             
             # Mock queue stats
             mock_get_stats.return_value = {
-                'queued': 2,
-                'processed': 2
+                'total_queued': 2,
+                'processed': 2,
+                'current_queue_size': 0
             }
             
             # Call the on_resumed handler
