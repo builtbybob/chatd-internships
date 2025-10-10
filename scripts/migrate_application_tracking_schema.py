@@ -12,6 +12,7 @@ import sys
 import argparse
 import logging
 import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -42,7 +43,7 @@ class ApplicationTrackingMigration:
         )
         self.logger = logging.getLogger(__name__)
     
-    def validate_prerequisites(self):
+    def validate_prerequisites(self, force=False):
         """Validate that the database and prerequisites are ready for migration."""
         self.logger.info("🔍 Validating migration prerequisites...")
         
@@ -64,28 +65,22 @@ class ApplicationTrackingMigration:
                 if not result.scalar():
                     raise RuntimeError("job_postings table not found. Run initial schema migration first.")
                 
-                # Check if is_deleted column already exists
-                result = session.execute(text("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.columns 
-                        WHERE table_schema = 'public' 
-                        AND table_name = 'job_postings' 
-                        AND column_name = 'is_deleted'
-                    );
-                """))
-                if result.scalar():
-                    self.logger.warning("⚠️  is_deleted column already exists. Migration may have been run previously.")
+                # Check migration status
+                migration_status = self._check_migration_status(session)
                 
-                # Check if student_applications table already exists
-                result = session.execute(text("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE table_schema = 'public' 
-                        AND table_name = 'student_applications'
-                    );
-                """))
-                if result.scalar():
-                    self.logger.warning("⚠️  student_applications table already exists. Migration may have been run previously.")
+                if migration_status == "COMPLETED" and not force:
+                    self.logger.info("✅ Migration has already been completed successfully")
+                    self.logger.info("Use --force to re-run the migration if needed")
+                    raise RuntimeError("Migration already completed. Use --force to override.")
+                elif migration_status == "PARTIAL" and not force:
+                    self.logger.warning("⚠️  Migration appears to be partially completed")
+                    self.logger.warning("This could indicate a previous migration failure")
+                    self.logger.warning("Use --force to continue with the migration")
+                    raise RuntimeError("Partial migration detected. Use --force to continue.")
+                elif migration_status == "COMPLETED" and force:
+                    self.logger.warning("⚠️  FORCE MODE: Re-running completed migration")
+                elif migration_status == "PARTIAL" and force:
+                    self.logger.warning("⚠️  FORCE MODE: Continuing partial migration")
                 
                 self.logger.info("✅ Prerequisites validation passed")
                 
@@ -93,15 +88,69 @@ class ApplicationTrackingMigration:
             self.logger.error(f"❌ Database validation failed: {e}")
             raise
     
-    def create_backup(self):
+    def _check_migration_status(self, session):
+        """Check the current migration status using an active session."""
+        # Check if is_deleted column already exists
+        result = session.execute(text("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name = 'job_postings' 
+                AND column_name = 'is_deleted'
+            );
+        """))
+        has_soft_delete = result.scalar()
+        
+        # Check if student_applications table already exists
+        result = session.execute(text("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'student_applications'
+            );
+        """))
+        has_applications_table = result.scalar()
+        
+        if has_soft_delete and has_applications_table:
+            return "COMPLETED"
+        elif has_soft_delete or has_applications_table:
+            return "PARTIAL"
+        else:
+            return "PENDING"
+    
+    def create_backup(self, backup_dir=None):
         """Create a database backup before migration."""
         if not self.config.enable_database_backups:
             self.logger.info("📦 Database backups disabled in configuration")
             return None
         
         self.logger.info("📦 Creating database backup before migration...")
+        
+        # Validate that database password is available for pg_dump authentication
+        if not self.config.db_password:
+            self.logger.error("❌ Database password not available. Cannot create backup without authentication.")
+            return None
+        
+        # Determine backup directory - use provided, temp, or fallback
+        if backup_dir:
+            backup_location = Path(backup_dir)
+        else:
+            # Use system temp directory for cross-platform compatibility
+            backup_location = Path(tempfile.gettempdir())
+        
+        # Ensure backup directory exists and is writable
+        try:
+            backup_location.mkdir(parents=True, exist_ok=True)
+            # Test write permissions
+            test_file = backup_location / f".write_test_{os.getpid()}"
+            test_file.touch()
+            test_file.unlink()
+        except (OSError, PermissionError) as e:
+            self.logger.error(f"❌ Backup directory not writable: {backup_location} - {e}")
+            return None
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = f"/tmp/chatd_backup_pre_migration_5_7_{timestamp}.sql"
+        backup_file = backup_location / f"chatd_backup_pre_migration_5_7_{timestamp}.sql"
         
         try:
             # Use pg_dump to create backup
@@ -121,11 +170,15 @@ class ApplicationTrackingMigration:
             env = os.environ.copy()
             env["PGPASSWORD"] = self.config.db_password
             
+            # Log backup attempt (without exposing password)
+            self.logger.info(f"Executing pg_dump to {backup_file}")
+            self.logger.debug(f"Using host: {self.config.db_host}, port: {self.config.db_port}, user: {self.config.db_user}")
+            
             result = subprocess.run(cmd, env=env, capture_output=True, text=True)
             
             if result.returncode == 0:
                 self.logger.info(f"✅ Database backup created: {backup_file}")
-                return backup_file
+                return str(backup_file)
             else:
                 self.logger.error(f"❌ Backup failed: {result.stderr}")
                 return None
@@ -245,33 +298,7 @@ class ApplicationTrackingMigration:
         """Get current migration status."""
         try:
             with self.db_factory.get_session() as session:
-                # Check if is_deleted column exists
-                result = session.execute(text("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.columns 
-                        WHERE table_schema = 'public' 
-                        AND table_name = 'job_postings' 
-                        AND column_name = 'is_deleted'
-                    );
-                """))
-                has_soft_delete = result.scalar()
-                
-                # Check if student_applications table exists
-                result = session.execute(text("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE table_schema = 'public' 
-                        AND table_name = 'student_applications'
-                    );
-                """))
-                has_applications_table = result.scalar()
-                
-                if has_soft_delete and has_applications_table:
-                    return "COMPLETED"
-                elif has_soft_delete or has_applications_table:
-                    return "PARTIAL"
-                else:
-                    return "PENDING"
+                return self._check_migration_status(session)
                     
         except Exception as e:
             self.logger.error(f"❌ Could not determine migration status: {e}")
@@ -285,6 +312,8 @@ def main():
     parser.add_argument("--status", action="store_true", help="Show current migration status")
     parser.add_argument("--validate-only", action="store_true", help="Only validate prerequisites")
     parser.add_argument("--skip-backup", action="store_true", help="Skip database backup creation")
+    parser.add_argument("--force", action="store_true", help="Force migration even if schema elements already exist")
+    parser.add_argument("--backup-dir", type=str, help="Directory for backup files (default: system temp directory)")
     
     args = parser.parse_args()
     
@@ -299,7 +328,7 @@ def main():
             return 0
         
         # Always validate prerequisites
-        migration.validate_prerequisites()
+        migration.validate_prerequisites(force=args.force)
         
         if args.validate_only:
             print("✅ Prerequisites validation successful")
@@ -308,7 +337,7 @@ def main():
         # Create backup unless skipped
         backup_file = None
         if not args.skip_backup and not args.dry_run:
-            backup_file = migration.create_backup()
+            backup_file = migration.create_backup(backup_dir=args.backup_dir)
             if backup_file:
                 print(f"📦 Backup created: {backup_file}")
         
