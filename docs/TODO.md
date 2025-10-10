@@ -1064,26 +1064,54 @@ sudo chatd restart
 **Benefits**: Proactive issue detection, performance optimization insights, operational visibility
 
 **Implementation Plan**:
-- [ ] **11.1** Add metrics collection
+- [ ] **11.1** Health check endpoint
+  - [ ] Simple HTTP server for container health checks (~50 lines Flask)
+  - [ ] Validate Discord connection status (basic bot.is_ready() check)
+  - [ ] Check git repository accessibility (simple git status command)
+  - [ ] Verify data directory write permissions (basic file system check)
+  - [ ] **Standalone task**: No dependencies on other sections, clear success criteria
+- [ ] **11.2** Add metrics collection
   - [ ] Track messages processed per minute
   - [ ] Monitor Discord API rate limits and usage
   - [ ] Count successful vs failed operations
   - [ ] Memory and CPU usage tracking
-- [ ] **11.2** Health check endpoint
-  - [ ] Simple HTTP server for container health checks
-  - [ ] Validate Discord connection status
-  - [ ] Check git repository accessibility
-  - [ ] Verify data directory write permissions
+  - [ ] **Foundation**: Creates metrics data that powers all other monitoring features
 - [ ] **11.3** Alert system
   - [ ] Discord webhook for bot errors/failures
   - [ ] Email notifications for critical issues
   - [ ] Rate limit warnings
   - [ ] Repository sync failure alerts
+  - [ ] **Depends on**: Section 11.1 metrics for alert triggers
 - [ ] **11.4** Performance dashboards
-  - [ ] Log parsing and visualization
-  - [ ] Historical trend analysis
-  - [ ] Repository processing time metrics
-  - [ ] Error rate tracking
+  - **Suggested Approach**:
+  - [ ] **Phase 1**: Simple metrics web endpoint using Flask
+    - [ ] Basic HTML page with current bot statistics
+    - [ ] Real-time metrics from Section 11.1 (messages/min, errors, uptime)
+    - [ ] Simple table format with refresh button
+    - [ ] Uses existing PostgreSQL database for data storage
+  - [ ] **Phase 2**: Basic charts using Chart.js
+    - [ ] Simple line chart for message processing over time
+    - [ ] Pie chart for success/failure rates
+    - [ ] Basic CSS styling for professional appearance
+  - [ ] **Phase 3**: Enhanced visualizations (future improvement)
+    - [ ] Historical trend analysis with time range selectors
+    - [ ] Repository processing time metrics
+    - [ ] Advanced error rate tracking and analysis
+  - [ ] **Phase 4**: Advanced features (optional)
+    - [ ] Log parsing and advanced visualization
+    - [ ] Performance alerting integration
+    - [ ] Export capabilities and reporting
+
+**Recommended Implementation Order**:
+1. **Start with 11.1** (Health check endpoint) - Immediate value, clear success criteria
+2. **Move to 11.2** (Metrics collection) - Foundation for other features
+3. **Phase 1 of 11.4** (Basic web dashboard) - Visible progress, uses 11.1 data
+4. **Add 11.3** (Alert system) - Integrates with existing metrics
+5. **Enhance 11.4** (Phases 2-4) - Progressive improvement based on needs
+
+**Standalone Benefits**:
+- **Section 11.1**: Immediate container health monitoring without dependencies
+- **Section 11.4**: Visible dashboard providing instant value to operations team
 
 **Files to modify**: `chatd/bot.py`, `chatd/config.py`, `main.py`, `requirements.txt`
 
