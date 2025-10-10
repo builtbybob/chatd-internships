@@ -184,7 +184,14 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [x] Configurable thresholds for degradation mode activation/recovery
   - [x] Manual circuit breaker reset capability for administrative control
   - [x] Health summary reporting for monitoring dashboards
-- [x] **4.5** Configuration options for fine-tuning ✅ **COMPLETED**
+- [x] **4.5** Reaction queue improvements and reliability enhancements ✅ **COMPLETED**
+  - [x] **Critical Discord connection fix**: Fixed `on_resume()` → `on_resumed()` event handler naming
+  - [x] **Queue restart mechanism**: Automatic queue processor restart after Discord reconnections
+  - [x] **Enhanced queue statistics**: Improved clarity with `total_queued` and `current_queue_size` fields
+  - [x] **Production reliability**: Eliminated phantom reactions and queue stalling issues
+  - [x] **Improved logging**: Added queue size visibility and connection state monitoring
+  - [x] **Queue health monitoring**: Real-time visibility into queue processing status
+- [x] **4.6** Configuration options for fine-tuning ✅ **COMPLETED**
   - [x] `MESSAGE_POST_DELAY_MS=100` (delay between message posts) ✅
   - [x] `REACTION_DELAY_MS=500` (delay between individual reactions) ✅
   - [x] `BATCH_PROCESSING_DELAY_MS=50` (delay for batch operations) ✅
@@ -203,6 +210,8 @@ sudo chatd disk --alert              # Check if cleanup needed
 - **Message posting**: ✅ **ACHIEVED** - Reduced bulk posting time by 90% (1000ms → 100ms between messages)
 - **Reaction performance**: ✅ **ACHIEVED** - Reduced batch processing time by ~85% through intelligent batching
 - **Failure resilience**: ✅ **ACHIEVED** - Advanced failure handling with circuit breaker, health monitoring, and graceful degradation
+- **Queue reliability**: ✅ **ACHIEVED** - Fixed critical queue stalling after Discord reconnections with proper event handler
+- **Production stability**: ✅ **ACHIEVED** - Eliminated phantom reactions and improved queue visibility
 - **Overall throughput**: ✅ **ACHIEVED** - Enabled faster bulk message posting during repository updates
 - **Rate limit compliance**: ✅ **ACHIEVED** - Maintains Discord API limits while maximizing performance
 - **Reliability**: ✅ **ACHIEVED** - Retry failed reactions automatically with exponential backoff
@@ -289,6 +298,36 @@ sudo chatd disk --alert              # Check if cleanup needed
   - Confirmed retry logic with exponential backoff and configurable retry counts
   - Tested error handling for various Discord API exceptions
 - **Performance Results**: 85% faster reaction processing through intelligent batching (2-3 seconds vs 20 seconds for bulk operations)
+
+**Section 4.5 Implementation Summary** ✅:
+- **Critical Discord Event Handler Fix** (`chatd/bot.py`):
+  - **Root Cause**: Bot was using `on_resume()` instead of correct `on_resumed()` event handler
+  - **Problem**: Queue processor wasn't restarting after Discord reconnections, causing permanent queue stalling
+  - **Solution**: Fixed event handler name to `on_resumed()` enabling proper reconnection handling
+  - **Impact**: Eliminated queue stalling issues and phantom reactions that occurred during connection interruptions
+- **Enhanced Queue Restart Mechanism**:
+  - **Added**: Automatic queue processor restart during `on_resumed()` events
+  - **Added**: Queue health validation and restart logic for connection recovery
+  - **Improved**: Queue processor lifecycle management with proper cleanup and restart procedures
+- **Queue Statistics Clarity Improvements**:
+  - **Problem**: Confusing queue statistics showing "Queued: 137, Processed: 137" made queue appear stuck
+  - **Solution**: Renamed `queued` field to `total_queued` (cumulative counter) and added `current_queue_size` (actual pending items)
+  - **Result**: Clear operational visibility - "Queue size: 0, Total queued: 137, Processed: 137" immediately shows queue state
+- **Production Reliability Enhancements**:
+  - **Eliminated**: Phantom reactions occurring at 3:40 AM due to duplicate reaction handlers
+  - **Fixed**: Queue stalling after Discord reconnections that required manual bot restarts
+  - **Enhanced**: Connection state monitoring and queue health visibility in logs
+  - **Validated**: 140+ messages posted without issues demonstrating improved reliability
+- **Enhanced Logging and Monitoring**:
+  - **Added**: Queue size visibility in all statistics logging
+  - **Improved**: Connection state tracking and resume event logging
+  - **Enhanced**: Health monitoring with current queue size vs. cumulative statistics
+- **Test Coverage Updates**:
+  - **Updated**: All test files to use new queue statistics field names (`total_queued`, `current_queue_size`)
+  - **Fixed**: 5 failing tests due to queue statistics field name changes
+  - **Validated**: 155 tests passing with improved queue statistics implementation
+
+**Files modified**: `chatd/bot.py`, `chatd/config.py`, `.env.example`, `.env.test`, `tests/test_message_optimization.py`, `tests/test_bot.py`, `tests/test_reaction_batching.py`
 
 ---
 
