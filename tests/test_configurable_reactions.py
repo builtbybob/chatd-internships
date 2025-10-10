@@ -13,11 +13,11 @@ from chatd.config import Config
 class TestConfigurableReactions:
     """Test suite for configurable MESSAGE_REACTIONS."""
 
-    def setup_method(self):
-        """Reset config instance before each test."""
-        # Clear any existing config instance
-        if hasattr(Config, '_instance'):
-            Config._instance = None
+    @pytest.fixture(autouse=True)
+    def reset_config_instance(self):
+        """Patch Config._instance to None before each test."""
+        with patch.object(Config, "_instance", None):
+            yield
 
     # =============================================================================
     # Configuration Parsing and Validation Tests
