@@ -776,7 +776,7 @@ async def send_dm_with_job_info(user: discord.Member, role_data: Dict[str, Any])
 
 async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any]]:
     """
-    Get role data by message ID.
+    Get role data by message ID using database queries.
     
     Args:
         message_id: The Discord message ID
@@ -784,6 +784,58 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
     Returns:
         Optional[Dict[str, Any]]: The role data if found, None otherwise
     """
+    # Use storage abstraction to get database backend
+    storage = get_storage()
+    
+    # Check if we have database backend available
+    if hasattr(storage, 'database_backend') and storage.database_backend:
+        try:
+            from chatd.database import JobPosting, MessageTracking
+            
+            # Get database manager
+            db_manager = storage.database_backend.db_manager
+            
+            with db_manager.session_scope() as session:
+                # Query for job posting by message ID, including soft-deleted records
+                # Users should still be able to get info about deleted jobs via reactions
+                result = session.query(JobPosting).join(MessageTracking).filter(
+                    MessageTracking.message_id == message_id
+                ).first()
+                
+                if result:
+                    # Convert to dictionary format expected by bot
+                    role_data = {
+                        'id': str(result.id),
+                        'date_updated': result.date_updated,
+                        'url': result.url,
+                        'company_name': result.company_name,
+                        'title': result.title,
+                        'sponsorship': result.sponsorship,
+                        'active': result.active,
+                        'source': result.source,
+                        'date_posted': result.date_posted,
+                        'company_url': result.company_url,
+                        'is_visible': result.is_visible,
+                        'category': result.category,
+                        'is_deleted': result.is_deleted,
+                        'locations': result.location_list,
+                        'terms': result.term_list,
+                        'degrees': result.degree_list
+                    }
+                    
+                    logger.debug(f"Found role data for message {message_id} via database query (deleted: {result.is_deleted})")
+                    return role_data
+                else:
+                    logger.debug(f"No role data found for message {message_id} in database")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Database query failed for message {message_id}: {e}")
+            # Fall back to JSON approach
+    
+    # Fallback to JSON approach for compatibility
+    logger.debug(f"Using JSON fallback for message {message_id}")
+    
     # Load all data
     all_data = read_json()
     
@@ -835,6 +887,7 @@ async def get_company_jobs_from_database(company_name: str, days: int = 7) -> Li
                         JobPosting.company_name.ilike(f'%{company_name}%'),
                         JobPosting.active == True,
                         JobPosting.is_visible == True,
+                        JobPosting.is_deleted == False,
                         JobPosting.date_posted >= cutoff_timestamp
                     )
                 ).order_by(JobPosting.date_posted.desc())
@@ -997,7 +1050,8 @@ async def get_enhanced_company_insights(company_name: str, days: int = 7) -> Dic
                 and_(
                     JobPosting.company_name.ilike(f'%{company_name}%'),
                     JobPosting.active == True,
-                    JobPosting.is_visible == True
+                    JobPosting.is_visible == True,
+                    JobPosting.is_deleted == False
                 )
             ).scalar() or 0
             

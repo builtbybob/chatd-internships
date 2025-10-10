@@ -37,6 +37,7 @@ class JobPosting(Base):
     company_url = Column(Text, nullable=True)
     is_visible = Column(Boolean, default=True, index=True)
     category = Column(Text, nullable=True, index=True)  # New field
+    is_deleted = Column(Boolean, default=False, index=True)  # Soft delete support
     
     # Relationships
     locations = relationship("JobLocation", back_populates="job_posting", cascade="all, delete-orphan")
@@ -241,7 +242,8 @@ def job_posting_from_dict(job_data: Dict[str, Any]) -> JobPosting:
         date_posted=job_data.get('date_posted'),
         company_url=job_data.get('company_url'),
         is_visible=job_data.get('is_visible', True),
-        category=job_data.get('category')
+        category=job_data.get('category'),
+        is_deleted=job_data.get('is_deleted', False)
     )
     
     # Add locations (deduplicated)
@@ -294,6 +296,7 @@ def job_posting_to_dict(job_posting: JobPosting) -> Dict[str, Any]:
         'company_url': job_posting.company_url,
         'is_visible': job_posting.is_visible,
         'category': job_posting.category,
+        'is_deleted': job_posting.is_deleted,
         'locations': job_posting.location_list,
         'terms': job_posting.term_list,
         'degrees': job_posting.degree_list

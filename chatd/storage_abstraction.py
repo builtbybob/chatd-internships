@@ -251,7 +251,7 @@ class JsonStorageBackend(StorageBackend):
                 changes['removed'].append(job)
         
         # Find updated jobs (focus on key fields)
-        key_fields = ['active', 'is_visible', 'date_updated']
+        key_fields = ['active', 'is_visible', 'is_deleted', 'date_updated']
         for job_id, current_job in current_by_id.items():
             if job_id in previous_by_id:
                 previous_job = previous_by_id[job_id]
@@ -324,13 +324,19 @@ class DatabaseStorageBackend(StorageBackend):
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
     
-    def get_job_postings(self) -> List[Dict[str, Any]]:
-        """Get all job postings from database."""
+    def get_job_postings(self, include_deleted: bool = False) -> List[Dict[str, Any]]:
+        """Get all job postings from database, excluding soft-deleted by default."""
         try:
             with self.db_manager.session_scope() as session:
-                job_postings = session.query(JobPosting).all()
+                query = session.query(JobPosting)
+                
+                # Filter out soft-deleted records by default
+                if not include_deleted:
+                    query = query.filter(JobPosting.is_deleted == False)
+                
+                job_postings = query.all()
                 result = [job_posting_to_dict(job) for job in job_postings]
-                logger.debug(f"Loaded {len(result)} job postings from database")
+                logger.debug(f"Loaded {len(result)} job postings from database (include_deleted={include_deleted})")
                 return result
         except Exception as e:
             logger.error(f"Failed to load job postings from database: {e}")
@@ -472,29 +478,24 @@ class DatabaseStorageBackend(StorageBackend):
             return False
     
     def remove_job_posting(self, job_id: str) -> bool:
-        """Remove a job posting from database."""
+        """Soft delete a job posting from database."""
         try:
             with self.db_manager.session_scope() as session:
-                # Remove related data first
-                session.query(MessageTracking).filter(MessageTracking.id == job_id).delete(synchronize_session=False)
-                session.query(JobLocation).filter(JobLocation.id == job_id).delete(synchronize_session=False)
-                session.query(JobTerm).filter(JobTerm.id == job_id).delete(synchronize_session=False)
-                session.query(JobDegree).filter(JobDegree.id == job_id).delete(synchronize_session=False)
+                # Use soft delete: set is_deleted = True instead of hard deleting
+                job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 
-                # Remove main job posting
-                deleted_count = session.query(JobPosting).filter(JobPosting.id == job_id).delete(synchronize_session=False)
-                
-                if deleted_count > 0:
-                    logger.debug(f"Removed job posting {job_id}")
+                if job_posting:
+                    job_posting.is_deleted = True
+                    logger.debug(f"Soft deleted job posting {job_id}")
                 else:
-                    logger.warning(f"Job posting {job_id} not found for removal (already removed)")
+                    logger.warning(f"Job posting {job_id} not found for soft deletion")
                 
                 # Return True in both cases - idempotent operation
-                # Goal achieved: job posting does not exist in database
+                # Goal achieved: job posting is marked as deleted
                 return True
                 
         except Exception as e:
-            logger.error(f"Failed to remove job posting {job_id}: {e}")
+            logger.error(f"Failed to soft delete job posting {job_id}: {e}")
             return False
     
     def get_message_tracking(self) -> Dict[str, Dict[str, Any]]:
@@ -615,7 +616,7 @@ class DatabaseStorageBackend(StorageBackend):
                 changes['removed'].append(job)
         
         # Find updated jobs (focus on key fields)
-        key_fields = ['active', 'is_visible', 'date_updated']
+        key_fields = ['active', 'is_visible', 'is_deleted', 'date_updated']
         for job_id, current_job in current_by_id.items():
             if job_id in previous_by_id:
                 previous_job = previous_by_id[job_id]
@@ -925,7 +926,7 @@ class DataStorage:
         Process job changes with intelligent update handling.
         
         This method detects changes and applies updates efficiently:
-        - active/is_visible changes: Update only those fields
+        - active/is_visible/is_deleted changes: Update only those fields
         - date_updated changes: Update entire job posting (content correction)
         - Ensures idempotency and handles concurrent changes gracefully
         
@@ -978,7 +979,7 @@ class DataStorage:
                     
                     logger.info(f"Successfully processed content correction for job posting {job_id}")
                 else:
-                    # Selective update workflow: only scalar fields changed (active, is_visible, etc.)
+                    # Selective update workflow: only scalar fields changed (active, is_visible, is_deleted, etc.)
                     # Only process scalar fields - relationships are handled by content correction workflow
                     scalar_updates = {field: change_info['new'] for field, change_info in job_changes.items() 
                                     if field not in ['locations', 'terms', 'degrees']}
