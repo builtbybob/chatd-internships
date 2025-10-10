@@ -44,6 +44,7 @@ DEFAULT_CONFIG = {
     'DB_HEALTH_CHECK_INTERVAL': '300',  # Health check interval in seconds
     'DB_MIGRATION_BATCH_SIZE': '100',  # Records to migrate per batch
     'DB_BACKUP_RETENTION_DAYS': '30',  # Days to keep database backups
+    'ENABLE_DATABASE_BACKUPS': 'true',  # Enable database backups during migrations
     # Message posting optimization settings
     'MESSAGE_POST_DELAY_MS': '100',  # Delay between message posts in milliseconds
     'REACTION_DELAY_MS': '500',  # Delay between adding reactions in milliseconds
@@ -161,6 +162,7 @@ class Config:
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')
         self.db_auto_vacuum = self.db_auto_vacuum.lower() in ('true', '1', 'yes', 'on')
         self.enable_company_info = self.enable_company_info.lower() in ('true', '1', 'yes', 'on')
+        self.enable_database_backups = self.enable_database_backups.lower() in ('true', '1', 'yes', 'on')
         
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')
