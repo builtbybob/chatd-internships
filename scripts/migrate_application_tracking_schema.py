@@ -19,8 +19,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from chatd.config import load_config
-from chatd.database import DatabaseFactory
+from chatd.config import Config
+from chatd.database import DatabaseManager
+from sqlalchemy import text
 
 
 class ApplicationTrackingMigration:
@@ -28,7 +29,10 @@ class ApplicationTrackingMigration:
     
     def __init__(self, config):
         self.config = config
-        self.db_factory = DatabaseFactory(config)
+        
+        # Build database URL from config
+        db_url = f"postgresql://{config.db_user}:{config.db_password}@{config.db_host}:{config.db_port}/{config.db_name}"
+        self.db_factory = DatabaseManager(db_url)
         self.migration_file = project_root / "sql" / "migrations" / "002_add_soft_delete_and_applications.sql"
         
         # Set up logging
@@ -50,36 +54,36 @@ class ApplicationTrackingMigration:
         try:
             with self.db_factory.get_session() as session:
                 # Check if job_postings table exists
-                result = session.execute("""
+                result = session.execute(text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
                         AND table_name = 'job_postings'
                     );
-                """)
+                """))
                 if not result.scalar():
                     raise RuntimeError("job_postings table not found. Run initial schema migration first.")
                 
                 # Check if is_deleted column already exists
-                result = session.execute("""
+                result = session.execute(text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.columns 
                         WHERE table_schema = 'public' 
                         AND table_name = 'job_postings' 
                         AND column_name = 'is_deleted'
                     );
-                """)
+                """))
                 if result.scalar():
                     self.logger.warning("⚠️  is_deleted column already exists. Migration may have been run previously.")
                 
                 # Check if student_applications table already exists
-                result = session.execute("""
+                result = session.execute(text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
                         AND table_name = 'student_applications'
                     );
-                """)
+                """))
                 if result.scalar():
                     self.logger.warning("⚠️  student_applications table already exists. Migration may have been run previously.")
                 
@@ -151,7 +155,7 @@ class ApplicationTrackingMigration:
                     migration_sql = f.read()
                 
                 # Execute the migration
-                session.execute(migration_sql)
+                session.execute(text(migration_sql))
                 session.commit()
                 
                 self.logger.info("✅ Migration executed successfully")
@@ -168,25 +172,25 @@ class ApplicationTrackingMigration:
         try:
             with self.db_factory.get_session() as session:
                 # Check is_deleted column exists and has correct default
-                result = session.execute("""
+                result = session.execute(text("""
                     SELECT column_default 
                     FROM information_schema.columns 
                     WHERE table_schema = 'public' 
                     AND table_name = 'job_postings' 
                     AND column_name = 'is_deleted';
-                """)
+                """))
                 default_value = result.scalar()
                 if default_value != 'false':
                     raise RuntimeError(f"is_deleted column has incorrect default: {default_value}")
                 
                 # Check student_applications table structure
-                result = session.execute("""
+                result = session.execute(text("""
                     SELECT column_name, data_type, is_nullable
                     FROM information_schema.columns 
                     WHERE table_schema = 'public' 
                     AND table_name = 'student_applications'
                     ORDER BY ordinal_position;
-                """)
+                """))
                 columns = result.fetchall()
                 
                 expected_columns = {
@@ -205,11 +209,11 @@ class ApplicationTrackingMigration:
                             raise RuntimeError(f"Column {col_name} has wrong nullable: {is_nullable}")
                 
                 # Check indexes were created
-                result = session.execute("""
+                result = session.execute(text("""
                     SELECT indexname FROM pg_indexes 
                     WHERE tablename = 'student_applications'
                     AND schemaname = 'public';
-                """)
+                """))
                 indexes = [row[0] for row in result.fetchall()]
                 
                 required_indexes = [
@@ -223,12 +227,12 @@ class ApplicationTrackingMigration:
                         raise RuntimeError(f"Required index not found: {idx}")
                 
                 # Test constraint enforcement
-                session.execute("""
+                session.execute(text("""
                     INSERT INTO student_applications (job_id, discord_user_id) 
                     SELECT id, 'test_validation_user' 
                     FROM job_postings LIMIT 1
                     ON CONFLICT (job_id, discord_user_id) DO NOTHING;
-                """)
+                """))
                 
                 self.logger.info("✅ Migration validation passed")
                 return True
@@ -242,24 +246,24 @@ class ApplicationTrackingMigration:
         try:
             with self.db_factory.get_session() as session:
                 # Check if is_deleted column exists
-                result = session.execute("""
+                result = session.execute(text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.columns 
                         WHERE table_schema = 'public' 
                         AND table_name = 'job_postings' 
                         AND column_name = 'is_deleted'
                     );
-                """)
+                """))
                 has_soft_delete = result.scalar()
                 
                 # Check if student_applications table exists
-                result = session.execute("""
+                result = session.execute(text("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
                         AND table_name = 'student_applications'
                     );
-                """)
+                """))
                 has_applications_table = result.scalar()
                 
                 if has_soft_delete and has_applications_table:
@@ -286,7 +290,7 @@ def main():
     
     try:
         # Load configuration
-        config = load_config()
+        config = Config()
         migration = ApplicationTrackingMigration(config)
         
         if args.status:
