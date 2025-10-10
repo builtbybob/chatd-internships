@@ -65,6 +65,8 @@ DEFAULT_CONFIG = {
     'INFO_REACTION_EMOJI': '❓',  # Emoji that triggers enhanced company info
     'ENABLE_COMPANY_INFO': 'true',  # Feature toggle for enhanced company info
     'MAX_COMPANY_JOBS_IN_DM': '10',  # Limit number of jobs shown in DM
+    # Section 5.13: Configurable reaction set for job posting messages
+    'MESSAGE_REACTIONS': '❓,✅',  # Comma-separated list of reactions to add to each job posting
 }
 
 # Required configuration values that must be set
@@ -149,6 +151,12 @@ class Config:
         self.company_info_days = int(self.company_info_days)
         self.max_company_jobs_in_dm = int(self.max_company_jobs_in_dm)
         
+        # Section 5.13: Parse MESSAGE_REACTIONS as a list
+        self.message_reactions = [
+            emoji.strip() for emoji in self.message_reactions.split(',')
+            if emoji.strip()  # Filter out empty strings
+        ]
+        
         # Convert boolean values
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')
         self.db_auto_vacuum = self.db_auto_vacuum.lower() in ('true', '1', 'yes', 'on')
@@ -222,6 +230,10 @@ class Config:
         if self.migration_mode != 'json_only':
             if not self._validate_database_config():
                 return False
+        
+        # Validate MESSAGE_REACTIONS configuration
+        if not self._validate_message_reactions():
+            return False
         
         logger.info("✅ Configuration validation passed.")
         return True
@@ -509,6 +521,40 @@ class Config:
             return False
         
         logger.info("✅ Database configuration validation passed")
+        return True
+
+    def _validate_message_reactions(self) -> bool:
+        """Validate MESSAGE_REACTIONS configuration."""
+        logger.info("🔍 Validating MESSAGE_REACTIONS configuration...")
+        
+        if not self.message_reactions:
+            logger.error("❌ MESSAGE_REACTIONS cannot be empty")
+            logger.error("   Please provide at least one reaction emoji (e.g., MESSAGE_REACTIONS=❓,✅)")
+            return False
+        
+        if len(self.message_reactions) > 10:
+            logger.error(f"❌ Too many reactions configured ({len(self.message_reactions)}). Maximum is 10.")
+            logger.error("   Discord limits the number of reactions per message")
+            return False
+        
+        for i, emoji in enumerate(self.message_reactions):
+            if not emoji:
+                logger.error(f"❌ Empty reaction emoji at position {i + 1}")
+                return False
+            
+            # Basic emoji validation
+            if len(emoji) > 50:  # Discord custom emoji format can be long
+                logger.error(f"❌ Reaction emoji too long at position {i + 1}: {emoji[:20]}...")
+                logger.error("   Standard emojis should be 1-4 characters, custom emojis should use <:name:id> format")
+                return False
+            
+            # Check for duplicate emojis
+            if self.message_reactions.count(emoji) > 1:
+                logger.error(f"❌ Duplicate reaction emoji found: {emoji}")
+                logger.error("   Each reaction should be unique")
+                return False
+        
+        logger.info(f"✅ MESSAGE_REACTIONS validation passed ({len(self.message_reactions)} reactions: {', '.join(self.message_reactions)})")
         return True
 
 

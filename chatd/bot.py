@@ -604,8 +604,8 @@ async def add_reactions_to_message(message: discord.Message) -> None:
     Args:
         message: The Discord message to add reactions to
     """
-    # Define reactions to add
-    reactions = ['❓', '✅']
+    # Use configurable reactions from config
+    reactions = config.message_reactions
     
     # Queue the reactions for background processing
     await reaction_queue.queue_reactions(message, reactions)
