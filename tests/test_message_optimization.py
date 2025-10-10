@@ -10,10 +10,12 @@ import asyncio
 import time
 import sys
 import os
+import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from chatd.config import Config
 
+@pytest.mark.asyncio
 async def test_message_delays():
     """Test the configurable message delays."""
     print("🧪 Testing Message Posting Optimization (Section 4.1)")

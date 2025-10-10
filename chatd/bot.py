@@ -50,10 +50,10 @@ class ReactionQueue:
         
         # Basic statistics (Section 4.3)
         self.stats = {
-            'queued': 0,
-            'processed': 0,
-            'failed': 0,
-            'retried': 0
+            'total_queued': 0,      # Total tasks ever queued
+            'processed': 0,         # Total tasks completed
+            'failed': 0,            # Total tasks failed
+            'retried': 0           # Total retry attempts
         }
         
         # Section 4.4: Enhanced health monitoring and failure handling
@@ -79,16 +79,22 @@ class ReactionQueue:
     
     async def start(self):
         """Start the background reaction processor."""
+        logger.debug(f"🚀 ReactionQueue.start() called - currently running: {self.is_running}")
+        
         if self.is_running:
+            logger.warning("⚠️ ReactionQueue already running, skipping start")
             return
         
         self.is_running = True
         self.processor_task = asyncio.create_task(self._process_reactions())
-        logger.debug("ReactionQueue processor started")
+        logger.info("✅ ReactionQueue processor started successfully")
     
     async def stop(self):
         """Stop the background reaction processor."""
+        logger.debug(f"🛑 ReactionQueue.stop() called - currently running: {self.is_running}")
+        
         if not self.is_running:
+            logger.debug("⚠️ ReactionQueue already stopped")
             return
         
         self.is_running = False
@@ -98,9 +104,10 @@ class ReactionQueue:
             try:
                 await self.processor_task
             except asyncio.CancelledError:
-                pass
+                logger.debug("ReactionQueue processor task cancelled")
+            self.processor_task = None
         
-        logger.debug("ReactionQueue processor stopped")
+        logger.info("✅ ReactionQueue processor stopped")
     
     def _classify_failure(self, exception: Exception) -> ReactionFailureType:
         """
@@ -258,36 +265,47 @@ class ReactionQueue:
         }
         
         await self.task_queue.put(reaction_task)
-        self.stats['queued'] += 1
-        logger.debug(f"Queued {len(reactions)} reactions for message {message.id}")
+        self.stats['total_queued'] += 1
+        
+        # Get current queue size for more accurate logging
+        current_queue_size = self.task_queue.qsize()
+        logger.info(f"📤 Queued {len(reactions)} reactions for message {message.id} "
+                   f"(queue size: {current_queue_size}, total queued: {self.stats['total_queued']})")
     
     async def _process_reactions(self):
         """Background task processor for reaction queue."""
-        logger.debug("Starting reaction queue processor")
+        logger.info("🚀 Starting reaction queue processor task")
         
         while self.is_running:
             try:
                 # Wait for reaction tasks with timeout
                 try:
+                    logger.debug("Waiting for reaction tasks in queue...")
                     reaction_task = await asyncio.wait_for(
                         self.task_queue.get(), 
                         timeout=1.0
                     )
+                    logger.info(f"📥 Received reaction task for message {reaction_task['message'].id}")
                 except asyncio.TimeoutError:
+                    logger.debug("No reaction tasks in queue, continuing...")
                     continue  # Continue the loop to check if we should stop
                 
                 # Process the reaction task
+                logger.info(f"🔄 Processing reaction task for message {reaction_task['message'].id}")
                 await self._process_single_reaction_task(reaction_task)
+                logger.info(f"✅ Completed processing reaction task for message {reaction_task['message'].id}")
                 
                 # Rate limiting delay between reaction processing
                 await asyncio.sleep(config.batch_processing_delay)
                 
             except asyncio.CancelledError:
-                logger.debug("Reaction processor cancelled")
+                logger.info("❌ Reaction processor cancelled - stopping gracefully")
                 break
             except Exception as e:
-                logger.error(f"Error in reaction processor: {e}")
+                logger.error(f"💥 Critical error in reaction processor: {e}", exc_info=True)
                 await asyncio.sleep(1)  # Brief pause before retrying
+        
+        logger.info("🏁 Reaction queue processor task ended")
     
     async def _process_single_reaction_task(self, reaction_task: Dict[str, Any]):
         """
@@ -336,17 +354,17 @@ class ReactionQueue:
                         logger.debug(f"Successfully added reaction {reaction} to message {message.id}")
                         self._update_health_metrics(True)
                         
-                    except discord.NotFound:
+                    except discord.NotFound as e:
                         logger.warning(f"Message {message.id} not found when adding reaction {reaction}")
                         # Section 4.4: Enhanced early termination with health tracking
-                        failure_type = self._classify_failure(discord.NotFound())
+                        failure_type = self._classify_failure(e)
                         self._update_health_metrics(False, failure_type)
                         return
                     
-                    except discord.Forbidden:
+                    except discord.Forbidden as e:
                         logger.warning(f"No permission to add reaction {reaction} to message {message.id}")
                         # Section 4.4: Enhanced early termination with health tracking
-                        failure_type = self._classify_failure(discord.Forbidden())
+                        failure_type = self._classify_failure(e)
                         self._update_health_metrics(False, failure_type)
                         return
                         
@@ -420,6 +438,9 @@ class ReactionQueue:
     def get_stats(self) -> Dict[str, Any]:
         """Get current reaction queue statistics including Section 4.4 enhancements."""
         basic_stats = self.stats.copy()
+        
+        # Add current queue size for better monitoring
+        basic_stats['current_queue_size'] = self.task_queue.qsize()
         
         # Add Section 4.4 enhanced statistics
         enhanced_stats = {
@@ -588,7 +609,7 @@ async def add_reactions_to_message(message: discord.Message) -> None:
     
     # Queue the reactions for background processing
     await reaction_queue.queue_reactions(message, reactions)
-    logger.debug(f"Queued reactions for message {message.id}")
+    logger.debug(f"🎯 Bot queuing reactions {reactions} for message {message.id} (Bot ID: {bot.user.id if bot.user else 'Not initialized'})")
 
 
 async def send_messages_to_channels(message: str, role_key: Optional[str] = None) -> List[discord.Message]:
@@ -780,6 +801,479 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
     return None
 
 
+async def get_company_jobs_from_database(company_name: str, days: int = 7) -> List[Dict[str, Any]]:
+    """
+    Get all recent jobs from a company using database queries.
+    
+    Args:
+        company_name: The company name to search for
+        days: Number of days back to search (default: 7)
+        
+    Returns:
+        List[Dict[str, Any]]: List of job postings from the company
+    """
+    try:
+        storage = get_storage()
+        
+        # If we're using database storage, use optimized SQL queries
+        if hasattr(storage, 'database_backend') and storage.database_backend:
+            from chatd.database import DatabaseManager
+            
+            # Calculate cutoff timestamp
+            cutoff_timestamp = int(time.time() - (days * 24 * 3600))
+            
+            # Get database manager
+            db_manager = storage.database_backend.db_manager
+            
+            with db_manager.get_session() as session:
+                # Query for jobs from this company
+                from chatd.database import JobPosting, JobLocation, JobTerm
+                from sqlalchemy import and_
+                
+                jobs_query = session.query(JobPosting).filter(
+                    and_(
+                        JobPosting.company_name.ilike(f'%{company_name}%'),
+                        JobPosting.active == True,
+                        JobPosting.is_visible == True,
+                        JobPosting.date_posted >= cutoff_timestamp
+                    )
+                ).order_by(JobPosting.date_posted.desc())
+                
+                jobs = []
+                for job in jobs_query.all():
+                    # Convert ORM object to dictionary
+                    job_dict = {
+                        'id': str(job.id),
+                        'company_name': job.company_name,
+                        'title': job.title,
+                        'url': job.url,
+                        'sponsorship': job.sponsorship,
+                        'active': job.active,
+                        'source': job.source,
+                        'date_posted': job.date_posted,
+                        'company_url': job.company_url,
+                        'is_visible': job.is_visible,
+                        'date_updated': job.date_updated
+                    }
+                    
+                    # Get locations
+                    locations = session.query(JobLocation.location).filter(
+                        JobLocation.id == job.id
+                    ).all()
+                    job_dict['locations'] = [loc[0] for loc in locations]
+                    
+                    # Get terms
+                    terms = session.query(JobTerm.term).filter(
+                        JobTerm.id == job.id
+                    ).all()
+                    job_dict['terms'] = [term[0] for term in terms]
+                    
+                    jobs.append(job_dict)
+                
+                logger.debug(f"Found {len(jobs)} jobs for company '{company_name}' via database query")
+                return jobs
+        
+        # Fallback to JSON data search
+        all_jobs = storage.get_job_postings()
+        cutoff_timestamp = int(time.time() - (days * 24 * 3600))
+        
+        company_jobs = []
+        for job in all_jobs:
+            if (job.get('company_name', '').lower() == company_name.lower() and
+                job.get('active', True) and
+                job.get('is_visible', True) and
+                job.get('date_posted', 0) >= cutoff_timestamp):
+                company_jobs.append(job)
+        
+        # Sort by date_posted descending
+        company_jobs.sort(key=lambda x: x.get('date_posted', 0), reverse=True)
+        
+        logger.debug(f"Found {len(company_jobs)} jobs for company '{company_name}' via JSON search")
+        return company_jobs
+        
+    except Exception as e:
+        logger.error(f"Error fetching company jobs for '{company_name}': {e}")
+        return []
+
+
+async def get_enhanced_company_insights(company_name: str, days: int = 7) -> Dict[str, Any]:
+    """
+    Get comprehensive company insights with SQL aggregation.
+    
+    Args:
+        company_name: The company name to search for
+        days: Number of days to look back for recent jobs (default: 7)
+        
+    Returns:
+        Dictionary containing enhanced company insights:
+        - total_positions: Total number of active positions
+        - jobs: List of job dictionaries
+        - location_analysis: Dictionary with location counts and top locations
+        - term_analysis: Dictionary with term counts and breakdown
+        - application_deadlines: List of jobs with upcoming deadlines
+        - job_families: Jobs grouped by type (intern, new grad, etc.)
+    """
+    from chatd.config import config
+    
+    try:
+        # Check if company info is enabled
+        if not config.enable_company_info:
+            return {}
+            
+        # Use storage abstraction to get database backend
+        storage = get_storage()
+        if not hasattr(storage, 'database_backend') or not storage.database_backend:
+            # Fallback to basic job list
+            basic_jobs = await get_company_jobs_from_database(company_name, days)
+            return {
+                'total_positions': len(basic_jobs),
+                'jobs': basic_jobs,
+                'location_analysis': {},
+                'term_analysis': {},
+                'application_deadlines': [],
+                'job_families': {'Other': basic_jobs}
+            }
+            
+        # Calculate cutoff timestamp
+        cutoff_timestamp = int(time.time() - (days * 24 * 3600))
+        
+        # Get database manager
+        db_manager = storage.database_backend.db_manager
+        
+        with db_manager.get_session() as session:
+            from chatd.database import JobPosting, JobLocation, JobTerm
+            from sqlalchemy import and_, func, distinct
+            
+            # Main query for jobs with JOIN for efficient data retrieval
+            jobs_query = session.query(
+                JobPosting,
+                func.array_agg(distinct(JobLocation.location)).label('locations'),
+                func.array_agg(distinct(JobTerm.term)).label('terms')
+            ).outerjoin(
+                JobLocation, JobPosting.id == JobLocation.id
+            ).outerjoin(
+                JobTerm, JobPosting.id == JobTerm.id
+            ).filter(
+                and_(
+                    JobPosting.company_name.ilike(f'%{company_name}%'),
+                    JobPosting.active == True,
+                    JobPosting.is_visible == True,
+                    JobPosting.date_posted >= cutoff_timestamp
+                )
+            ).group_by(JobPosting.id).order_by(JobPosting.date_posted.desc())
+            
+            # Execute query and build jobs list
+            jobs = []
+            all_locations = []
+            all_terms = []
+            
+            for result in jobs_query.all():
+                job = result.JobPosting
+                locations = [loc for loc in (result.locations or []) if loc is not None]
+                terms = [term for term in (result.terms or []) if term is not None]
+                
+                job_dict = {
+                    'id': str(job.id),
+                    'company_name': job.company_name,
+                    'title': job.title,
+                    'url': job.url,
+                    'sponsorship': job.sponsorship,
+                    'active': job.active,
+                    'source': job.source,
+                    'date_posted': job.date_posted,
+                    'company_url': job.company_url,
+                    'is_visible': job.is_visible,
+                    'date_updated': job.date_updated,
+                    'locations': locations,
+                    'terms': terms
+                }
+                
+                jobs.append(job_dict)
+                all_locations.extend(locations)
+                all_terms.extend(terms)
+            
+            # Count total active positions by company (including different filters)
+            total_positions = session.query(func.count(JobPosting.id)).filter(
+                and_(
+                    JobPosting.company_name.ilike(f'%{company_name}%'),
+                    JobPosting.active == True,
+                    JobPosting.is_visible == True
+                )
+            ).scalar() or 0
+            
+            # Location analysis with counts
+            location_counts = {}
+            for location in all_locations:
+                if location:
+                    location_counts[location] = location_counts.get(location, 0) + 1
+            
+            # Sort locations by frequency
+            top_locations = sorted(location_counts.items(), key=lambda x: x[1], reverse=True)
+            location_analysis = {
+                'total_locations': len(location_counts),
+                'location_counts': location_counts,
+                'top_locations': top_locations[:5],  # Top 5 locations
+                'has_remote': any('remote' in loc.lower() for loc in location_counts.keys())
+            }
+            
+            # Term analysis (internship cycles, etc.)
+            term_counts = {}
+            for term in all_terms:
+                if term:
+                    term_counts[term] = term_counts.get(term, 0) + 1
+            
+            # Sort terms by frequency
+            top_terms = sorted(term_counts.items(), key=lambda x: x[1], reverse=True)
+            term_analysis = {
+                'total_terms': len(term_counts),
+                'term_counts': term_counts,
+                'top_terms': top_terms[:3],  # Top 3 terms
+                'current_cycle': top_terms[0][0] if top_terms else None
+            }
+            
+            # Application deadlines (look for jobs posted recently - they often have near-term deadlines)
+            recent_jobs = [job for job in jobs if job['date_posted'] >= (time.time() - 14*24*3600)]  # Last 2 weeks
+            application_deadlines = sorted(recent_jobs, key=lambda x: x['date_posted'], reverse=True)[:5]
+            
+            return {
+                'total_positions': total_positions,
+                'recent_positions': len(jobs),
+                'jobs': jobs,
+                'location_analysis': location_analysis,
+                'term_analysis': term_analysis,
+                'application_deadlines': application_deadlines,
+                'company_name': company_name,
+                'query_days': days
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting enhanced company insights: {e}")
+        # Fallback to basic data
+        basic_jobs = await get_company_jobs_from_database(company_name, days)
+        return {
+            'total_positions': len(basic_jobs),
+            'jobs': basic_jobs,
+            'location_analysis': {},
+            'term_analysis': {},
+            'application_deadlines': [],
+            'job_families': {'Other': basic_jobs} if basic_jobs else {}
+        }
+
+
+async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[str, Any]) -> None:
+    """
+    Send an enhanced DM with comprehensive company information and rich formatting.
+    
+    Args:
+        user: The Discord user to send the DM to
+        role_data: The original job role data that triggered the reaction
+    """
+    from chatd.config import config
+    
+    try:
+        company_name = role_data.get('company_name', '')
+        if not company_name:
+            # Fallback to individual job info
+            await send_dm_with_job_info(user, role_data)
+            return
+        
+        # Get enhanced company insights with SQL aggregation
+        insights = await get_enhanced_company_insights(company_name, days=config.company_info_days)
+        
+        if not insights or not insights.get('jobs'):
+            # Fallback to individual job info if no company data found
+            await send_dm_with_job_info(user, role_data)
+            return
+        
+        # Build enhanced company info message with comprehensive data
+        dm_message = [
+            f"# 🏢 {company_name} - Comprehensive Overview",
+            "",
+            f"Here's everything you need to know about **{company_name}** and their opportunities:",
+            ""
+        ]
+        
+        # Get company URL first for Company Snapshot
+        company_url = None
+        for job in insights.get('jobs', []):
+            if job.get('company_url'):
+                company_url = job['company_url']
+                break
+        
+        # Company overview section with job count and locations
+        total_positions = insights.get('total_positions', 0)
+        recent_positions = insights.get('recent_positions', 0)
+        
+        dm_message.extend([
+            "## 🌐 Company Snapshot",
+        ])
+        
+        # Add company website as first item if available
+        if company_url:
+            dm_message.append(f"**Company Website:** [Visit {company_name}](<{company_url}>)")
+        
+        dm_message.extend([
+            f"**Total Active Positions:** {total_positions}",
+            f"**Recent Postings ({config.company_info_days} days):** {recent_positions}",
+        ])
+        
+        # Location analysis
+        location_analysis = insights.get('location_analysis', {})
+        if location_analysis.get('top_locations'):
+            top_locations = location_analysis['top_locations'][:3]  # Top 3 locations
+            location_text = ', '.join([f"{loc} ({count})" for loc, count in top_locations])
+            total_locations = location_analysis.get('total_locations', 0)
+            
+            if total_locations > 3:
+                location_text += f" and {total_locations - 3} more locations"
+            
+            dm_message.append(f"**Top Locations:** {location_text}")
+            
+            if location_analysis.get('has_remote'):
+                dm_message.append("**Remote Work:** Available")
+        
+        # Term analysis
+        term_analysis = insights.get('term_analysis', {})
+        if term_analysis.get('top_terms'):
+            top_terms = term_analysis['top_terms'][:2]  # Top 2 terms
+            terms_text = ', '.join([f"{term} ({count})" for term, count in top_terms])
+            dm_message.append(f"**Main Cycles:** {terms_text}")
+        
+        dm_message.append("")
+        
+        # Available Positions - simplified approach since dataset is internship-focused
+        jobs = insights.get('jobs', [])
+        if jobs:
+            dm_message.extend([
+                f"## 💼 Available Positions ({len(jobs)})",
+                ""
+            ])
+            
+            # Show all positions
+            for job in jobs:
+                title = job.get('title', 'Not specified')
+                url = job.get('url', '')
+                locations = job.get('locations', [])
+                terms = job.get('terms', [])
+                sponsorship = job.get('sponsorship', '')
+                
+                # Format location string with full locations (no truncation)
+                location_str = ', '.join(locations) if locations else 'Remote/Multiple'
+                
+                # Format posting date - concise format
+                date_posted = job.get('date_posted', 0)
+                if date_posted:
+                    import datetime
+                    posted_date = datetime.datetime.fromtimestamp(date_posted)
+                    days_ago = (datetime.datetime.now() - posted_date).days
+                    if days_ago == 0:
+                        date_str = "Today"
+                    elif days_ago == 1:
+                        date_str = "1d ago"
+                    else:
+                        date_str = f"{days_ago}d ago"
+                else:
+                    date_str = "Recently"
+                
+                # Build details line with smart sponsorship
+                details_parts = []
+                details_parts.append(location_str)
+                
+                if terms:
+                    terms_str = ', '.join(terms)
+                    details_parts.append(terms_str)
+                
+                # Only show sponsorship if it's meaningful (not "Other")
+                if sponsorship and sponsorship.lower() != 'other':
+                    details_parts.append(f"Sponsored" if 'sponsor' in sponsorship.lower() else sponsorship)
+                
+                details_parts.append(date_str)
+                
+                # Check if location line would be too long (>40 chars) for overflow logic
+                details_line = ' • '.join(details_parts)
+                
+                # Section 5.6: Clean two-line format with link preview suppression
+                if url:
+                    dm_message.append(f"**[{title}](<{url}>)**")  # Suppress previews with angle brackets
+                else:
+                    dm_message.append(f"**{title}**")
+                
+                # Handle location overflow logic
+                if len(location_str) > 40 and len(locations) > 1:
+                    # Multi-line format for long locations
+                    dm_message.append(f"   {location_str}")
+                    # Build remaining details without location
+                    remaining_details = []
+                    if terms:
+                        remaining_details.append(terms_str)
+                    if sponsorship and sponsorship.lower() != 'other':
+                        remaining_details.append(f"Sponsored" if 'sponsor' in sponsorship.lower() else sponsorship)
+                    remaining_details.append(date_str)
+                    if remaining_details:
+                        dm_message.append(f"   {' • '.join(remaining_details)}")
+                else:
+                    # Single line format
+                    dm_message.append(f"   {details_line}")
+                
+                dm_message.append("")
+        
+        # Section 5.6: Remove duplicate "Recently Posted" section to eliminate redundancy
+        
+        # Direct links to all company applications (with preview suppression)
+        company_url = None
+        for job in insights.get('jobs', []):
+            if job.get('company_url'):
+                company_url = job['company_url']
+                break
+        
+        # Enhanced footer
+        dm_message.extend([
+            "---",
+            "",
+            "🚀 **Good luck with your applications!**",
+            "",
+            f"*This overview covers {recent_positions} recent positions from {company_name}. Data updated every {config.company_info_days} days.*"
+        ])
+        
+        # Send the enhanced DM
+        full_message = "\n".join(dm_message)
+        
+        # Discord has a 2000 character limit, so we may need to split the message
+        if len(full_message) <= 2000:
+            await user.send(full_message)
+        else:
+            # Split into multiple messages
+            messages = []
+            current_message = ""
+            
+            for line in dm_message:
+                if len(current_message) + len(line) + 1 <= 1900:  # Leave some buffer
+                    current_message += line + "\n"
+                else:
+                    if current_message:
+                        messages.append(current_message.strip())
+                    current_message = line + "\n"
+            
+            if current_message:
+                messages.append(current_message.strip())
+            
+            # Send each message part
+            for i, message_part in enumerate(messages):
+                await user.send(message_part)
+                if i < len(messages) - 1:
+                    await asyncio.sleep(1)  # Small delay between messages
+        
+        logger.info(f"Sent enhanced company insights DM for {company_name} to {user.display_name}#{user.discriminator} ({recent_positions} recent jobs, {total_positions} total)")
+        
+    except Exception as e:
+        logger.error(f"Failed to send enhanced company info DM to {user.display_name}#{user.discriminator}: {e}")
+        # Fallback to individual job info
+        try:
+            await send_dm_with_job_info(user, role_data)
+        except Exception as fallback_error:
+            logger.error(f"Fallback DM also failed: {fallback_error}")
+
+
 @bot.event
 async def on_ready() -> None:
     """
@@ -795,8 +1289,26 @@ async def on_ready() -> None:
     await check_for_new_roles()
 
     # Start the scheduled job loop
+    loop_counter = 0
     while True:
         schedule.run_pending()  # This will respect the CHECK_INTERVAL_MINUTES setting
+        
+        # Every 60 seconds, log queue health status
+        if loop_counter % 60 == 0:
+            stats = reaction_queue.get_stats()
+            processor_status = "RUNNING" if reaction_queue.is_running else "STOPPED"
+            task_status = "ACTIVE" if reaction_queue.processor_task and not reaction_queue.processor_task.done() else "INACTIVE"
+            
+            current_queue_size = stats['current_queue_size']
+            if current_queue_size > 0:
+                logger.warning(f"🚨 Reaction queue health check: {current_queue_size} pending reactions "
+                             f"(Total queued: {stats['total_queued']}, Processed: {stats['processed']}) "
+                             f"Processor: {processor_status}, Task: {task_status}")
+            else:
+                logger.debug(f"✅ Reaction queue healthy: {stats['processed']} processed, {stats['total_queued']} total queued "
+                           f"Processor: {processor_status}, Task: {task_status}")
+        
+        loop_counter += 1
         await asyncio.sleep(1)  # Small delay to prevent busy-waiting
 
 
@@ -812,9 +1324,9 @@ async def on_disconnect() -> None:
     
     # Log reaction queue statistics
     stats = reaction_queue.get_stats()
-    logger.info(f"Reaction queue stats - Queued: {stats['queued']}, "
-               f"Processed: {stats['processed']}, Failed: {stats['failed']}, "
-               f"Retried: {stats['retried']}")
+    logger.info(f"Reaction queue stats - Queue size: {stats['current_queue_size']}, "
+               f"Total queued: {stats['total_queued']}, Processed: {stats['processed']}, "
+               f"Failed: {stats['failed']}, Retried: {stats['retried']}")
     
     # Try to close any remaining HTTP sessions
     try:
@@ -827,40 +1339,121 @@ async def on_disconnect() -> None:
 
 
 @bot.event
-async def on_reaction_add(reaction: discord.Reaction, user: discord.User) -> None:
+async def on_resumed() -> None:
     """
-    Event handler for when a reaction is added to a message.
+    Event handler for when the bot resumes connection after disconnect.
+    This is critical for restarting the reaction queue processor.
+    """
+    logger.info("🔄 Bot connection resumed - checking reaction queue state")
+    
+    # Get current queue stats
+    stats = reaction_queue.get_stats()
+    logger.info(f"📊 Pre-resume queue stats - Queue size: {stats['current_queue_size']}, "
+               f"Total queued: {stats['total_queued']}, Processed: {stats['processed']}, "
+               f"Running: {reaction_queue.is_running}")
+    
+    # Force restart the reaction queue processor after reconnection
+    if reaction_queue.is_running:
+        logger.warning("⚠️ Queue processor still marked as running, stopping first")
+        await reaction_queue.stop()
+    
+    await reaction_queue.start()
+    
+    logger.info("✅ Reaction queue processor restarted successfully")
+
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
+    """
+    Event handler for raw reaction add events (works for uncached messages).
+    This handles reactions to messages that may not be in the bot's cache.
     
     Args:
-        reaction: The reaction that was added
-        user: The user who added the reaction
+        payload: The raw reaction event payload
     """
+    logger.debug(f"🎯 on_raw_reaction_add triggered! User: {payload.user_id}, Emoji: {payload.emoji}, Message: {payload.message_id}")
+    
     # Skip if reactions are disabled
     if not config.enable_reactions:
+        logger.debug(f"❌ Reactions disabled in config")
         return
         
-    # Ignore bot's own reactions
-    if user.id == bot.user.id:
+    # Ignore bot's own reactions - enhanced check with detailed logging
+    if payload.user_id == bot.user.id:
+        logger.debug(f"❌ Ignoring bot's own reaction (User ID: {payload.user_id}, Bot ID: {bot.user.id})")
         return
     
-    # Get the message and channel
-    message = reaction.message
+    # Additional safety check - ignore if bot.user is not initialized
+    if not bot.user:
+        logger.warning(f"❌ Bot user not initialized, skipping reaction processing")
+        return
+    
+    # Section 5.1: Selective processing - only respond to ❓ reactions
+    if str(payload.emoji) != '❓':
+        logger.debug(f"❌ Ignoring non-❓ reaction {payload.emoji}")
+        return
+    
+    # Get the channel and message
+    channel = bot.get_channel(payload.channel_id)
+    if not channel:
+        logger.warning(f"Could not find channel {payload.channel_id}")
+        return
+    
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except discord.NotFound:
+        logger.warning(f"Could not find message {payload.message_id}")
+        return
+    except discord.Forbidden:
+        logger.warning(f"No permission to fetch message {payload.message_id}")
+        return
+    
+    logger.debug(f"🔍 Message author: {message.author.id}, Bot ID: {bot.user.id}")
     
     # Check if this is a bot message (we only process reactions to our own messages)
     if message.author.id != bot.user.id:
+        logger.debug(f"❌ Ignoring reaction to non-bot message")
         return
     
-    logger.debug(f"Reaction {reaction.emoji} added by {user.display_name} to message {message.id}")
+    # Get the user who reacted
+    guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+    user = None
+    
+    # Try multiple ways to get the user
+    if guild:
+        user = guild.get_member(payload.user_id)
+        logger.debug(f"🔍 Guild member lookup: {user is not None}")
+    
+    if not user:
+        user = bot.get_user(payload.user_id)
+        logger.debug(f"🔍 Bot user lookup: {user is not None}")
+    
+    if not user:
+        # Try fetching the user from Discord API
+        try:
+            user = await bot.fetch_user(payload.user_id)
+            logger.debug(f"🔍 Fetch user lookup: {user is not None}")
+        except discord.NotFound:
+            logger.warning(f"User {payload.user_id} not found via API")
+        except discord.Forbidden:
+            logger.warning(f"No permission to fetch user {payload.user_id}")
+        except Exception as e:
+            logger.warning(f"Error fetching user {payload.user_id}: {e}")
+    
+    if not user:
+        logger.warning(f"Could not find user {payload.user_id} via any method")
+        return
+    
+    logger.info(f"✅ Processing ❓ reaction from {user.display_name} on message {message.id}")
     
     # Get role data by message ID
     role_data = await get_role_data_by_message_id(str(message.id))
+    logger.debug(f"🔍 Role data found: {role_data is not None}")
     
     if role_data:
-        # Send DM with job details
-        if isinstance(user, discord.Member):  # Only discord.Member objects have DM capabilities
-            await send_dm_with_job_info(user, role_data)
-        else:
-            logger.warning(f"User {user.id} is not a Member, cannot send DM")
+        # Section 5.2: Send enhanced company info instead of individual job info
+        logger.info(f"📨 Sending enhanced company info DM to {user.display_name}")
+        await send_enhanced_company_info_dm(user, role_data)
     else:
         logger.warning(f"Could not find role data for message {message.id}")
 

@@ -17,45 +17,11 @@ from discord.ext import commands
 import sys
 from pathlib import Path
 
-# Create a comprehensive mock for JsonStorageBackend that doesn't create directories
-class MockJsonStorageBackend:
-    def __init__(self, *args, **kwargs):
-        pass  # Don't create any directories or files
+# Import the comprehensive mock
+from tests.mock_datastorage import MockDataStorage, setup_mock_datastorage
 
-# Create a comprehensive mock for DataStorage 
-class MockDataStorage:
-    def __init__(self, *args, **kwargs):
-        pass  # Don't create any backends
-
-# Patch the classes at the module level before any imports
-original_JsonStorageBackend = None
-original_DataStorage = None
-
-def setup_storage_mocks():
-    global original_JsonStorageBackend, original_DataStorage
-    if 'chatd.storage_abstraction' in sys.modules:
-        storage_module = sys.modules['chatd.storage_abstraction']
-        original_JsonStorageBackend = getattr(storage_module, 'JsonStorageBackend', None)
-        original_DataStorage = getattr(storage_module, 'DataStorage', None)
-        storage_module.JsonStorageBackend = MockJsonStorageBackend
-        storage_module.DataStorage = MockDataStorage
-    else:
-        # Patch before import
-        import chatd.storage_abstraction
-        original_JsonStorageBackend = chatd.storage_abstraction.JsonStorageBackend
-        original_DataStorage = chatd.storage_abstraction.DataStorage
-        chatd.storage_abstraction.JsonStorageBackend = MockJsonStorageBackend
-        chatd.storage_abstraction.DataStorage = MockDataStorage
-
-def teardown_storage_mocks():
-    global original_JsonStorageBackend, original_DataStorage
-    if 'chatd.storage_abstraction' in sys.modules and original_JsonStorageBackend and original_DataStorage:
-        storage_module = sys.modules['chatd.storage_abstraction']
-        storage_module.JsonStorageBackend = original_JsonStorageBackend
-        storage_module.DataStorage = original_DataStorage
-
-# Apply the mocks immediately
-setup_storage_mocks()
+# Set up the mock before any imports that might use DataStorage
+setup_mock_datastorage()
 
 
 class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
@@ -275,7 +241,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         mock_message.id = '12345'
         
         # Reset stats and start the reaction queue for testing
-        reaction_queue.stats = {'queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
+        reaction_queue.stats = {'total_queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
         await reaction_queue.start()
         
         try:
@@ -287,7 +253,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             
             # Check that reactions were queued
             stats = reaction_queue.get_stats()
-            self.assertEqual(stats['queued'], 1)  # One reaction task queued
+            self.assertEqual(stats['total_queued'], 1)  # One reaction task queued
             
         finally:
             # Clean up
@@ -301,7 +267,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
         mock_message.id = '12345'
         
         # Reset stats and start the reaction queue for testing
-        reaction_queue.stats = {'queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
+        reaction_queue.stats = {'total_queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
         await reaction_queue.start()
         
         try:
@@ -313,7 +279,7 @@ class TestDiscordBotOperations(unittest.IsolatedAsyncioTestCase):
             
             # Verify queuing succeeded
             stats = reaction_queue.get_stats()
-            self.assertGreaterEqual(stats['queued'], 1)
+            self.assertGreaterEqual(stats['total_queued'], 1)
             
         finally:
             # Clean up
@@ -586,22 +552,27 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
         bot.failed_channels.clear()
         bot.channel_failure_counts.clear()
     
-    async def test_on_reaction_add_valid_reaction(self):
-        """Test reaction event handler with valid reaction."""
-        from chatd.bot import on_reaction_add
+    async def test_on_raw_reaction_add_valid_reaction(self):
+        """Test raw reaction event handler with valid reaction."""
+        from chatd.bot import on_raw_reaction_add
         
         # Mock Discord objects
         mock_user = MagicMock(spec=discord.Member)
         mock_user.id = 67890  # Different from bot ID
         mock_user.display_name = 'TestUser'
         
+        mock_channel = MagicMock()
         mock_message = MagicMock()
         mock_message.id = 12345
         mock_message.author.id = 98765  # Bot's ID
         
-        mock_reaction = MagicMock()
-        mock_reaction.emoji = '❓'
-        mock_reaction.message = mock_message
+        # Create RawReactionActionEvent payload
+        mock_payload = MagicMock()
+        mock_payload.user_id = 67890  # User's ID
+        mock_payload.emoji = '❓'
+        mock_payload.message_id = 12345
+        mock_payload.channel_id = 98765
+        mock_payload.guild_id = 11111
         
         role_data = {
             'company_name': 'Test Company',
@@ -613,10 +584,19 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
             
             mock_config.enable_reactions = True
             mock_bot.user.id = 98765  # Bot's ID
+            mock_bot.user = MagicMock()  # Ensure bot.user exists
+            mock_bot.user.id = 98765
+            mock_bot.get_channel.return_value = mock_channel
+            mock_bot.get_guild.return_value.get_member.return_value = mock_user
+            
+            # Make fetch_message async
+            async def mock_fetch_message(message_id):
+                return mock_message
+            mock_channel.fetch_message = mock_fetch_message
             
             with patch('chatd.bot.get_role_data_by_message_id', return_value=role_data):
-                with patch('chatd.bot.send_dm_with_job_info') as mock_send_dm:
-                    await on_reaction_add(mock_reaction, mock_user)
+                with patch('chatd.bot.send_enhanced_company_info_dm') as mock_send_dm:
+                    await on_raw_reaction_add(mock_payload)
                     
                     mock_send_dm.assert_called_once_with(mock_user, role_data)
     
@@ -625,37 +605,44 @@ class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
         'CHANNEL_IDS': '123456789',
         'ENABLE_REACTIONS': 'false'
     })
-    async def test_on_reaction_add_reactions_disabled(self):
-        """Test reaction handler when reactions are disabled."""
+    async def test_on_raw_reaction_add_reactions_disabled(self):
+        """Test raw reaction handler when reactions are disabled."""
         from chatd.config import Config
-        from chatd.bot import on_reaction_add
+        from chatd.bot import on_raw_reaction_add
         
         # Reset config
         Config._instance = None
         
-        mock_user = MagicMock()
-        mock_reaction = MagicMock()
+        mock_payload = MagicMock()
+        mock_payload.user_id = 67890
+        mock_payload.emoji = '❓'
         
-        with patch('chatd.bot.get_role_data_by_message_id') as mock_get_role:
-            await on_reaction_add(mock_reaction, mock_user)
+        with patch('chatd.bot.get_role_data_by_message_id') as mock_get_role, \
+             patch('chatd.bot.config') as mock_config, \
+             patch('chatd.bot.bot') as mock_bot:
+            
+            mock_config.enable_reactions = False
+            mock_bot.user = MagicMock()  # Ensure bot.user exists
+            mock_bot.user.id = 12345
+            await on_raw_reaction_add(mock_payload)
             
             # Should return early, not call get_role_data
             mock_get_role.assert_not_called()
     
-    async def test_on_reaction_add_bot_reaction(self):
-        """Test reaction handler ignoring bot's own reactions."""
-        from chatd.bot import on_reaction_add
+    async def test_on_raw_reaction_add_bot_reaction(self):
+        """Test raw reaction handler ignoring bot's own reactions."""
+        from chatd.bot import on_raw_reaction_add
         
-        mock_user = MagicMock()
-        mock_user.id = 98765  # Same as bot ID
-        
-        mock_reaction = MagicMock()
+        mock_payload = MagicMock()
+        mock_payload.user_id = 98765  # Same as bot ID
+        mock_payload.emoji = '❓'
         
         with patch('chatd.bot.bot') as mock_bot:
+            mock_bot.user = MagicMock()  # Ensure bot.user exists
             mock_bot.user.id = 98765
             
             with patch('chatd.bot.get_role_data_by_message_id') as mock_get_role:
-                await on_reaction_add(mock_reaction, mock_user)
+                await on_raw_reaction_add(mock_payload)
                 
                 # Should ignore bot's own reactions
                 mock_get_role.assert_not_called()
@@ -685,7 +672,7 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
         
         queue = ReactionQueue()
         # Reset stats
-        queue.stats = {'queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
+        queue.stats = {'total_queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
         await queue.start()
         
         try:
@@ -703,7 +690,7 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
             
             # Check stats
             stats = queue.get_stats()
-            self.assertEqual(stats['queued'], 1)
+            self.assertEqual(stats['total_queued'], 1)
             self.assertGreaterEqual(stats['processed'], 0)  # May not be processed yet due to timing
             
         finally:
@@ -716,7 +703,7 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
         
         queue = ReactionQueue()
         # Reset stats
-        queue.stats = {'queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
+        queue.stats = {'total_queued': 0, 'processed': 0, 'failed': 0, 'retried': 0}
         await queue.start()
         
         try:
@@ -734,7 +721,7 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
             
             # Check that retries were attempted
             stats = queue.get_stats()
-            self.assertEqual(stats['queued'], 1)
+            self.assertEqual(stats['total_queued'], 1)
             # Note: May have retries depending on timing
             
         finally:
@@ -1195,6 +1182,338 @@ class TestReactionQueue(unittest.IsolatedAsyncioTestCase):
         mock_logger.warning.assert_called()
         warning_msg = mock_logger.warning.call_args[0][0]
         self.assertIn("Health Check - DEGRADED MODE", warning_msg)
+
+
+class TestSection5CompanyInfo(unittest.IsolatedAsyncioTestCase):
+    """Test cases for Section 5.3 and 5.4 enhanced company information features."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Mock environment
+        self.env_patcher = patch.dict(os.environ, {
+            'DISCORD_TOKEN': 'test-token',
+            'CHANNEL_IDS': '123456789',
+            'ENABLE_REACTIONS': 'true',
+            'ENABLE_COMPANY_INFO': 'true',
+            'INFO_REACTION_EMOJI': '❓',
+            'COMPANY_INFO_DAYS': '7',
+            'MAX_COMPANY_JOBS_IN_DM': '10',
+            'MIGRATION_MODE': 'database_only',
+            'DATA_FILE': '/tmp/test_data.json',
+            'MESSAGES_FILE': '/tmp/test_messages.json'
+        })
+        self.env_patcher.start()
+        
+        # Reset config singleton
+        from chatd.config import Config
+        Config._instance = None
+        
+        # Mock the get_storage function to avoid file system operations
+        self.storage_patcher = patch('chatd.bot.get_storage')
+        self.storage_patcher.start()
+        
+        # Sample company data for testing
+        self.sample_company_data = [
+            {
+                'id': 'job1',
+                'company_name': 'TechCorp',
+                'title': 'Software Engineering Intern',
+                'url': 'https://techcorp.com/job1',
+                'date_posted': int(time.time()) - (2 * 24 * 60 * 60),  # 2 days ago
+                'date_updated': int(time.time()) - (1 * 24 * 60 * 60),  # 1 day ago
+                'active': True,
+                'is_visible': True,
+                'sponsorship': 'Available',
+                'locations': ['San Francisco, CA', 'Seattle, WA'],
+                'terms': ['Summer 2026', 'Fall 2026']
+            },
+            {
+                'id': 'job2',
+                'company_name': 'TechCorp',
+                'title': 'Data Science Intern',
+                'url': 'https://techcorp.com/job2',
+                'date_posted': int(time.time()) - (3 * 24 * 60 * 60),  # 3 days ago
+                'date_updated': int(time.time()) - (1 * 24 * 60 * 60),  # 1 day ago
+                'active': True,
+                'is_visible': True,
+                'sponsorship': 'Not Available',
+                'locations': ['New York, NY'],
+                'terms': ['Summer 2026']
+            },
+            {
+                'id': 'job3',
+                'company_name': 'TechCorp',
+                'title': 'Product Manager New Grad',
+                'url': 'https://techcorp.com/job3',
+                'date_posted': int(time.time()) - (1 * 24 * 60 * 60),  # 1 day ago
+                'date_updated': int(time.time()) - (1 * 24 * 60 * 60),  # 1 day ago
+                'active': True,
+                'is_visible': True,
+                'sponsorship': 'Available',
+                'locations': ['Austin, TX'],
+                'terms': ['2026']
+            }
+        ]
+    
+    def tearDown(self):
+        """Clean up after tests."""
+        self.env_patcher.stop()
+        self.storage_patcher.stop()
+        from chatd.config import Config
+        Config._instance = None
+    
+    async def test_get_enhanced_company_insights_basic(self):
+        """Test basic functionality of get_enhanced_company_insights."""
+        from chatd.bot import get_enhanced_company_insights
+        
+        # Mock storage to not have database backend, forcing fallback to get_company_jobs_from_database
+        mock_storage = Mock()
+        mock_storage.database_backend = None
+        
+        with patch('chatd.bot.get_storage', return_value=mock_storage):
+            with patch('chatd.bot.get_company_jobs_from_database', new_callable=AsyncMock, return_value=self.sample_company_data) as mock_get_jobs:
+                insights = await get_enhanced_company_insights('TechCorp')
+                
+                # Verify the function was called correctly
+                mock_get_jobs.assert_called_once_with('TechCorp', 7)
+                
+                # Verify basic structure (fallback mode)
+                self.assertIsInstance(insights, dict)
+                self.assertIn('total_positions', insights)
+                self.assertIn('location_analysis', insights)
+                self.assertIn('term_analysis', insights)
+                self.assertIn('job_families', insights)
+                self.assertIn('application_deadlines', insights)
+                self.assertIn('jobs', insights)
+                
+                # Verify content (fallback mode returns simplified structure)
+                self.assertEqual(insights['total_positions'], 3)
+                self.assertIsInstance(insights['jobs'], list)
+                self.assertEqual(len(insights['jobs']), 3)
+                self.assertEqual(insights['location_analysis'], {})
+                self.assertEqual(insights['term_analysis'], {})
+                self.assertEqual(insights['application_deadlines'], [])
+                self.assertIn('Other', insights['job_families'])
+    
+    async def test_get_enhanced_company_insights_location_analysis(self):
+        """Test location analysis in enhanced company insights."""
+        from chatd.bot import get_enhanced_company_insights
+        
+        # Mock storage to not have database backend, forcing fallback mode
+        mock_storage = Mock()
+        mock_storage.database_backend = None
+        
+        with patch('chatd.bot.get_storage', return_value=mock_storage):
+            with patch('chatd.bot.get_company_jobs_from_database', new_callable=AsyncMock, return_value=self.sample_company_data):
+                insights = await get_enhanced_company_insights('TechCorp')
+                
+                # In fallback mode, location_analysis is empty
+                self.assertEqual(insights['location_analysis'], {})
+    
+    async def test_get_enhanced_company_insights_job_families(self):
+        """Test job family categorization in enhanced company insights."""
+        from chatd.bot import get_enhanced_company_insights
+        
+        # Mock storage to not have database backend, forcing fallback mode
+        mock_storage = Mock()
+        mock_storage.database_backend = None
+        
+        with patch('chatd.bot.get_storage', return_value=mock_storage):
+            with patch('chatd.bot.get_company_jobs_from_database', new_callable=AsyncMock, return_value=self.sample_company_data):
+                insights = await get_enhanced_company_insights('TechCorp')
+                
+                job_families = insights['job_families']
+                
+                # In fallback mode, all jobs go to 'Other' category
+                self.assertIn('Other', job_families)
+                self.assertEqual(len(job_families['Other']), 3)
+    
+    async def test_send_enhanced_company_info_dm_basic(self):
+        """Test basic functionality of send_enhanced_company_info_dm."""
+        from chatd.bot import send_enhanced_company_info_dm
+        
+        mock_user = AsyncMock()
+        mock_user.send = AsyncMock()
+        
+        sample_insights = {
+            'company_name': 'TechCorp',
+            'total_positions': 3,
+            'location_analysis': {
+                'location_counts': {'San Francisco, CA': 2, 'New York, NY': 1}
+            },
+            'term_analysis': {
+                'term_counts': {'Summer 2026': 2, 'Fall 2026': 1}
+            },
+            'job_families': {
+                'Intern': self.sample_company_data[:2],
+                'New Grad': self.sample_company_data[2:]
+            },
+            'application_deadlines': [],
+            'jobs': self.sample_company_data
+        }
+        
+        with patch('chatd.bot.get_enhanced_company_insights', new_callable=AsyncMock, return_value=sample_insights):
+            # Pass proper role_data with company_name
+            role_data = {'company_name': 'TechCorp', 'title': 'Software Engineer'}
+            await send_enhanced_company_info_dm(mock_user, role_data)
+            
+            # Should send at least one message
+            self.assertGreater(mock_user.send.call_count, 0)
+            
+            # Check content of first message
+            first_call = mock_user.send.call_args_list[0][0][0]
+            self.assertIn('TechCorp', first_call)
+            self.assertIn('🌐 Company Snapshot', first_call)
+            self.assertIn('Total Active Positions:** 3', first_call)
+    
+    async def test_send_enhanced_company_info_dm_job_families(self):
+        """Test simplified job position formatting in enhanced company info DM."""
+        from chatd.bot import send_enhanced_company_info_dm
+        
+        mock_user = AsyncMock()
+        mock_user.send = AsyncMock()
+        
+        sample_insights = {
+            'company_name': 'TechCorp',
+            'total_positions': 2,
+            'recent_positions': 2,
+            'location_analysis': {'location_counts': {'San Francisco, CA': 1, 'Austin, TX': 1}},
+            'term_analysis': {'term_counts': {'Summer 2026': 1, '2026': 1}},
+            'application_deadlines': [],
+            'jobs': [
+                {
+                    'title': 'Software Engineering Intern',
+                    'url': 'https://techcorp.com/job1',
+                    'locations': ['San Francisco, CA'],
+                    'terms': ['Summer 2026'],
+                    'date_posted': int(time.time()) - (1 * 24 * 60 * 60)
+                },
+                {
+                    'title': 'Product Manager New Grad',
+                    'url': 'https://techcorp.com/job2',
+                    'locations': ['Austin, TX'],
+                    'terms': ['2026'],
+                    'date_posted': int(time.time()) - (2 * 24 * 60 * 60)
+                }
+            ]
+        }
+        
+        with patch('chatd.bot.get_enhanced_company_insights', new_callable=AsyncMock, return_value=sample_insights):
+            # Pass proper role_data with company_name
+            role_data = {'company_name': 'TechCorp', 'title': 'Software Engineer'}
+            await send_enhanced_company_info_dm(mock_user, role_data)
+            
+            # Should send at least one message
+            self.assertGreater(mock_user.send.call_count, 0)
+            
+            # Find message containing job positions  
+            all_messages = ''.join([call[0][0] for call in mock_user.send.call_args_list])
+            
+            # Check that simplified format is present
+            self.assertIn('Available Positions', all_messages)
+            self.assertIn('Software Engineering Intern', all_messages)
+            self.assertIn('Product Manager New Grad', all_messages)
+    
+    async def test_send_enhanced_company_info_dm_error_handling(self):
+        """Test error handling in send_enhanced_company_info_dm."""
+        from chatd.bot import send_enhanced_company_info_dm
+        
+        mock_user = AsyncMock()
+        mock_user.send = AsyncMock(side_effect=discord.Forbidden(Mock(), "Cannot send DM"))
+        
+        with patch('chatd.bot.get_enhanced_company_insights') as mock_insights:
+            mock_insights.side_effect = Exception("Insights error")
+            
+            # Should not raise exception even if insights fail
+            await send_enhanced_company_info_dm(mock_user, {'company_name': 'TechCorp'})
+            
+            # Should attempt to get insights
+            mock_insights.assert_called_once_with('TechCorp', days=7)
+
+
+class TestBotEventHandlers(unittest.IsolatedAsyncioTestCase):
+    """Test cases for bot event handlers."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Mock environment
+        self.env_patcher = patch.dict(os.environ, {
+            'DISCORD_TOKEN': 'test-token',
+            'CHANNEL_IDS': '123456789',
+            'ENABLE_REACTIONS': 'true',
+            'MIGRATION_MODE': 'database_only',
+            'DATA_FILE': '/tmp/test_data.json',
+            'MESSAGES_FILE': '/tmp/test_messages.json'
+        })
+        self.env_patcher.start()
+        
+        # Reset config singleton
+        from chatd.config import Config
+        Config._instance = None
+        
+    def tearDown(self):
+        """Clean up test environment."""
+        self.env_patcher.stop()
+        
+        # Reset config singleton
+        from chatd.config import Config
+        Config._instance = None
+    
+    async def test_on_resumed_restarts_reaction_queue(self):
+        """Test that on_resumed event properly restarts the reaction queue processor."""
+        from chatd.bot import bot, reaction_queue, on_resumed
+        
+        # Mock the reaction queue
+        with patch.object(reaction_queue, 'get_stats') as mock_get_stats, \
+             patch.object(reaction_queue, 'is_running', True), \
+             patch.object(reaction_queue, 'stop') as mock_stop, \
+             patch.object(reaction_queue, 'start') as mock_start:
+            
+            # Mock queue stats
+            mock_get_stats.return_value = {
+                'total_queued': 5,
+                'processed': 4,
+                'current_queue_size': 1
+            }
+            
+            # Call the on_resumed handler
+            await on_resumed()
+            
+            # Verify that the queue was stopped and restarted
+            mock_stop.assert_called_once()
+            mock_start.assert_called_once()
+            
+            # Verify get_stats was called
+            mock_get_stats.assert_called_once()
+    
+    async def test_on_resumed_starts_queue_when_not_running(self):
+        """Test that on_resumed starts the queue when it's not already running."""
+        from chatd.bot import bot, reaction_queue, on_resumed
+        
+        # Mock the reaction queue as not running
+        with patch.object(reaction_queue, 'get_stats') as mock_get_stats, \
+             patch.object(reaction_queue, 'is_running', False), \
+             patch.object(reaction_queue, 'stop') as mock_stop, \
+             patch.object(reaction_queue, 'start') as mock_start:
+            
+            # Mock queue stats
+            mock_get_stats.return_value = {
+                'total_queued': 2,
+                'processed': 2,
+                'current_queue_size': 0
+            }
+            
+            # Call the on_resumed handler
+            await on_resumed()
+            
+            # Verify that stop was NOT called since queue wasn't running
+            mock_stop.assert_not_called()
+            
+            # Verify that start was called
+            mock_start.assert_called_once()
+            
+            # Verify get_stats was called
+            mock_get_stats.assert_called_once()
 
 
 if __name__ == '__main__':

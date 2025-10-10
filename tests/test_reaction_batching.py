@@ -28,6 +28,15 @@ def mock_config():
     config.reaction_retry_delay = 0.05  # 50ms for faster tests
     # Legacy configuration (still used)
     config.batch_processing_delay = 0.01  # 10ms for faster tests
+    
+    # Section 4.4 configuration (required for ReactionQueue)
+    config.health_window_size = 100
+    config.degradation_threshold = 0.5
+    config.recovery_threshold = 0.2
+    config.circuit_breaker_threshold = 10
+    config.circuit_breaker_timeout = 300
+    config.health_check_interval = 60
+    
     return config
 
 
@@ -75,7 +84,7 @@ class TestReactionBatching:
         
         # Verify statistics
         stats = reaction_queue.get_stats()
-        assert stats['queued'] == 1
+        assert stats['total_queued'] == 1
         assert stats['processed'] == 1
     
     @pytest.mark.asyncio
@@ -101,7 +110,7 @@ class TestReactionBatching:
         
         # Verify statistics
         stats = reaction_queue.get_stats()
-        assert stats['queued'] == 1
+        assert stats['total_queued'] == 1
         assert stats['processed'] == 1
     
     @pytest.mark.asyncio
@@ -129,7 +138,7 @@ class TestReactionBatching:
         
         # Verify statistics show some failures
         stats = reaction_queue.get_stats()
-        assert stats['queued'] >= 1
+        assert stats['total_queued'] >= 1
         assert stats['retried'] >= 1 or stats['failed'] >= 1
     
     @pytest.mark.asyncio
@@ -249,6 +258,12 @@ class TestReactionQueueConfiguration:
         config.reaction_retry_count = 2
         config.reaction_retry_delay = 0.05
         config.batch_processing_delay = 0.01
+        config.health_window_size = 100  # Add missing config
+        config.circuit_breaker_threshold = 10  # Add missing config
+        config.circuit_breaker_timeout = 300  # Add missing config
+        config.degradation_threshold = 0.5  # Add missing config
+        config.recovery_threshold = 0.2  # Add missing config
+        config.health_check_interval_seconds = 60  # Add missing config
         
         with patch('chatd.bot.config', config):
             queue = ReactionQueue()
@@ -279,6 +294,12 @@ class TestReactionQueueConfiguration:
         config.reaction_retry_count = 1  # Only 1 retry
         config.reaction_retry_delay = 0.05
         config.batch_processing_delay = 0.01
+        config.health_window_size = 100  # Add missing config
+        config.circuit_breaker_threshold = 10  # Add missing config
+        config.circuit_breaker_timeout = 300  # Add missing config
+        config.degradation_threshold = 0.5  # Add missing config
+        config.recovery_threshold = 0.2  # Add missing config
+        config.health_check_interval_seconds = 60  # Add missing config
         
         with patch('chatd.bot.config', config):
             queue = ReactionQueue()
@@ -318,6 +339,12 @@ class TestPerformanceImprovement:
         batch_config.reaction_retry_count = 2
         batch_config.reaction_retry_delay = 0.05
         batch_config.batch_processing_delay = 0.01
+        batch_config.health_window_size = 100  # Add missing config
+        batch_config.circuit_breaker_threshold = 10  # Add missing config
+        batch_config.circuit_breaker_timeout = 300  # Add missing config
+        batch_config.degradation_threshold = 0.5  # Add missing config
+        batch_config.recovery_threshold = 0.2  # Add missing config
+        batch_config.health_check_interval_seconds = 60  # Add missing config
         
         with patch('chatd.bot.config', batch_config):
             queue = ReactionQueue()
@@ -351,6 +378,6 @@ class TestPerformanceImprovement:
         
         # Verify statistics
         stats = reaction_queue.get_stats()
-        assert stats['queued'] == 2  # 2 tasks queued
+        assert stats['total_queued'] == 2  # 2 tasks queued
         assert stats['processed'] == 2  # 2 tasks processed
         assert mock_message.add_reaction.call_count == 5  # 5 total reactions
