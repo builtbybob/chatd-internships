@@ -1063,8 +1063,6 @@ sudo chatd restart
 
 **Benefits**: Proactive issue detection, performance optimization insights, operational visibility
 
-**Accessibility**: Ideal for new engineers - standalone tasks with clear deliverables and minimal dependencies
-
 **Implementation Plan**:
 - [ ] **11.1** Health check endpoint
   - [ ] Simple HTTP server for container health checks (~50 lines Flask)
