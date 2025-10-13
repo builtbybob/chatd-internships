@@ -645,7 +645,14 @@ class DatabaseStorageBackend(StorageBackend):
                 # Find the job posting
                 job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 if not job_posting:
-                    logger.error(f"Job posting {job_id} not found for scalar update")
+                    logger.error(f"Job posting {job_id} not found for scalar update. Updates were: {updates}")
+                    # Check if this is a soft-deleted job
+                    soft_deleted_job = session.query(JobPosting).filter(
+                        JobPosting.id == job_id, 
+                        JobPosting.is_deleted == True
+                    ).first()
+                    if soft_deleted_job:
+                        logger.error(f"Job {job_id} is soft-deleted but scalar update attempted")
                     return False
                 
                 # Update only scalar fields
@@ -918,8 +925,17 @@ class DataStorage:
         Returns:
             Dictionary with processing results and statistics
         """
+        # Normalize JSON data: if a job exists in the source file, it's not deleted
+        normalized_jobs = []
+        for job in current_jobs:
+            normalized_job = job.copy()
+            # Jobs present in JSON are by definition not deleted
+            if 'is_deleted' not in normalized_job:
+                normalized_job['is_deleted'] = False
+            normalized_jobs.append(normalized_job)
+        
         # Detect changes
-        changes = self.detect_job_changes(current_jobs)
+        changes = self.detect_job_changes(normalized_jobs)
         
         results = {
             'added_count': len(changes['added']),
