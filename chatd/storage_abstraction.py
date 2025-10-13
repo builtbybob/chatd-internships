@@ -332,7 +332,7 @@ class DatabaseStorageBackend(StorageBackend):
                 
                 # Filter out soft-deleted records by default
                 if not include_deleted:
-                    query = query.filter(JobPosting.is_deleted == False)
+                    query = query.filter(JobPosting.is_deleted is False)
                 
                 job_postings = query.all()
                 result = [job_posting_to_dict(job) for job in job_postings]
