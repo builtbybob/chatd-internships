@@ -330,9 +330,9 @@ class DatabaseStorageBackend(StorageBackend):
             with self.db_manager.session_scope() as session:
                 query = session.query(JobPosting)
                 
-                # Filter out soft-deleted records by default
-                if not include_deleted:
-                    query = query.filter(JobPosting.is_deleted is False)
+                # TEMPORARILY DISABLED: Filter out soft-deleted records by default
+                # if not include_deleted:
+                #     query = query.filter(JobPosting.is_deleted is False)
                 
                 job_postings = query.all()
                 result = [job_posting_to_dict(job) for job in job_postings]
