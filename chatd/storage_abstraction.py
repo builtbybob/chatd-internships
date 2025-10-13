@@ -336,7 +336,7 @@ class DatabaseStorageBackend(StorageBackend):
                 
                 job_postings = query.all()
                 result = [job_posting_to_dict(job) for job in job_postings]
-                logger.debug(f"Loaded {len(result)} job postings from database (include_deleted={include_deleted})")
+                logger.info(f"DatabaseStorageBackend.get_job_postings() loaded {len(result)} job postings from database (include_deleted={include_deleted})")
                 return result
         except Exception as e:
             logger.error(f"Failed to load job postings from database: {e}")
@@ -721,10 +721,14 @@ class DataStorage:
     def get_job_postings(self) -> List[Dict[str, Any]]:
         """Get all job postings using the appropriate backend."""
         if self.migration_mode == 'database_only':
-            return self.database_backend.get_job_postings()
+            result = self.database_backend.get_job_postings()
+            logger.info(f"DataStorage.get_job_postings() in database_only mode returned {len(result)} jobs")
+            return result
         else:
             # json_only and dual_write both read from JSON
-            return self.json_backend.get_job_postings()
+            result = self.json_backend.get_job_postings()
+            logger.info(f"DataStorage.get_job_postings() in {self.migration_mode} mode returned {len(result)} jobs")
+            return result
     
     def save_job_postings(self, job_postings: List[Dict[str, Any]]) -> bool:
         """Save job postings using the appropriate backend(s)."""
@@ -855,6 +859,13 @@ class DataStorage:
         """
         # Get previous job data from storage
         previous_jobs = self.get_job_postings()
+        
+        # DEBUG: Log what we're comparing
+        logger.info(f"Change detection: {len(current_jobs)} current jobs vs {len(previous_jobs)} previous jobs")
+        if len(previous_jobs) == 0:
+            logger.error("CRITICAL: No previous jobs found from storage! All jobs will be treated as new.")
+        elif len(current_jobs) > 0 and len(previous_jobs) > 0:
+            logger.debug(f"Sample current job ID: {current_jobs[0].get('id')} vs sample previous job ID: {previous_jobs[0].get('id')}")
         
         # Use the primary backend for change detection
         if self.migration_mode == 'database_only':
