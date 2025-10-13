@@ -387,23 +387,26 @@ class DatabaseStorageBackend(StorageBackend):
     def add_job_posting(self, job_data: Dict[str, Any]) -> bool:
         """Add a single new job posting to database, or update if it already exists."""
         try:
+            job_id = job_data['id']
+            
+            # First check if job already exists to determine the action
             with self.db_manager.session_scope() as session:
-                job_id = job_data['id']
-                
                 # Check if job already exists by ID
                 existing_job = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 if existing_job:
-                    logger.debug(f"Job {job_id} already exists by ID, updating instead")
-                    return self.update_job_posting(job_id, job_data)
+                    logger.debug(f"Job {job_id} already exists by ID, using full refresh update")
+                    # Existing job found - use refresh update method
+                    return self.update_job_posting_with_refresh(job_data)
                 
                 # Check if job exists by URL (unique constraint)
                 job_url = job_data.get('url')
                 if job_url:
                     existing_job_by_url = session.query(JobPosting).filter(JobPosting.url == job_url).first()
                     if existing_job_by_url:
-                        logger.debug(f"Job with URL {job_url} already exists (ID: {existing_job_by_url.id}), updating instead")
-                        # Update the existing job with the new ID and data
-                        return self.update_job_posting(str(existing_job_by_url.id), job_data)
+                        logger.debug(f"Job with URL {job_url} already exists (ID: {existing_job_by_url.id}), using full refresh update")
+                        # Update job_data to use the existing job's ID to avoid duplicate URLs
+                        job_data['id'] = str(existing_job_by_url.id)
+                        return self.update_job_posting_with_refresh(job_data)
                 
                 # Truly new job - insert it
                 job_posting = job_posting_from_dict(job_data)
