@@ -330,9 +330,9 @@ class DatabaseStorageBackend(StorageBackend):
             with self.db_manager.session_scope() as session:
                 query = session.query(JobPosting)
                 
-                # TEMPORARILY DISABLED: Filter out soft-deleted records by default
-                # if not include_deleted:
-                #     query = query.filter(JobPosting.is_deleted is False)
+                # Filter out soft-deleted records by default
+                if not include_deleted:
+                    query = query.filter(JobPosting.is_deleted == False)
                 
                 job_postings = query.all()
                 result = [job_posting_to_dict(job) for job in job_postings]
@@ -862,8 +862,16 @@ class DataStorage:
         
         # DEBUG: Log what we're comparing
         logger.info(f"Change detection: {len(current_jobs)} current jobs vs {len(previous_jobs)} previous jobs")
-        if len(previous_jobs) == 0:
+        if len(previous_jobs) == 0 and len(current_jobs) > 0:
             logger.error("CRITICAL: No previous jobs found from storage! All jobs will be treated as new.")
+            logger.error("SAFETY: Aborting change detection to prevent duplicate insertion attempts")
+            return {
+                'changes': {
+                    'added': [],
+                    'updated': [],
+                    'removed': []
+                }
+            }
         elif len(current_jobs) > 0 and len(previous_jobs) > 0:
             logger.debug(f"Sample current job ID: {current_jobs[0].get('id')} vs sample previous job ID: {previous_jobs[0].get('id')}")
         
