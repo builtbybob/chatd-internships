@@ -4,9 +4,9 @@
 -- 2. Student applications table to track user application activity
 
 -- Add soft delete support to existing job_postings table
--- Add is_deleted column with default false (existing records remain active)
+-- Add is_deleted column with default false and NOT NULL constraint
 ALTER TABLE job_postings 
-ADD COLUMN is_deleted BOOLEAN DEFAULT false;
+ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT false;
 
 -- Create index on is_deleted for efficient filtering
 CREATE INDEX idx_job_postings_is_deleted ON job_postings(is_deleted);

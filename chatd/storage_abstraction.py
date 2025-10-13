@@ -431,27 +431,6 @@ class DatabaseStorageBackend(StorageBackend):
                     logger.warning(f"Cannot update job {job_id}: not found in database")
                     return False
                 
-                # Check if this is a full job replacement (from add_job_posting)
-                is_full_replacement = 'url' in updates and 'company_name' in updates
-                
-                if is_full_replacement:
-                    # Full job replacement - update the ID if it's different
-                    new_job_id = updates.get('id', job_id)
-                    if str(new_job_id) != str(job_id):
-                        # Remove old job completely and insert new one
-                        session.query(JobLocation).filter(JobLocation.id == job_id).delete(synchronize_session=False)
-                        session.query(JobTerm).filter(JobTerm.id == job_id).delete(synchronize_session=False)
-                        session.query(JobDegree).filter(JobDegree.id == job_id).delete(synchronize_session=False)
-                        session.query(MessageTracking).filter(MessageTracking.id == job_id).delete(synchronize_session=False)
-                        session.delete(existing_job)
-                        session.flush()
-                        
-                        # Insert new job
-                        job_posting = job_posting_from_dict(updates)
-                        session.add(job_posting)
-                        logger.debug(f"Replaced job {job_id} with {new_job_id}")
-                        return True
-                
                 # For partial updates, delegate to appropriate specialized methods
                 has_relationships = any(field in updates for field in ['locations', 'terms', 'degrees'])
                 
