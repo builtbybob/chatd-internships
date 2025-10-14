@@ -399,15 +399,15 @@ sudo chatd disk --alert              # Check if cleanup needed
     - [x] Add validation to ensure existing data integrity during migration
     - [x] Test migration on development database before production deployment
 - [ ] **5.8** Application tracking reaction handler ✅ **READY FOR IMPLEMENTATION**
-  - [ ] **5.8.1** Detect and process ✅ reactions specifically
-    - [ ] Update reaction handler to process ✅ reactions for application tracking
+  - [ ] **5.8.1** Detect and process 📝 reactions specifically
+    - [ ] Update reaction handler to process 📝 reactions for application tracking
     - [ ] Store application data in `student_applications` table
     - [ ] Prevent duplicate applications with unique constraint
     - [ ] Handle both newly posted jobs and historical jobs (via soft delete preservation)
-    - [ ] Separate ✅ reaction handling from ❓ info request handling
+    - [ ] Separate 📝 reaction handling from ❓ info request handling
     - [ ] Extract Discord user ID and job ID from reaction context
     - [ ] Validate that reaction is on a job posting message (not other bot messages)
-    - [ ] Add reaction emoji configuration: `APPLICATION_REACTION_EMOJI=✅`
+    - [ ] Add reaction emoji configuration: `APPLICATION_REACTION_EMOJI=📝`
   - [ ] **5.8.2** Application record management
     - [ ] Insert new application record into `student_applications` table
     - [ ] Handle duplicate application attempts gracefully (UNIQUE constraint violations)
@@ -439,12 +439,12 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [ ] Prevent spam from repeated reaction add/remove cycles
 - [ ] **5.12** Configuration options for application tracking
   - [ ] `ENABLE_APPLICATION_TRACKING=true` (feature toggle)
-  - [ ] `APPLICATION_REACTION_EMOJI=✅` (emoji that triggers application tracking)
+  - [ ] `APPLICATION_REACTION_EMOJI=📝` (emoji that triggers application tracking)
   - [ ] `CONGRATULATION_DM_ENABLED=true` (toggle for DM responses)
   - [ ] `MAX_RECENT_APPLICATIONS_SHOWN=5` (number of recent apps in DM)
   - [ ] `APPLICATION_MILESTONE_MESSAGES=true` (special messages for 1st, 5th, 10th applications)
 - [x] **5.13** Configurable reaction set for job posting messages ✅ **COMPLETED**
-  - [x] `MESSAGE_REACTIONS=❓,✅` (comma-separated list of reactions to add to each job posting)
+  - [x] `MESSAGE_REACTIONS=❓,📝` (comma-separated list of reactions to add to each job posting)
   - [x] Support for both emoji and custom Discord emoji formats
   - [x] Easy configuration changes without code modifications
   - [x] Validation to ensure reaction emojis are properly formatted
@@ -2000,6 +2000,125 @@ WHEN NOT MATCHED THEN
 
 **Files to modify**: `chatd/storage_abstraction.py`, `chatd/database.py`
 **Files to create**: `tests/test_merge_operations.py`
+
+---
+
+### 19. Database Query Optimization (N+1 Problem Resolution) ⚡ **(High Priority Performance)**
+**Goal**: Eliminate N+1 query pattern in job data retrieval by simplifying initial SELECT statement
+
+**Current Issue**: Database queries populate full subtable data (locations, terms, degrees) with individual SELECT queries during job comparison operations
+**Root Cause**: Change detection only requires core fields (`id`, `active`, `is_visible`, `date_updated`, `is_deleted`) but current implementation retrieves unnecessary relational data
+**Performance Impact**: N+1 queries scale poorly with job count increases (1 main query + N subqueries for each job)
+
+**Optimization Strategy**:
+- **Core Insight**: Job comparison logic only needs key fields for change detection
+- **Simplified Query**: Retrieve only essential fields (`id`, `active`, `is_visible`, `date_updated`, `is_deleted`) in initial SELECT
+- **Lazy Loading**: Fetch full job details (with subtables) only when actual changes are detected
+- **Reduced Database Load**: Eliminate unnecessary JOINs and subqueries during routine change detection
+
+**Implementation Plan**:
+- [ ] **19.1** Analyze current query patterns in storage abstraction
+  - [ ] Identify all locations where full job data is retrieved for comparison purposes
+  - [ ] Map which fields are actually used in change detection vs display logic
+  - [ ] Measure current query performance and database load patterns
+  - [ ] Document current N+1 query scenarios and their frequency
+- [ ] **19.2** Implement lightweight comparison queries
+  - [ ] Create `get_job_postings_for_comparison()` method returning only key fields
+  - [ ] Modify change detection logic to use lightweight job objects
+  - [ ] Add `get_full_job_posting(job_id)` method for detailed data when needed
+  - [ ] Optimize database indexes for comparison-only queries
+- [ ] **19.3** Refactor change detection workflow
+  - [ ] Update `detect_job_changes()` to use lightweight comparison data
+  - [ ] Implement lazy loading pattern: full data retrieved only for changed jobs
+  - [ ] Optimize bulk comparison operations to avoid N+1 patterns
+  - [ ] Add query result caching for frequently accessed comparison data
+- [ ] **19.4** Performance measurement and validation
+  - [ ] Benchmark query performance before and after optimization
+  - [ ] Measure database connection count and query execution time
+  - [ ] Test performance improvements with various dataset sizes (100, 1000, 5000+ jobs)
+  - [ ] Validate data consistency and correctness after optimization
+- [ ] **19.5** Enhanced query monitoring
+  - [ ] Add query performance logging and metrics collection
+  - [ ] Implement query execution time tracking for optimization monitoring
+  - [ ] Create performance alerts for query degradation detection
+  - [ ] Document optimized query patterns for future development
+
+**Current Query Pattern** (Inefficient):
+```python
+# Current approach: Full data retrieval for all jobs
+def get_job_postings(self, include_deleted=False):
+    # Retrieves ALL fields including locations, terms, degrees via JOINs
+    jobs = session.query(JobPosting)\
+        .outerjoin(JobLocation)\
+        .outerjoin(JobTerm)\
+        .outerjoin(JobDegree)\
+        .filter(JobPosting.is_deleted == False)\
+        .all()
+    
+    # N+1 problem: Additional queries for each job's related data
+    for job in jobs:
+        job.locations  # Triggers separate query
+        job.terms      # Triggers separate query  
+        job.degrees    # Triggers separate query
+    return jobs
+```
+
+**Optimized Query Pattern** (Efficient):
+```python
+# Optimized approach: Lightweight comparison queries
+def get_job_postings_for_comparison(self, include_deleted=False):
+    # Only retrieve fields needed for change detection
+    return session.query(
+        JobPosting.id,
+        JobPosting.active, 
+        JobPosting.is_visible,
+        JobPosting.date_updated,
+        JobPosting.is_deleted
+    ).filter(JobPosting.is_deleted == False).all()
+
+def get_full_job_posting(self, job_id):
+    # Retrieve complete job data only when needed
+    return session.query(JobPosting)\
+        .options(
+            joinedload(JobPosting.locations),
+            joinedload(JobPosting.terms),
+            joinedload(JobPosting.degrees)
+        )\
+        .filter(JobPosting.id == job_id)\
+        .first()
+```
+
+**Expected Performance Improvements**:
+- **Query Count**: Reduce from O(n) to O(1) for routine change detection
+- **Database Load**: ~80-90% reduction in data transfer during comparison operations
+- **Memory Usage**: Significant reduction in Python object creation and memory consumption
+- **Response Time**: Faster change detection cycles, especially with large job datasets
+- **Scalability**: Better performance scaling as job count increases
+
+**Configuration Options**:
+```bash
+# Query optimization settings
+ENABLE_LIGHTWEIGHT_QUERIES=true          # Enable optimized comparison queries
+COMPARISON_QUERY_CACHE_TTL=300          # Cache comparison results (seconds)
+QUERY_PERFORMANCE_LOGGING=true          # Log slow queries for monitoring
+LAZY_LOAD_THRESHOLD=10                  # Load full data for jobs with <N changes
+MAX_COMPARISON_BATCH_SIZE=1000          # Batch size for bulk comparison operations
+```
+
+**Database Impact Analysis**:
+- **Index Usage**: Focus indexes on comparison fields (active, is_visible, date_updated)
+- **Connection Pooling**: Reduced connection pressure from fewer concurrent queries
+- **Lock Duration**: Shorter transaction times due to reduced data retrieval
+- **Cache Efficiency**: Better database cache utilization with focused queries
+
+**Testing Strategy**:
+- **Performance Benchmarks**: Before/after query execution time measurements
+- **Data Consistency**: Validate that lazy loading produces identical results
+- **Load Testing**: Test with production-scale datasets (5000+ jobs)
+- **Regression Testing**: Ensure no functional changes in job processing logic
+
+**Files to modify**: `chatd/storage_abstraction.py`, `chatd/database.py`
+**Files to create**: `tests/test_query_optimization.py`, `benchmarks/query_performance.py`
 
 ---
 
