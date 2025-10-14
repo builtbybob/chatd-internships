@@ -67,7 +67,13 @@ DEFAULT_CONFIG = {
     'ENABLE_COMPANY_INFO': 'true',  # Feature toggle for enhanced company info
     'MAX_COMPANY_JOBS_IN_DM': '10',  # Limit number of jobs shown in DM
     # Section 5.13: Configurable reaction set for job posting messages
-    'MESSAGE_REACTIONS': '❓,✅',  # Comma-separated list of reactions to add to each job posting
+    'MESSAGE_REACTIONS': '❓,📝',  # Comma-separated list of reactions to add to each job posting
+    # Application tracking configuration (Sections 5.8-5.12)
+    'ENABLE_APPLICATION_TRACKING': 'true',  # Feature toggle for application tracking
+    'APPLICATION_REACTION_EMOJI': '📝',  # Emoji that triggers application tracking
+    'CONGRATULATION_DM_ENABLED': 'true',  # Toggle for congratulatory DMs
+    'MAX_RECENT_APPLICATIONS_SHOWN': '5',  # Number of recent apps shown in DM
+    'APPLICATION_MILESTONE_MESSAGES': 'true',  # Special messages for milestone applications (1st, 5th, 10th)
 }
 
 # Required configuration values that must be set
@@ -158,11 +164,17 @@ class Config:
             if emoji.strip()  # Filter out empty strings
         ]
         
+        # Application tracking configurations (Sections 5.8-5.12)
+        self.max_recent_applications_shown = int(self.max_recent_applications_shown)
+        
         # Convert boolean values
         self.enable_reactions = self.enable_reactions.lower() in ('true', '1', 'yes', 'on')
         self.db_auto_vacuum = self.db_auto_vacuum.lower() in ('true', '1', 'yes', 'on')
         self.enable_company_info = self.enable_company_info.lower() in ('true', '1', 'yes', 'on')
         self.enable_database_backups = self.enable_database_backups.lower() in ('true', '1', 'yes', 'on')
+        self.enable_application_tracking = self.enable_application_tracking.lower() in ('true', '1', 'yes', 'on')
+        self.congratulation_dm_enabled = self.congratulation_dm_enabled.lower() in ('true', '1', 'yes', 'on')
+        self.application_milestone_messages = self.application_milestone_messages.lower() in ('true', '1', 'yes', 'on')
         
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')

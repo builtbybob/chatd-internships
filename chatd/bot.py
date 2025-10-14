@@ -1328,6 +1328,124 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
             logger.error(f"Fallback DM also failed: {fallback_error}")
 
 
+async def get_student_application_stats(user_id: str, limit: int = None) -> List[Dict[str, Any]]:
+    """
+    Get student application statistics for testing and external access.
+    
+    Args:
+        user_id: Discord user ID
+        limit: Maximum number of recent applications to return
+        
+    Returns:
+        List of application statistics
+    """
+    if limit is None:
+        limit = config.max_recent_applications_shown
+    
+    storage = DataStorage()
+    return storage.get_student_application_stats(user_id, limit)
+
+
+async def handle_application_tracking(user: discord.User, role_data: Dict[str, Any]) -> None:
+    """
+    Handle application tracking when a user reacts with 📝.
+    
+    Args:
+        user: Discord user who reacted
+        role_data: Job posting data
+    """
+    try:
+        # Create storage instance to handle application tracking
+        storage = DataStorage(config)
+        
+        job_id = role_data['id']
+        discord_user_id = str(user.id)
+        
+        # Add application record to database
+        success = storage.add_student_application(job_id, discord_user_id)
+        
+        if success:
+            logger.info(f"Successfully recorded application for user {user.display_name} on job {job_id}")
+            
+            # Send congratulatory DM if enabled
+            if config.congratulation_dm_enabled:
+                await send_congratulatory_dm(user, role_data, storage)
+        else:
+            logger.error(f"Failed to record application for user {user.display_name} on job {job_id}")
+            
+    except Exception as e:
+        logger.error(f"Error handling application tracking for user {user.display_name}: {e}")
+
+
+async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], storage: DataStorage) -> None:
+    """
+    Send congratulatory DM to user after application tracking.
+    
+    Args:
+        user: Discord user who applied
+        role_data: Job posting data
+        storage: Storage instance for getting application stats
+    """
+    try:
+        if not config.congratulation_dm_enabled:
+            logger.debug("Congratulatory DMs are disabled")
+            return
+            
+        # Get application statistics
+        stats = storage.get_student_application_stats(str(user.id))
+        total_applications = stats['total_applications']
+        recent_applications = stats['recent_applications']
+        
+        # Build congratulatory message
+        company_name = role_data['company_name']
+        job_title = role_data['title']
+        
+        # Create the main congratulation message
+        if total_applications == 1:
+            congrat_message = f"🎉 **Congratulations on your first application!**\n\n"
+        else:
+            congrat_message = f"🎉 **Congratulations on applying to {job_title} at {company_name}!**\n\n"
+        
+        # Add application progress
+        congrat_message += f"📊 **Application Progress:**\n"
+        congrat_message += f"You've now applied to **{total_applications}** internships total"
+        
+        # Add milestone message if applicable
+        if config.application_milestone_messages:
+            if total_applications == 5:
+                congrat_message += "\n🏆 **Amazing! You've reached 5 applications!** Keep up the great momentum! 💪"
+            elif total_applications == 10:
+                congrat_message += "\n🏆 **Outstanding! 10 applications completed!** You're really making progress! 🔥"
+            elif total_applications % 25 == 0:
+                congrat_message += f"\n🏆 **Incredible! {total_applications} applications!** Your dedication is inspiring! 🌟"
+        
+        congrat_message += "\n\n"
+        
+        # Add recent applications if available
+        if recent_applications:
+            congrat_message += f"📋 **Your Recent Applications:**\n"
+            for i, app in enumerate(recent_applications, 1):
+                congrat_message += f"{i}. **{app['title']}** at **{app['company_name']}**\n"
+            congrat_message += "\n"
+        
+        # Add motivational content
+        congrat_message += "🚀 **Keep up the great work!** The more you apply, the better your chances.\n"
+        
+        if total_applications >= 5:
+            congrat_message += "💡 **Tip:** Consider following up on applications from 1-2 weeks ago.\n"
+        elif total_applications >= 10:
+            congrat_message += "💡 **Tip:** Consider customizing your applications for different company cultures.\n"
+        else:
+            congrat_message += "💡 **Tip:** Keep track of application deadlines and requirements.\n"
+        
+        # Send the DM
+        await user.send(congrat_message)
+        logger.info(f"Sent congratulatory DM to {user.display_name} (application #{total_applications})")
+        
+    except Exception as e:
+        logger.error(f"Failed to send congratulatory DM to {user.display_name}: {e}")
+
+
 @bot.event
 async def on_ready() -> None:
     """
@@ -1442,9 +1560,10 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
         logger.warning(f"❌ Bot user not initialized, skipping reaction processing")
         return
     
-    # Section 5.1: Selective processing - only respond to ❓ reactions
-    if str(payload.emoji) != '❓':
-        logger.debug(f"❌ Ignoring non-❓ reaction {payload.emoji}")
+    # Section 5.1 & 5.8: Process both ❓ (info) and 📝 (application) reactions
+    emoji_str = str(payload.emoji)
+    if emoji_str not in ['❓', '📝']:
+        logger.debug(f"❌ Ignoring unsupported reaction {payload.emoji}")
         return
     
     # Get the channel and message
@@ -1498,18 +1617,29 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
         logger.warning(f"Could not find user {payload.user_id} via any method")
         return
     
-    logger.info(f"✅ Processing ❓ reaction from {user.display_name} on message {message.id}")
+    logger.info(f"✅ Processing {emoji_str} reaction from {user.display_name} on message {message.id}")
     
     # Get role data by message ID
     role_data = await get_role_data_by_message_id(str(message.id))
     logger.debug(f"🔍 Role data found: {role_data is not None}")
     
-    if role_data:
-        # Section 5.2: Send enhanced company info instead of individual job info
+    if not role_data:
+        logger.warning(f"Could not find role data for message {message.id}")
+        return
+    
+    # Handle different reaction types
+    if emoji_str == '❓':
+        # Section 5.2: Send enhanced company info DM
         logger.info(f"📨 Sending enhanced company info DM to {user.display_name}")
         await send_enhanced_company_info_dm(user, role_data)
-    else:
-        logger.warning(f"Could not find role data for message {message.id}")
+    elif emoji_str == '📝':
+        # Section 5.8: Handle application tracking
+        if not config.enable_application_tracking:
+            logger.debug(f"Application tracking disabled, ignoring 📝 reaction")
+            return
+        
+        logger.info(f"📝 Processing application tracking for user {user.display_name} on job {role_data['id']}")
+        await handle_application_tracking(user, role_data)
 
 
 def run_check_for_new_roles() -> None:

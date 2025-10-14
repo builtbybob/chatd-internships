@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from chatd.database import (
-    DatabaseManager, JobPosting, JobLocation, JobTerm, JobDegree, MessageTracking,
+    DatabaseManager, JobPosting, JobLocation, JobTerm, JobDegree, MessageTracking, StudentApplication,
     job_posting_from_dict, job_posting_to_dict, create_database_manager
 )
 
@@ -672,6 +672,108 @@ class DatabaseStorageBackend(StorageBackend):
         except Exception as e:
             logger.error(f"Failed to update job posting {job_id} scalar fields: {e}")
             return False
+    
+    def add_student_application(self, job_id: str, discord_user_id: str) -> bool:
+        """
+        Add a student application record to the database.
+        
+        Args:
+            job_id: UUID of the job posting
+            discord_user_id: Discord user ID of the student
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        from chatd.database import StudentApplication
+        
+        try:
+            with self.db_manager.session_scope() as session:
+                # Check if job posting exists and is not soft-deleted
+                job_posting = session.query(JobPosting).filter(
+                    JobPosting.id == job_id,
+                    JobPosting.is_deleted == False
+                ).first()
+                
+                if not job_posting:
+                    logger.warning(f"Cannot add application: job {job_id} not found or is deleted")
+                    return False
+                
+                # Check if application already exists (handle duplicate prevention)
+                existing_application = session.query(StudentApplication).filter(
+                    StudentApplication.job_id == job_id,
+                    StudentApplication.discord_user_id == discord_user_id
+                ).first()
+                
+                if existing_application:
+                    logger.info(f"Application already exists for user {discord_user_id} on job {job_id}")
+                    return True  # Not an error - idempotent operation
+                
+                # Create new application record
+                application = StudentApplication(
+                    job_id=uuid.UUID(job_id),
+                    discord_user_id=discord_user_id
+                )
+                
+                session.add(application)
+                session.commit()
+                
+                logger.info(f"Successfully added application for user {discord_user_id} on job {job_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to add student application for user {discord_user_id} on job {job_id}: {e}")
+            return False
+    
+    def get_student_application_stats(self, discord_user_id: str) -> Dict[str, Any]:
+        """
+        Get student application statistics for congratulatory DMs.
+        
+        Args:
+            discord_user_id: Discord user ID of the student
+            
+        Returns:
+            Dictionary with application statistics
+        """
+        from chatd.database import StudentApplication
+        from chatd.config import config
+        
+        try:
+            with self.db_manager.session_scope() as session:
+                # Get total application count
+                total_applications = session.query(StudentApplication).filter(
+                    StudentApplication.discord_user_id == discord_user_id
+                ).count()
+                
+                # Get recent applications with job details (excluding soft-deleted jobs)
+                recent_applications_query = session.query(
+                    StudentApplication, JobPosting
+                ).join(
+                    JobPosting, StudentApplication.job_id == JobPosting.id
+                ).filter(
+                    StudentApplication.discord_user_id == discord_user_id,
+                    JobPosting.is_deleted == False
+                ).order_by(
+                    StudentApplication.applied_at.desc()
+                ).limit(config.max_recent_applications_shown)
+                
+                recent_applications = []
+                for app, job in recent_applications_query:
+                    recent_applications.append({
+                        'company_name': job.company_name,
+                        'title': job.title,
+                        'url': job.url,
+                        'applied_at': app.applied_at.isoformat(),
+                        'job_id': str(app.job_id)
+                    })
+                
+                return {
+                    'total_applications': total_applications,
+                    'recent_applications': recent_applications
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to get application stats for user {discord_user_id}: {e}")
+            return {'total_applications': 0, 'recent_applications': []}
 
 
 class DataStorage:
@@ -1057,6 +1159,45 @@ class DataStorage:
                    f"{results['updated_count']} updated, {results['removed_count']} removed")
         
         return results
+    
+    # Application tracking methods (Sections 5.8-5.12)
+    
+    def add_student_application(self, job_id: str, discord_user_id: str) -> bool:
+        """
+        Add a student application record.
+        
+        Args:
+            job_id: UUID of the job posting
+            discord_user_id: Discord user ID of the student
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        # Only support application tracking in database mode
+        if self.migration_mode not in ['dual_write', 'database_only']:
+            logger.warning("Application tracking requires database mode")
+            return False
+            
+        return self.database_backend.add_student_application(job_id, discord_user_id)
+    
+    def get_student_application_stats(self, discord_user_id: str) -> Dict[str, Any]:
+        """
+        Get student application statistics for congratulatory DMs.
+        
+        Args:
+            discord_user_id: Discord user ID of the student
+            
+        Returns:
+            Dictionary with application statistics including:
+            - total_applications: Total count of applications
+            - recent_applications: List of recent applications with job details
+        """
+        # Only support application tracking in database mode
+        if self.migration_mode not in ['dual_write', 'database_only']:
+            logger.warning("Application tracking requires database mode")
+            return {'total_applications': 0, 'recent_applications': []}
+            
+        return self.database_backend.get_student_application_stats(discord_user_id)
 
     def update_job_posting_with_refresh(self, job: dict) -> bool:
         """Update job posting with differential updates to related data while preserving message tracking.
