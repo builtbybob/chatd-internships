@@ -1375,11 +1375,7 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
         
         # Enhanced footer
         dm_message.extend([
-            "---",
-            "",
-            "🚀 **Good luck with your applications!**",
-            "",
-            f"*This overview covers {recent_positions} recent positions from {company_name}. Data updated every {config.company_info_days} days.*"
+            "🚀 **Good luck with your applications!**"
         ])
         
         # Send the enhanced DM
@@ -1448,26 +1444,70 @@ async def handle_application_tracking(user: discord.User, role_data: Dict[str, A
         role_data: Job posting data
     """
     try:
-        # Create storage instance to handle application tracking
         storage = DataStorage(config)
         
-        job_id = role_data['id']
+        # Check if application tracking is available (database required)
+        if storage.migration_mode not in ['dual_write', 'database_only']:
+            logger.warning(f"Application tracking unavailable for {user.display_name} - database not active")
+            await send_fallback_dm(user, "Application tracking temporarily unavailable. Please try again later.")
+            return
+        
+        # Verify database connectivity before attempting operation
+        health = storage.health_check()
+        if not health.get('database', False):
+            logger.error(f"Database unhealthy, cannot track application for {user.display_name}")
+            await send_fallback_dm(user, "Application tracking temporarily offline. Please try again in a few minutes.")
+            return
+        
+        # Validate job data before attempting to track application
+        job_id = role_data.get('id')
+        if not job_id:
+            logger.error(f"Invalid job ID for application tracking by {user.display_name}")
+            await send_fallback_dm(user, "Unable to track application - invalid job posting.")
+            return
+            
         discord_user_id = str(user.id)
         
-        # Add application record to database
-        success = storage.add_student_application(job_id, discord_user_id)
+        # Add application with enhanced error context
+        application_result = storage.add_student_application(job_id, discord_user_id)
         
-        if success:
-            logger.info(f"Successfully recorded application for user {user.display_name} on job {job_id}")
+        if application_result is True:
+            # New application successfully recorded
+            logger.info(f"Successfully recorded NEW application for user {user.display_name} on job {job_id}")
             
             # Send congratulatory DM if enabled
             if config.congratulation_dm_enabled:
                 await send_congratulatory_dm(user, role_data, storage)
+        elif application_result is False:
+            # Duplicate application - don't send DM to prevent spam
+            logger.info(f"Duplicate application detected for user {user.display_name} on job {job_id} - no DM sent")
         else:
-            logger.error(f"Failed to record application for user {user.display_name} on job {job_id}")
+            # Failure (None or other error indicator)
+            logger.warning(f"Failed to record application for user {user.display_name} on job {job_id} (deleted job or database error)")
+            # Don't send error DM to avoid spam
             
     except Exception as e:
-        logger.error(f"Error handling application tracking for user {user.display_name}: {e}")
+        logger.error(f"Unexpected error in application tracking for {user.display_name}: {e}")
+        # Don't send error DM for unexpected failures to avoid spam
+
+
+async def send_fallback_dm(user: discord.User, message: str) -> None:
+    """
+    Send a simple error message, handling DM failures gracefully.
+    
+    Args:
+        user: Discord user to send message to
+        message: Error message to send
+    """
+    try:
+        await user.send(f"⚠️ {message}")
+        logger.debug(f"Sent fallback DM to {user.display_name}: {message}")
+    except discord.Forbidden:
+        logger.info(f"Cannot send DM to {user.display_name} - DMs disabled by user")
+    except discord.HTTPException as e:
+        logger.warning(f"Failed to send fallback DM to {user.display_name}: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error sending fallback DM to {user.display_name}: {e}")
 
 
 async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], storage: DataStorage) -> None:
@@ -1528,12 +1568,19 @@ async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], 
         random_tip = random.choice(APPLICATION_TIPS)
         congrat_message += f"\n💡 **Tip:** {random_tip}\n"
 
-        # Send the DM
-        await user.send(congrat_message)
-        logger.info(f"Sent congratulatory DM to {user.display_name} (application #{total_applications})")
+        # Send the DM with enhanced error handling
+        try:
+            await user.send(congrat_message)
+            logger.info(f"Sent congratulatory DM to {user.display_name} (application #{total_applications})")
+        except discord.Forbidden:
+            logger.info(f"Cannot send congratulatory DM to {user.display_name} - DMs disabled by user")
+        except discord.HTTPException as e:
+            logger.warning(f"Failed to send congratulatory DM to {user.display_name}: {e}")
+        except Exception as dm_error:
+            logger.error(f"Unexpected error sending congratulatory DM to {user.display_name}: {dm_error}")
         
     except Exception as e:
-        logger.error(f"Failed to send congratulatory DM to {user.display_name}: {e}")
+        logger.error(f"Error preparing congratulatory DM for {user.display_name}: {e}")
 
 
 @bot.event

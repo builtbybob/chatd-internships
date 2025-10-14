@@ -706,7 +706,7 @@ class DatabaseStorageBackend(StorageBackend):
                 
                 if existing_application:
                     logger.info(f"Application already exists for user {discord_user_id} on job {job_id}")
-                    return True  # Not an error - idempotent operation
+                    return False  # Duplicate - don't send another DM
                 
                 # Create new application record
                 application = StudentApplication(
@@ -721,8 +721,16 @@ class DatabaseStorageBackend(StorageBackend):
                 return True
                 
         except Exception as e:
-            logger.error(f"Failed to add student application for user {discord_user_id} on job {job_id}: {e}")
-            return False
+            # Enhanced error logging with classification
+            if "duplicate key value" in str(e).lower() or "unique constraint" in str(e).lower():
+                logger.info(f"Duplicate application attempt for user {discord_user_id} on job {job_id} - no DM needed")
+                return False  # Duplicate - don't send DM
+            elif "foreign key constraint" in str(e).lower():
+                logger.warning(f"Job {job_id} not found for application by user {discord_user_id}")
+                return False
+            else:
+                logger.error(f"Database error adding application for user {discord_user_id} on job {job_id}: {e}")
+                return False
     
     def get_student_application_stats(self, discord_user_id: str) -> Dict[str, Any]:
         """
@@ -772,7 +780,8 @@ class DatabaseStorageBackend(StorageBackend):
                 }
                 
         except Exception as e:
-            logger.error(f"Failed to get application stats for user {discord_user_id}: {e}")
+            logger.error(f"Database error getting application stats for user {discord_user_id}: {e}")
+            # Return safe defaults when database is unavailable
             return {'total_applications': 0, 'recent_applications': []}
 
 
@@ -1198,6 +1207,40 @@ class DataStorage:
             return {'total_applications': 0, 'recent_applications': []}
             
         return self.database_backend.get_student_application_stats(discord_user_id)
+
+    def get_application_tracking_status(self) -> Dict[str, Any]:
+        """
+        Get detailed status for application tracking capabilities.
+        
+        Returns:
+            Dictionary with status information including:
+            - available: Whether application tracking is available
+            - reason: Reason if unavailable
+            - migration_mode: Current migration mode
+            - database_healthy: Database health status
+        """
+        status = {
+            'available': False,
+            'reason': None,
+            'migration_mode': self.migration_mode,
+            'database_healthy': False
+        }
+        
+        if self.migration_mode not in ['dual_write', 'database_only']:
+            status['reason'] = f"Requires database mode, currently: {self.migration_mode}"
+            return status
+        
+        if not self.database_backend:
+            status['reason'] = "Database backend not initialized"
+            return status
+        
+        status['database_healthy'] = self.database_backend.health_check()
+        if not status['database_healthy']:
+            status['reason'] = "Database connection unhealthy"
+            return status
+        
+        status['available'] = True
+        return status
 
     def update_job_posting_with_refresh(self, job: dict) -> bool:
         """Update job posting with differential updates to related data while preserving message tracking.
