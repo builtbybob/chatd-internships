@@ -1402,9 +1402,9 @@ async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], 
         
         # Create the main congratulation message
         if total_applications == 1:
-            congrat_message = f"🎉 **Congratulations on your first application!**\n\n"
+            congrat_message = f"🎉 **Congratulations {user.display_name} on your first application!**\n\n"
         else:
-            congrat_message = f"🎉 **Congratulations on applying to {job_title} at {company_name}!**\n\n"
+            congrat_message = f"🎉 **Congratulations {user.display_name} on applying to:**\n {job_title} at {company_name}\n\n"
         
         # Add application progress
         congrat_message += f"📊 **Application Progress:**\n"
@@ -1413,12 +1413,12 @@ async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], 
         # Add milestone message if applicable
         if config.application_milestone_messages:
             if total_applications == 5:
-                congrat_message += "\n🏆 **Amazing! You've reached 5 applications!** Keep up the great momentum! 💪"
+                congrat_message += "\n\n🏆 **Amazing! You've reached 5 applications!** Keep up the great momentum! 💪"
             elif total_applications == 10:
-                congrat_message += "\n🏆 **Outstanding! 10 applications completed!** You're really making progress! 🔥"
+                congrat_message += "\n\n🏆 **Outstanding! 10 applications completed!** You're really making progress! 🔥"
             elif total_applications % 25 == 0:
-                congrat_message += f"\n🏆 **Incredible! {total_applications} applications!** Your dedication is inspiring! 🌟"
-        
+                congrat_message += f"\n\n🏆 **Incredible! {total_applications} applications!** Your dedication is inspiring! 🌟"
+
         congrat_message += "\n\n"
         
         # Add recent applications if available
@@ -1432,12 +1432,12 @@ async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], 
         congrat_message += "🚀 **Keep up the great work!** The more you apply, the better your chances.\n"
         
         if total_applications >= 5:
-            congrat_message += "💡 **Tip:** Consider following up on applications from 1-2 weeks ago.\n"
+            congrat_message += "\n💡 **Tip:** Consider following up on applications from 1-2 weeks ago.\n"
         elif total_applications >= 10:
-            congrat_message += "💡 **Tip:** Consider customizing your applications for different company cultures.\n"
+            congrat_message += "\n💡 **Tip:** Consider customizing your applications for different company cultures.\n"
         else:
-            congrat_message += "💡 **Tip:** Keep track of application deadlines and requirements.\n"
-        
+            congrat_message += "\n💡 **Tip:** Keep track of application deadlines and requirements.\n"
+
         # Send the DM
         await user.send(congrat_message)
         logger.info(f"Sent congratulatory DM to {user.display_name} (application #{total_applications})")
