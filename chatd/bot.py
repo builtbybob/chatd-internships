@@ -7,6 +7,7 @@ This module handles Discord interactions and event handling.
 import asyncio
 import heapq
 import logging
+import random
 from datetime import datetime
 from typing import Dict, List, Any, Set, Optional, Tuple
 import time
@@ -25,6 +26,98 @@ from chatd.storage_abstraction import DataStorage
 
 # Get logger
 logger = logging.getLogger(__name__)
+
+# Comprehensive list of application tips for congratulatory DMs
+APPLICATION_TIPS = [
+    # Application Strategy Tips
+    "Tailor your resume and cover letter to each specific role and company culture.",
+    "Research the company's recent news, projects, and values before applying.",
+    "Apply to positions even if you don't meet 100% of the requirements - many companies hire for potential.",
+    "Consider both technical skills and company culture fit when choosing where to apply.",
+    "Apply early in the recruiting cycle when companies have more open positions.",
+    "Keep a spreadsheet to track your applications, deadlines, and follow-up dates.",
+    "Set up job alerts to be notified immediately when relevant positions are posted.",
+    
+    # Follow-up and Communication
+    "Follow up on applications from 1-2 weeks ago with a polite email expressing continued interest.",
+    "Connect with current employees on LinkedIn to learn more about the company culture.",
+    "Reach out to recruiters and hiring managers on LinkedIn after applying.",
+    "Thank everyone you interact with during the application process via email or LinkedIn.",
+    "If you get rejected, ask for feedback to improve future applications.",
+    "Send thank-you notes within 24 hours after any interviews or information sessions.",
+    
+    # Resume and Portfolio Tips
+    "Quantify your achievements with specific numbers, percentages, or impact metrics.",
+    "Include relevant coursework, personal projects, and open-source contributions.",
+    "Use action verbs and technical keywords that match the job description.",
+    "Keep your resume to 1-2 pages and ensure it's ATS (Applicant Tracking System) friendly.",
+    "Create a portfolio website showcasing your best projects with code and live demos.",
+    "Get your resume reviewed by career services, mentors, or experienced professionals.",
+    
+    # Technical Preparation
+    "Practice coding problems on platforms like LeetCode, HackerRank, or CodeSignal.",
+    "Prepare for system design questions if applying to senior or full-time positions.",
+    "Review fundamental computer science concepts: data structures, algorithms, and complexity analysis.",
+    "Build projects in the technologies and frameworks the company uses.",
+    "Contribute to open-source projects to demonstrate collaboration skills.",
+    "Practice explaining your projects clearly and concisely in technical terms.",
+    
+    # Interview Preparation
+    "Research common behavioral interview questions and prepare STAR method responses.",
+    "Practice mock interviews with friends, mentors, or career services.",
+    "Prepare thoughtful questions to ask interviewers about the role and company.",
+    "Learn about the company's products, competitors, and industry challenges.",
+    "Practice coding on a whiteboard or shared screen to simulate interview conditions.",
+    "Prepare examples that demonstrate problem-solving, teamwork, and leadership skills.",
+    
+    # Networking and Relationships
+    "Attend career fairs, tech meetups, and company information sessions.",
+    "Join professional organizations and student groups related to your field.",
+    "Build relationships with professors, TAs, and classmates who might provide referrals.",
+    "Engage with company content on social media and participate in their events.",
+    "Consider informational interviews with professionals in your target companies.",
+    "Ask for referrals from people in your network who work at companies you're interested in.",
+    
+    # Application Timing and Strategy
+    "Apply as soon as applications open - many companies hire on a rolling basis.",
+    "Don't wait until you feel 'ready' - apply now and continue learning.",
+    "Apply to a mix of reach, target, and safety companies to maximize your chances.",
+    "Consider applying to companies of different sizes: startups, mid-size, and large corporations.",
+    "Look for positions that align with your long-term career goals and interests.",
+    "Apply even if the posting is a few weeks old - many companies take time to review applications.",
+    
+    # Professional Development
+    "Take online courses or earn certifications relevant to your target roles.",
+    "Join coding bootcamps, hackathons, or programming competitions.",
+    "Seek out mentorship from industry professionals or senior students.",
+    "Build a professional online presence with a polished LinkedIn profile.",
+    "Write technical blog posts or articles to demonstrate your knowledge and communication skills.",
+    "Attend conferences, workshops, and webinars in your field of interest.",
+    
+    # Persistence and Mindset
+    "Remember that rejection is normal - even successful people face many rejections.",
+    "Learn from each application and interview experience to improve the next one.",
+    "Celebrate small wins like getting responses, phone screens, or interview invitations.",
+    "Stay organized and consistent with your application schedule and follow-ups.",
+    "Focus on continuous improvement rather than comparing yourself to others.",
+    "Take breaks when needed to avoid burnout and maintain a positive attitude.",
+    
+    # Specialized Tips
+    "For remote positions, emphasize your self-motivation and communication skills.",
+    "If applying internationally, research visa sponsorship policies early.",
+    "Consider internships at government agencies, nonprofits, and research institutions.",
+    "Look into return offer programs if you've previously interned elsewhere.",
+    "Apply to rotational programs that let you explore different teams and roles.",
+    "Consider part-time or co-op positions if full-time internships aren't available.",
+    
+    # Research and Preparation
+    "Use Glassdoor, Blind, and company websites to research salary ranges and culture.",
+    "Follow company engineering blogs and social media for insights into their tech stack.",
+    "Research the team and managers you'd be working with on LinkedIn.",
+    "Understand the company's mission, values, and recent achievements or challenges.",
+    "Learn about the company's internship program structure and past intern experiences.",
+    "Research the cost of living and housing options in the company's location."
+]
 
 
 class ReactionFailureType(Enum):
@@ -1431,12 +1524,9 @@ async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], 
         # Add motivational content
         congrat_message += "🚀 **Keep up the great work!** The more you apply, the better your chances.\n"
         
-        if total_applications >= 5:
-            congrat_message += "\n💡 **Tip:** Consider following up on applications from 1-2 weeks ago.\n"
-        elif total_applications >= 10:
-            congrat_message += "\n💡 **Tip:** Consider customizing your applications for different company cultures.\n"
-        else:
-            congrat_message += "\n💡 **Tip:** Keep track of application deadlines and requirements.\n"
+        # Add a randomly selected tip from our comprehensive list
+        random_tip = random.choice(APPLICATION_TIPS)
+        congrat_message += f"\n💡 **Tip:** {random_tip}\n"
 
         # Send the DM
         await user.send(congrat_message)

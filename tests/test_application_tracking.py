@@ -317,10 +317,12 @@ class TestApplicationTrackingBotFunctions:
         mock_user.send.assert_called_once()
         dm_content = mock_user.send.call_args[0][0]
         
-        # Check for milestone message for first application
-        assert "🎉 **Congratulations on your first application!**" in dm_content
+        # Check for milestone message for first application (updated format includes user name)
+        assert "🎉 **Congratulations TestUser on your first application!**" in dm_content
         assert "TestCorp" in dm_content
         assert "Software Engineering Intern" in dm_content
+        # Check that a random tip is included
+        assert "💡 **Tip:**" in dm_content
 
     @pytest.mark.asyncio
     async def test_send_congratulatory_dm_milestone(self, mock_user, mock_job_data, mock_config):
