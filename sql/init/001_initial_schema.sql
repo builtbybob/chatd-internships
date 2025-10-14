@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE job_postings (
     id UUID PRIMARY KEY,
     date_updated BIGINT NOT NULL,
-    url TEXT NOT NULL UNIQUE,
+    url TEXT NOT NULL,
     company_name TEXT NOT NULL,
     title TEXT NOT NULL,
     sponsorship TEXT,

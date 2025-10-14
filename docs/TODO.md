@@ -378,6 +378,13 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [x] Multi-line support: Break to separate lines when locations > 40 characters ✅
 - [x] **5.7** Database schema for application tracking ✅ **COMPLETED**
   - [x] **5.7.1** Add soft delete support to existing `job_postings` table ✅ **COMPLETED**
+    - [x] Migration script created and deployed to add `is_deleted` column
+    - [x] Updated storage abstraction to use soft delete instead of hard delete
+    - [x] Enhanced database queries to filter out soft-deleted records by default
+    - [x] Updated ORM models and conversion functions to include `is_deleted` field
+    - [x] Fixed bot's `get_role_data_by_message_id` to work with database and include soft-deleted records
+    - [x] Comprehensive test coverage for soft delete functionality
+    - [x] Production deployment: Soft delete now preserves Discord message functionality for deleted jobs
     - [x] Add `is_deleted BOOLEAN DEFAULT false` column to `job_postings` table
     - [x] Update sync logic to set `is_deleted=true` instead of hard deletion when jobs removed from listings.json
     - [x] Preserve CASCADE DELETE on foreign key constraints for referential integrity
@@ -391,8 +398,12 @@ sudo chatd disk --alert              # Check if cleanup needed
     - [x] Create migration script in `scripts/` directory for schema updates
     - [x] Add validation to ensure existing data integrity during migration
     - [x] Test migration on development database before production deployment
-- [ ] **5.8** Application tracking reaction handler
+- [ ] **5.8** Application tracking reaction handler ✅ **READY FOR IMPLEMENTATION**
   - [ ] **5.8.1** Detect and process ✅ reactions specifically
+    - [ ] Update reaction handler to process ✅ reactions for application tracking
+    - [ ] Store application data in `student_applications` table
+    - [ ] Prevent duplicate applications with unique constraint
+    - [ ] Handle both newly posted jobs and historical jobs (via soft delete preservation)
     - [ ] Separate ✅ reaction handling from ❓ info request handling
     - [ ] Extract Discord user ID and job ID from reaction context
     - [ ] Validate that reaction is on a job posting message (not other bot messages)

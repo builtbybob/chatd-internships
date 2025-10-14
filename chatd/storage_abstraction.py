@@ -251,7 +251,7 @@ class JsonStorageBackend(StorageBackend):
                 changes['removed'].append(job)
         
         # Find updated jobs (focus on key fields)
-        key_fields = ['active', 'is_visible', 'date_updated']
+        key_fields = ['active', 'is_visible', 'is_deleted', 'date_updated']
         for job_id, current_job in current_by_id.items():
             if job_id in previous_by_id:
                 previous_job = previous_by_id[job_id]
@@ -324,13 +324,19 @@ class DatabaseStorageBackend(StorageBackend):
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
     
-    def get_job_postings(self) -> List[Dict[str, Any]]:
-        """Get all job postings from database."""
+    def get_job_postings(self, include_deleted: bool = False) -> List[Dict[str, Any]]:
+        """Get all job postings from database, excluding soft-deleted by default."""
         try:
             with self.db_manager.session_scope() as session:
-                job_postings = session.query(JobPosting).all()
+                query = session.query(JobPosting)
+                
+                # Filter out soft-deleted records by default
+                if not include_deleted:
+                    query = query.filter(JobPosting.is_deleted == False)
+                
+                job_postings = query.all()
                 result = [job_posting_to_dict(job) for job in job_postings]
-                logger.debug(f"Loaded {len(result)} job postings from database")
+                logger.info(f"DatabaseStorageBackend.get_job_postings() loaded {len(result)} job postings from database (include_deleted={include_deleted})")
                 return result
         except Exception as e:
             logger.error(f"Failed to load job postings from database: {e}")
@@ -379,27 +385,18 @@ class DatabaseStorageBackend(StorageBackend):
             return False
     
     def add_job_posting(self, job_data: Dict[str, Any]) -> bool:
-        """Add a single new job posting to database, or update if it already exists."""
+        """Add a single new job posting to database. Job must not already exist."""
         try:
+            job_id = job_data['id']
+            
             with self.db_manager.session_scope() as session:
-                job_id = job_data['id']
-                
                 # Check if job already exists by ID
                 existing_job = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 if existing_job:
-                    logger.debug(f"Job {job_id} already exists by ID, updating instead")
-                    return self.update_job_posting(job_id, job_data)
+                    logger.warning(f"Job {job_id} already exists, cannot add as new. Use update methods instead.")
+                    return False
                 
-                # Check if job exists by URL (unique constraint)
-                job_url = job_data.get('url')
-                if job_url:
-                    existing_job_by_url = session.query(JobPosting).filter(JobPosting.url == job_url).first()
-                    if existing_job_by_url:
-                        logger.debug(f"Job with URL {job_url} already exists (ID: {existing_job_by_url.id}), updating instead")
-                        # Update the existing job with the new ID and data
-                        return self.update_job_posting(str(existing_job_by_url.id), job_data)
-                
-                # Truly new job - insert it
+                # Add the new job
                 job_posting = job_posting_from_dict(job_data)
                 session.add(job_posting)
                 logger.debug(f"Added new job posting {job_id}")
@@ -424,27 +421,6 @@ class DatabaseStorageBackend(StorageBackend):
                 if not existing_job:
                     logger.warning(f"Cannot update job {job_id}: not found in database")
                     return False
-                
-                # Check if this is a full job replacement (from add_job_posting)
-                is_full_replacement = 'url' in updates and 'company_name' in updates
-                
-                if is_full_replacement:
-                    # Full job replacement - update the ID if it's different
-                    new_job_id = updates.get('id', job_id)
-                    if str(new_job_id) != str(job_id):
-                        # Remove old job completely and insert new one
-                        session.query(JobLocation).filter(JobLocation.id == job_id).delete(synchronize_session=False)
-                        session.query(JobTerm).filter(JobTerm.id == job_id).delete(synchronize_session=False)
-                        session.query(JobDegree).filter(JobDegree.id == job_id).delete(synchronize_session=False)
-                        session.query(MessageTracking).filter(MessageTracking.id == job_id).delete(synchronize_session=False)
-                        session.delete(existing_job)
-                        session.flush()
-                        
-                        # Insert new job
-                        job_posting = job_posting_from_dict(updates)
-                        session.add(job_posting)
-                        logger.debug(f"Replaced job {job_id} with {new_job_id}")
-                        return True
                 
                 # For partial updates, delegate to appropriate specialized methods
                 has_relationships = any(field in updates for field in ['locations', 'terms', 'degrees'])
@@ -472,29 +448,24 @@ class DatabaseStorageBackend(StorageBackend):
             return False
     
     def remove_job_posting(self, job_id: str) -> bool:
-        """Remove a job posting from database."""
+        """Soft delete a job posting from database."""
         try:
             with self.db_manager.session_scope() as session:
-                # Remove related data first
-                session.query(MessageTracking).filter(MessageTracking.id == job_id).delete(synchronize_session=False)
-                session.query(JobLocation).filter(JobLocation.id == job_id).delete(synchronize_session=False)
-                session.query(JobTerm).filter(JobTerm.id == job_id).delete(synchronize_session=False)
-                session.query(JobDegree).filter(JobDegree.id == job_id).delete(synchronize_session=False)
+                # Use soft delete: set is_deleted = True instead of hard deleting
+                job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 
-                # Remove main job posting
-                deleted_count = session.query(JobPosting).filter(JobPosting.id == job_id).delete(synchronize_session=False)
-                
-                if deleted_count > 0:
-                    logger.debug(f"Removed job posting {job_id}")
+                if job_posting:
+                    job_posting.is_deleted = True
+                    logger.debug(f"Soft deleted job posting {job_id}")
                 else:
-                    logger.warning(f"Job posting {job_id} not found for removal (already removed)")
+                    logger.warning(f"Job posting {job_id} not found for soft deletion")
                 
                 # Return True in both cases - idempotent operation
-                # Goal achieved: job posting does not exist in database
+                # Goal achieved: job posting is marked as deleted
                 return True
                 
         except Exception as e:
-            logger.error(f"Failed to remove job posting {job_id}: {e}")
+            logger.error(f"Failed to soft delete job posting {job_id}: {e}")
             return False
     
     def get_message_tracking(self) -> Dict[str, Dict[str, Any]]:
@@ -615,7 +586,7 @@ class DatabaseStorageBackend(StorageBackend):
                 changes['removed'].append(job)
         
         # Find updated jobs (focus on key fields)
-        key_fields = ['active', 'is_visible', 'date_updated']
+        key_fields = ['active', 'is_visible', 'is_deleted', 'date_updated']
         for job_id, current_job in current_by_id.items():
             if job_id in previous_by_id:
                 previous_job = previous_by_id[job_id]
@@ -662,7 +633,14 @@ class DatabaseStorageBackend(StorageBackend):
                 # Find the job posting
                 job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 if not job_posting:
-                    logger.error(f"Job posting {job_id} not found for scalar update")
+                    logger.error(f"Job posting {job_id} not found for scalar update. Updates were: {updates}")
+                    # Check if this is a soft-deleted job
+                    soft_deleted_job = session.query(JobPosting).filter(
+                        JobPosting.id == job_id, 
+                        JobPosting.is_deleted == True
+                    ).first()
+                    if soft_deleted_job:
+                        logger.error(f"Job {job_id} is soft-deleted but scalar update attempted")
                     return False
                 
                 # Update only scalar fields
@@ -743,10 +721,14 @@ class DataStorage:
     def get_job_postings(self) -> List[Dict[str, Any]]:
         """Get all job postings using the appropriate backend."""
         if self.migration_mode == 'database_only':
-            return self.database_backend.get_job_postings()
+            result = self.database_backend.get_job_postings()
+            logger.info(f"DataStorage.get_job_postings() in database_only mode returned {len(result)} jobs")
+            return result
         else:
             # json_only and dual_write both read from JSON
-            return self.json_backend.get_job_postings()
+            result = self.json_backend.get_job_postings()
+            logger.info(f"DataStorage.get_job_postings() in {self.migration_mode} mode returned {len(result)} jobs")
+            return result
     
     def save_job_postings(self, job_postings: List[Dict[str, Any]]) -> bool:
         """Save job postings using the appropriate backend(s)."""
@@ -878,6 +860,21 @@ class DataStorage:
         # Get previous job data from storage
         previous_jobs = self.get_job_postings()
         
+        # DEBUG: Log what we're comparing
+        logger.info(f"Change detection: {len(current_jobs)} current jobs vs {len(previous_jobs)} previous jobs")
+        if len(previous_jobs) == 0 and len(current_jobs) > 0:
+            logger.error("CRITICAL: No previous jobs found from storage! All jobs will be treated as new.")
+            logger.error("SAFETY: Aborting change detection to prevent duplicate insertion attempts")
+            return {
+                'changes': {
+                    'added': [],
+                    'updated': [],
+                    'removed': []
+                }
+            }
+        elif len(current_jobs) > 0 and len(previous_jobs) > 0:
+            logger.debug(f"Sample current job ID: {current_jobs[0].get('id')} vs sample previous job ID: {previous_jobs[0].get('id')}")
+        
         # Use the primary backend for change detection
         if self.migration_mode == 'database_only':
             return self.database_backend.detect_job_changes(current_jobs, previous_jobs)
@@ -925,7 +922,7 @@ class DataStorage:
         Process job changes with intelligent update handling.
         
         This method detects changes and applies updates efficiently:
-        - active/is_visible changes: Update only those fields
+        - active/is_visible/is_deleted changes: Update only those fields
         - date_updated changes: Update entire job posting (content correction)
         - Ensures idempotency and handles concurrent changes gracefully
         
@@ -935,8 +932,17 @@ class DataStorage:
         Returns:
             Dictionary with processing results and statistics
         """
+        # Normalize JSON data: if a job exists in the source file, it's not deleted
+        normalized_jobs = []
+        for job in current_jobs:
+            normalized_job = job.copy()
+            # Jobs present in JSON are by definition not deleted
+            if 'is_deleted' not in normalized_job:
+                normalized_job['is_deleted'] = False
+            normalized_jobs.append(normalized_job)
+        
         # Detect changes
-        changes = self.detect_job_changes(current_jobs)
+        changes = self.detect_job_changes(normalized_jobs)
         
         results = {
             'added_count': len(changes['added']),
@@ -978,7 +984,7 @@ class DataStorage:
                     
                     logger.info(f"Successfully processed content correction for job posting {job_id}")
                 else:
-                    # Selective update workflow: only scalar fields changed (active, is_visible, etc.)
+                    # Selective update workflow: only scalar fields changed (active, is_visible, is_deleted, etc.)
                     # Only process scalar fields - relationships are handled by content correction workflow
                     scalar_updates = {field: change_info['new'] for field, change_info in job_changes.items() 
                                     if field not in ['locations', 'terms', 'degrees']}

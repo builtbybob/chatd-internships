@@ -484,6 +484,7 @@ CREATE TABLE job_posting (
     date_updated TIMESTAMP,
     active BOOLEAN DEFAULT true,
     is_visible BOOLEAN DEFAULT true,
+    is_deleted BOOLEAN NOT NULL DEFAULT false,
     sponsorship TEXT,
     source TEXT,
     date_posted TEXT,
@@ -517,7 +518,142 @@ CREATE TABLE message_tracking (
     channel_id TEXT NOT NULL,
     posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Student application tracking (preserves history via soft delete)
+CREATE TABLE student_applications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    job_id UUID NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
+    discord_user_id TEXT NOT NULL,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(job_id, discord_user_id)
+);
 ```
+
+### Soft Delete Implementation
+
+Ch@d Internships implements **soft delete** functionality to preserve Discord message functionality and application tracking history when job postings are removed from the upstream repository.
+
+#### How Soft Delete Works
+
+**Traditional Hard Delete Problem:**
+```
+1. Job posted → Discord message with reactions created
+2. Job removed from upstream → Hard deleted from database  
+3. User clicks ❓ reaction → ERROR: Job not found
+4. Result: Broken Discord functionality for historical messages
+```
+
+**Soft Delete Solution:**
+```
+1. Job posted → Discord message with reactions created
+2. Job removed from upstream → is_deleted = true (job preserved)
+3. User clicks ❓ reaction → SUCCESS: Company info still available
+4. Result: Discord reactions work forever, even for deleted jobs
+```
+
+#### Database Schema for Soft Delete
+
+The `job_postings` table includes an `is_deleted` column with proper constraints:
+
+```sql
+-- Soft delete column with proper defaults and constraints
+ALTER TABLE job_postings 
+ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT false;
+
+-- Performance index for filtering queries
+CREATE INDEX idx_job_postings_is_deleted ON job_postings(is_deleted);
+
+-- Compound index for efficient active job queries
+CREATE INDEX idx_job_postings_active_visible_not_deleted 
+ON job_postings(active, is_visible, is_deleted) 
+WHERE active = true AND is_visible = true AND is_deleted = false;
+```
+
+#### Application Behavior
+
+**Normal Operations** (exclude soft-deleted jobs):
+```sql
+-- Company job searches (for ❓ reaction responses)
+SELECT * FROM job_postings 
+WHERE company_name ILIKE '%Apple%' 
+  AND active = true 
+  AND is_visible = true 
+  AND is_deleted = false;  -- Only show current positions
+
+-- Job posting counts and analytics
+SELECT COUNT(*) FROM job_postings 
+WHERE active = true AND is_deleted = false;
+```
+
+**Discord Reactions** (include soft-deleted jobs):
+```sql
+-- Message ID lookup for ❓ reactions (allows deleted jobs)
+SELECT jp.* FROM job_postings jp
+JOIN message_tracking mt ON jp.id = mt.id
+WHERE mt.message_id = ?;  -- No is_deleted filter - users can get info on any historical job
+```
+
+#### Soft Delete vs Hard Delete Operations
+
+**When a job is removed from upstream repository:**
+
+```python
+# OLD: Hard delete (breaks Discord reactions)
+def remove_job_posting(job_id):
+    session.query(JobPosting).filter(JobPosting.id == job_id).delete()
+    # Result: Discord reactions stop working
+
+# NEW: Soft delete (preserves Discord functionality)  
+def remove_job_posting(job_id):
+    job = session.query(JobPosting).filter(JobPosting.id == job_id).first()
+    if job:
+        job.is_deleted = True  # Mark as deleted, preserve record
+    # Result: Discord reactions continue working indefinitely
+```
+
+#### Query Filtering Strategy
+
+The storage abstraction layer automatically handles soft delete filtering:
+
+```python
+# Default behavior: exclude soft-deleted records
+def get_job_postings(include_deleted=False):
+    query = session.query(JobPosting)
+    if not include_deleted:
+        query = query.filter(JobPosting.is_deleted == False)
+    return query.all()
+
+# Special cases: include soft-deleted records  
+def get_role_data_by_message_id(message_id):
+    # For Discord reactions, always include deleted jobs
+    # Users should get company info even for historical positions
+    return session.query(JobPosting).join(MessageTracking).filter(
+        MessageTracking.message_id == message_id
+    ).first()  # No is_deleted filter here
+```
+
+#### Benefits of Soft Delete
+
+1. **Discord Message Preservation**: All historical ❓ reactions continue working
+2. **Application Tracking History**: Student application records remain intact via foreign keys
+3. **Data Analytics**: Historical job market analysis remains possible
+4. **User Experience**: No broken functionality for past Discord interactions
+5. **Audit Trail**: Complete record of all jobs ever processed by the bot
+
+#### Migration Safety
+
+The soft delete implementation includes migration safety measures:
+
+```sql
+-- Migration 002: Safe soft delete column addition
+ALTER TABLE job_postings 
+ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT false;
+
+-- Result: All existing jobs automatically get is_deleted = false
+-- No NULL values, no broken queries, seamless transition
+```
+
+**Critical Issue Prevented:** During initial deployment, a bug caused existing jobs to have `is_deleted = NULL` instead of `false`, making all existing jobs invisible to the bot and causing it to try re-posting everything. The migration now uses `NOT NULL DEFAULT false` to prevent this issue in future deployments.
 
 ### Storage Abstraction
 
