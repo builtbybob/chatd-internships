@@ -706,7 +706,7 @@ class DatabaseStorageBackend(StorageBackend):
                 
                 if existing_application:
                     logger.info(f"Application already exists for user {discord_user_id} on job {job_id}")
-                    return True  # Not an error - idempotent operation
+                    return False  # Duplicate - don't send another DM
                 
                 # Create new application record
                 application = StudentApplication(
@@ -723,8 +723,8 @@ class DatabaseStorageBackend(StorageBackend):
         except Exception as e:
             # Enhanced error logging with classification
             if "duplicate key value" in str(e).lower() or "unique constraint" in str(e).lower():
-                logger.info(f"Duplicate application attempt for user {discord_user_id} on job {job_id} - treating as success")
-                return True  # Duplicate is success (idempotent)
+                logger.info(f"Duplicate application attempt for user {discord_user_id} on job {job_id} - no DM needed")
+                return False  # Duplicate - don't send DM
             elif "foreign key constraint" in str(e).lower():
                 logger.warning(f"Job {job_id} not found for application by user {discord_user_id}")
                 return False

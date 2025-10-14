@@ -1469,18 +1469,22 @@ async def handle_application_tracking(user: discord.User, role_data: Dict[str, A
         discord_user_id = str(user.id)
         
         # Add application with enhanced error context
-        success = storage.add_student_application(job_id, discord_user_id)
+        application_result = storage.add_student_application(job_id, discord_user_id)
         
-        if success:
-            logger.info(f"Successfully recorded application for user {user.display_name} on job {job_id}")
+        if application_result is True:
+            # New application successfully recorded
+            logger.info(f"Successfully recorded NEW application for user {user.display_name} on job {job_id}")
             
             # Send congratulatory DM if enabled
             if config.congratulation_dm_enabled:
                 await send_congratulatory_dm(user, role_data, storage)
+        elif application_result is False:
+            # Duplicate application - don't send DM to prevent spam
+            logger.info(f"Duplicate application detected for user {user.display_name} on job {job_id} - no DM sent")
         else:
-            # Failure could be duplicate application or deleted job posting
-            logger.warning(f"Failed to record application for user {user.display_name} on job {job_id} (likely duplicate or deleted job)")
-            # Don't send error DM for duplicates/deleted jobs (user already knows they applied)
+            # Failure (None or other error indicator)
+            logger.warning(f"Failed to record application for user {user.display_name} on job {job_id} (deleted job or database error)")
+            # Don't send error DM to avoid spam
             
     except Exception as e:
         logger.error(f"Unexpected error in application tracking for {user.display_name}: {e}")

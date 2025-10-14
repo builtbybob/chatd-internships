@@ -273,9 +273,11 @@ class TestApplicationTrackingBotFunctions:
             # Test duplicate application
             await handle_application_tracking(mock_user, mock_job_data)
             
-            # Verify it logs the warning (changed from error to warning in our implementation)
-            mock_logger.warning.assert_called_once()
-            assert "likely duplicate or deleted job" in mock_logger.warning.call_args[0][0]
+            # Verify it logs info for duplicate (no DM sent)
+            mock_logger.info.assert_called()
+            # Check for the duplicate detection message
+            info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
+            assert any("Duplicate application detected" in msg for msg in info_calls)
             
             # Verify storage was called but DM was not sent
             mock_storage.add_student_application.assert_called_once()
@@ -722,11 +724,11 @@ class TestReactionSpamPrevention:
 
         backend = DatabaseStorageBackend(mock_db_manager) 
 
-        # Should return True (success) for existing application 
+        # Should return False (no DM) for existing application 
         with patch('chatd.storage_abstraction.logger') as mock_logger:
             result = backend.add_student_application(str(uuid.uuid4()), str(mock_user.id))
             
-            assert result is True
+            assert result is False
             mock_logger.info.assert_called_once()
             assert "Application already exists" in mock_logger.info.call_args[0][0]
 
@@ -754,11 +756,11 @@ class TestReactionSpamPrevention:
 
         backend = DatabaseStorageBackend(mock_db_manager) 
 
-        # Should return True (success) for constraint error (treated as duplicate)
+        # Should return False (no DM) for constraint error (duplicate application)
         with patch('chatd.storage_abstraction.logger') as mock_logger:
             result = backend.add_student_application(str(uuid.uuid4()), str(mock_user.id))
             
-            assert result is True
+            assert result is False
             mock_logger.info.assert_called_once()
             assert "Duplicate application attempt" in mock_logger.info.call_args[0][0]
 
