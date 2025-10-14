@@ -1,5 +1,5 @@
 """
-Tests for application tracking functionality (Sections 5.8-5.10).
+Tests for application tracking functionality (Sections 5.8-5.11).
 
 This test suite covers:
 - Student application tracking via application reactions
@@ -7,15 +7,18 @@ This test suite covers:
 - Congratulatory DM functionality
 - Database integration for StudentApplication model
 - Configuration validation for application tracking
+- Error handling and edge cases (Section 5.11)
 """
 
 import pytest
 import asyncio
 import uuid
+import discord
 from datetime import datetime, timedelta
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 from chatd.database import Base, JobPosting, StudentApplication, DatabaseManager
 from chatd.storage_abstraction import DataStorage
@@ -236,6 +239,8 @@ class TestApplicationTrackingBotFunctions:
              patch('chatd.bot.logger') as mock_logger:
             # Mock storage methods
             mock_storage = MockDataStorage.return_value
+            mock_storage.migration_mode = 'database_only'
+            mock_storage.health_check.return_value = {'database': True}
             mock_storage.add_student_application.return_value = True
             
             # Mock sending congratulatory DM
@@ -261,15 +266,16 @@ class TestApplicationTrackingBotFunctions:
              patch('chatd.bot.logger') as mock_logger:
             # Mock storage to return False (duplicate/failure)
             mock_storage = MockDataStorage.return_value
+            mock_storage.migration_mode = 'database_only'
+            mock_storage.health_check.return_value = {'database': True}
             mock_storage.add_student_application.return_value = False
             
             # Test duplicate application
             await handle_application_tracking(mock_user, mock_job_data)
             
-            # Verify it logs the failure and doesn't send DM
-            mock_logger.error.assert_called_with(
-                f"Failed to record application for user {mock_user.display_name} on job {mock_job_data['id']}"
-            )
+            # Verify it logs the warning (changed from error to warning in our implementation)
+            mock_logger.warning.assert_called_once()
+            assert "likely duplicate or deleted job" in mock_logger.warning.call_args[0][0]
             
             # Verify storage was called but DM was not sent
             mock_storage.add_student_application.assert_called_once()
@@ -282,6 +288,8 @@ class TestApplicationTrackingBotFunctions:
             
             # Mock storage methods
             mock_storage = MockDataStorage.return_value
+            mock_storage.migration_mode = 'database_only'
+            mock_storage.health_check.return_value = {'database': True}
             mock_storage.add_student_application.return_value = True
             
             # Mock config as disabled but function should still work when called directly
@@ -459,6 +467,350 @@ class TestReactionHandlerIntegration:
         reactions = DEFAULT_CONFIG['MESSAGE_REACTIONS'].split(',')
         reactions = [r.strip() for r in reactions]
         assert '\U0001F4DD' in reactions
+
+
+class TestDatabaseConnectionFailures:
+    """Test handling of database connection failures (Section 5.11)."""
+
+    @pytest.fixture
+    def mock_user(self):
+        """Mock Discord user."""
+        user = Mock(spec=discord.User)
+        user.id = 123456789012345678
+        user.display_name = "TestUser"
+        return user
+
+    @pytest.fixture 
+    def mock_job_data(self):
+        """Mock job posting data."""
+        return {
+            'id': str(uuid.uuid4()),
+            'company_name': 'Test Company',
+            'title': 'Software Engineer Intern',
+            'url': 'https://example.com/jobs/test'
+        }
+
+    @pytest.mark.asyncio
+    async def test_handle_application_tracking_json_only_mode(self, mock_user, mock_job_data):
+        """Test application tracking when in JSON-only mode (no database)."""
+        with patch('chatd.bot.DataStorage') as MockDataStorage, \
+             patch('chatd.bot.send_fallback_dm') as mock_fallback_dm, \
+             patch('chatd.bot.logger') as mock_logger:
+
+            # Mock storage in JSON-only mode
+            mock_storage = MockDataStorage.return_value
+            mock_storage.migration_mode = 'json_only'
+
+            await handle_application_tracking(mock_user, mock_job_data)
+
+            # Should send fallback DM and log warning
+            mock_fallback_dm.assert_called_once_with(
+                mock_user, 
+                "Application tracking temporarily unavailable. Please try again later."
+            )
+            mock_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_application_tracking_database_unhealthy(self, mock_user, mock_job_data):
+        """Test application tracking when database is unhealthy."""
+        with patch('chatd.bot.DataStorage') as MockDataStorage, \
+             patch('chatd.bot.send_fallback_dm') as mock_fallback_dm, \
+             patch('chatd.bot.logger') as mock_logger:
+
+            # Mock storage with unhealthy database
+            mock_storage = MockDataStorage.return_value
+            mock_storage.migration_mode = 'database_only'
+            mock_storage.health_check.return_value = {'database': False}
+
+            await handle_application_tracking(mock_user, mock_job_data)
+
+            # Should send fallback DM and log error
+            mock_fallback_dm.assert_called_once_with(
+                mock_user,
+                "Application tracking temporarily offline. Please try again in a few minutes."
+            )
+            mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_application_tracking_status_method(self):
+        """Test the get_application_tracking_status method."""
+        # Test JSON-only mode
+        mock_config = Mock()
+        mock_config.migration_mode = 'json_only'
+        
+        with patch('chatd.storage_abstraction.JsonStorageBackend'), \
+             patch('chatd.storage_abstraction.create_database_manager'):
+            storage = DataStorage(mock_config)
+            status = storage.get_application_tracking_status()
+            
+            assert status['available'] is False
+            assert 'json_only' in status['reason']
+            assert status['migration_mode'] == 'json_only'
+
+
+class TestInvalidJobData:
+    """Test handling of deleted job postings and invalid job IDs (Section 5.11)."""
+
+    @pytest.fixture
+    def mock_user(self):
+        """Mock Discord user."""
+        user = Mock(spec=discord.User)
+        user.id = 123456789012345678
+        user.display_name = "TestUser"
+        return user
+
+    @pytest.mark.asyncio
+    async def test_handle_application_tracking_missing_job_id(self, mock_user):
+        """Test application tracking with missing/invalid job ID."""
+        job_data_no_id = {
+            'company_name': 'Test Company',
+            'title': 'Software Engineer Intern'
+            # Missing 'id' field
+        }
+
+        with patch('chatd.bot.DataStorage') as MockDataStorage, \
+             patch('chatd.bot.send_fallback_dm') as mock_fallback_dm, \
+             patch('chatd.bot.logger') as mock_logger:
+
+            # Mock healthy storage
+            mock_storage = MockDataStorage.return_value
+            mock_storage.migration_mode = 'database_only'
+            mock_storage.health_check.return_value = {'database': True}
+
+            await handle_application_tracking(mock_user, job_data_no_id)
+
+            # Should send fallback DM about invalid job
+            mock_fallback_dm.assert_called_once_with(
+                mock_user,
+                "Unable to track application - invalid job posting."
+            )
+
+    @pytest.mark.asyncio  
+    async def test_handle_application_tracking_deleted_job(self, mock_user):
+        """Test application tracking on deleted job posting."""
+        job_data = {
+            'id': str(uuid.uuid4()),
+            'company_name': 'Test Company', 
+            'title': 'Software Engineer Intern'
+        }
+
+        with patch('chatd.bot.DataStorage') as MockDataStorage, \
+             patch('chatd.bot.logger') as mock_logger:
+
+            # Mock storage that fails to add application (job not found)
+            mock_storage = MockDataStorage.return_value
+            mock_storage.migration_mode = 'database_only'
+            mock_storage.health_check.return_value = {'database': True}
+            mock_storage.add_student_application.return_value = False
+
+            await handle_application_tracking(mock_user, job_data)
+
+            # Should log warning but not send error DM
+            mock_logger.warning.assert_called_once()
+            assert "likely duplicate or deleted job" in mock_logger.warning.call_args[0][0]
+
+
+class TestDMFailureHandling:
+    """Test handling of users with disabled DMs (Section 5.11)."""
+
+    @pytest.fixture
+    def mock_user(self):
+        """Mock Discord user."""
+        user = Mock(spec=discord.User)
+        user.id = 123456789012345678
+        user.display_name = "TestUser"
+        user.send = AsyncMock()
+        return user
+
+    @pytest.mark.asyncio
+    async def test_send_fallback_dm_forbidden(self, mock_user):
+        """Test fallback DM when user has DMs disabled."""
+        # Mock send to raise Forbidden exception
+        mock_user.send.side_effect = discord.Forbidden(Mock(), "Cannot send messages to this user")
+
+        with patch('chatd.bot.logger') as mock_logger:
+            from chatd.bot import send_fallback_dm
+            await send_fallback_dm(mock_user, "Test message")
+
+            # Should log info about DMs being disabled
+            mock_logger.info.assert_called_once()
+            assert "DMs disabled by user" in mock_logger.info.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_send_fallback_dm_http_exception(self, mock_user):
+        """Test fallback DM with HTTP exception."""
+        # Mock send to raise HTTPException
+        mock_user.send.side_effect = discord.HTTPException(Mock(), "Rate limited")
+
+        with patch('chatd.bot.logger') as mock_logger:
+            from chatd.bot import send_fallback_dm
+            await send_fallback_dm(mock_user, "Test message")
+
+            # Should log warning about HTTP error
+            mock_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_congratulatory_dm_forbidden(self, mock_user):
+        """Test congratulatory DM when user has DMs disabled."""
+        job_data = {
+            'id': str(uuid.uuid4()),
+            'company_name': 'Test Company',
+            'title': 'Software Engineer Intern'
+        }
+
+        # Mock send to raise Forbidden exception
+        mock_user.send.side_effect = discord.Forbidden(Mock(), "Cannot send messages to this user")
+
+        with patch('chatd.bot.config') as mock_config, \
+             patch('chatd.bot.logger') as mock_logger:
+            
+            mock_config.congratulation_dm_enabled = True
+            
+            # Mock storage with stats
+            mock_storage = Mock()
+            mock_storage.get_student_application_stats.return_value = {
+                'total_applications': 1,
+                'recent_applications': []
+            }
+
+            await send_congratulatory_dm(mock_user, job_data, mock_storage)
+
+            # Should log info about DMs being disabled, not error
+            mock_logger.info.assert_called()
+            assert any("DMs disabled by user" in call[0][0] for call in mock_logger.info.call_args_list)
+
+
+class TestReactionSpamPrevention:
+    """Test prevention of reaction spam and duplicate applications (Section 5.11)."""
+
+    @pytest.fixture
+    def mock_user(self):
+        """Mock Discord user."""
+        user = Mock(spec=discord.User)
+        user.id = 123456789012345678
+        user.display_name = "TestUser"
+        return user
+
+    @pytest.fixture
+    def mock_job_data(self):
+        """Mock job posting data."""
+        return {
+            'id': str(uuid.uuid4()),
+            'company_name': 'Test Company',
+            'title': 'Software Engineer Intern'
+        }
+
+    def test_database_duplicate_constraint_handling(self, mock_user):
+        """Test that database duplicate constraints are handled properly."""
+        from chatd.storage_abstraction import DatabaseStorageBackend
+        
+        # Mock database manager
+        mock_db_manager = Mock()
+        mock_session = Mock()
+        mock_session_context = Mock()
+        mock_session_context.__enter__ = Mock(return_value=mock_session)
+        mock_session_context.__exit__ = Mock(return_value=None)
+        mock_db_manager.session_scope.return_value = mock_session_context
+
+        # Mock job posting exists
+        mock_job = Mock()
+        mock_session.query().filter().first.return_value = mock_job
+
+        # Mock existing application (normal duplicate check)
+        mock_existing_app = Mock()
+        mock_session.query().filter().first.return_value = mock_existing_app
+
+        backend = DatabaseStorageBackend(mock_db_manager) 
+
+        # Should return True (success) for existing application 
+        with patch('chatd.storage_abstraction.logger') as mock_logger:
+            result = backend.add_student_application(str(uuid.uuid4()), str(mock_user.id))
+            
+            assert result is True
+            mock_logger.info.assert_called_once()
+            assert "Application already exists" in mock_logger.info.call_args[0][0]
+
+    def test_database_constraint_exception_handling(self, mock_user):
+        """Test handling of database constraint exceptions."""
+        from chatd.storage_abstraction import DatabaseStorageBackend
+        
+        # Mock database manager
+        mock_db_manager = Mock()
+        mock_session = Mock()
+        mock_session_context = Mock()
+        mock_session_context.__enter__ = Mock(return_value=mock_session)
+        mock_session_context.__exit__ = Mock(return_value=None)
+        mock_db_manager.session_scope.return_value = mock_session_context
+
+        # Mock job posting exists and no existing application
+        mock_job = Mock()
+        mock_session.query().filter().first.side_effect = [mock_job, None]  # job exists, no existing app
+
+        # Mock constraint violation on commit
+        from sqlalchemy.exc import IntegrityError
+        mock_session.commit.side_effect = IntegrityError(
+            "duplicate key value violates unique constraint", None, None
+        )
+
+        backend = DatabaseStorageBackend(mock_db_manager) 
+
+        # Should return True (success) for constraint error (treated as duplicate)
+        with patch('chatd.storage_abstraction.logger') as mock_logger:
+            result = backend.add_student_application(str(uuid.uuid4()), str(mock_user.id))
+            
+            assert result is True
+            mock_logger.info.assert_called_once()
+            assert "Duplicate application attempt" in mock_logger.info.call_args[0][0]
+
+
+class TestUnexpectedErrors:
+    """Test handling of unexpected errors and edge cases (Section 5.11)."""
+
+    @pytest.fixture
+    def mock_user(self):
+        """Mock Discord user.""" 
+        user = Mock(spec=discord.User)
+        user.id = 123456789012345678
+        user.display_name = "TestUser"
+        return user
+
+    @pytest.fixture
+    def mock_job_data(self):
+        """Mock job posting data."""
+        return {
+            'id': str(uuid.uuid4()),
+            'company_name': 'Test Company',
+            'title': 'Software Engineer Intern'
+        }
+
+    @pytest.mark.asyncio
+    async def test_handle_application_tracking_unexpected_error(self, mock_user, mock_job_data):
+        """Test handling of unexpected errors in application tracking."""
+        with patch('chatd.bot.DataStorage') as MockDataStorage, \
+             patch('chatd.bot.logger') as mock_logger:
+
+            # Mock storage to raise unexpected exception
+            MockDataStorage.side_effect = RuntimeError("Unexpected database error")
+
+            await handle_application_tracking(mock_user, mock_job_data)
+
+            # Should log error but not send DM to avoid spam
+            mock_logger.error.assert_called_once()
+            assert "Unexpected error" in mock_logger.error.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_send_fallback_dm_unexpected_error(self, mock_user):
+        """Test handling of unexpected errors in fallback DM."""
+        # Mock send to raise unexpected exception
+        mock_user.send.side_effect = RuntimeError("Unexpected error")
+
+        with patch('chatd.bot.logger') as mock_logger:
+            from chatd.bot import send_fallback_dm
+            await send_fallback_dm(mock_user, "Test message")
+
+            # Should log error
+            mock_logger.error.assert_called_once()
+            assert "Unexpected error" in mock_logger.error.call_args[0][0]
 
 
 if __name__ == '__main__':
