@@ -127,6 +127,23 @@ class MessageTracking(Base):
         return f"<MessageTracking(id='{self.id}', message_id='{self.message_id}', channel_id='{self.channel_id}')>"
 
 
+class StudentApplication(Base):
+    """Student applications table for tracking application reactions."""
+    
+    __tablename__ = 'student_applications'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id = Column(UUID(as_uuid=True), ForeignKey('job_postings.id', ondelete='CASCADE'), nullable=False, index=True)
+    discord_user_id = Column(Text, nullable=False, index=True)
+    applied_at = Column(DateTime, nullable=False, default=func.current_timestamp(), index=True)
+    
+    # Relationship
+    job_posting = relationship("JobPosting")
+    
+    def __repr__(self):
+        return f"<StudentApplication(id='{self.id}', job_id='{self.job_id}', discord_user_id='{self.discord_user_id}', applied_at='{self.applied_at}')>"
+
+
 class DatabaseManager:
     """Database connection and session management."""
     
