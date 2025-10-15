@@ -169,7 +169,7 @@ class ReactionMigration:
                     
                     # Only add a small delay between reactions (not the full delay)
                     if i < len(reactions_to_add) - 1:  # Don't delay after the last reaction
-                        await asyncio.sleep(0.2)  # Small 200ms delay between reactions
+                        await asyncio.sleep(0.02)  # Small 20ms delay between reactions
                         
                 except discord.HTTPException as e:
                     if e.status == 429:  # Rate limited
