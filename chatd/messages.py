@@ -104,6 +104,34 @@ def format_epoch(val: float) -> str:
         return f"{formatted_time} UTC"
 
 
+def get_reaction_tips() -> str:
+    """
+    Generate reaction tips based on current configuration.
+    
+    Returns:
+        str: Formatted reaction tips string, or empty string if reactions are disabled
+    """
+    from chatd.config import config
+    
+    # Return empty string if reactions are disabled
+    if not config.enable_reactions:
+        return ""
+    
+    # Return empty string if no reactions are configured
+    if not config.message_reactions:
+        return ""
+    
+    # Create tips based on configured reactions
+    tips = []
+    for emoji in config.message_reactions:
+        if emoji == '❓':
+            tips.append(f"{emoji}: More info")
+        elif emoji == '📝':
+            tips.append(f"{emoji}: Mark applied")
+    
+    return " • ".join(tips) if tips else ""
+
+
 def format_message(role: Dict[str, Any]) -> str:
     """
     Format a role for Discord message.
@@ -147,6 +175,11 @@ def format_message(role: Dict[str, Any]) -> str:
         parts.append(f"### Sponsorship: `{sponsorship}`")
 
     parts.append(f"Posted on: {posted_on}")
+
+    # Include reaction tips if enabled and configured
+    reaction_tips = get_reaction_tips()
+    if reaction_tips:
+        parts.append(reaction_tips)
 
     return "\n".join(parts)
 
