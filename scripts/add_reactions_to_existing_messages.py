@@ -7,11 +7,12 @@ posted before the reaction framework was implemented, then adds the configured
 reactions (❓,📝) to each message.
 
 Usage:
-    python scripts/add_reactions_to_existing_messages.py [--dry-run] [--batch-size=50] [--delay=1.0]
+    python scripts/add_reactions_to_existing_messages.py [--dry-run] [--batch-size=50] [--delay=0.5]
 
 The script includes:
 - Dry run mode for testing
 - Configurable batch processing to avoid Discord rate limits
+- Optimized delay logic (brief delays between messages, not individual reactions)
 - Proper error handling and logging
 - Progress tracking and statistics
 - Resume capability if interrupted
@@ -41,7 +42,7 @@ from chatd.logging_utils import setup_logging
 class ReactionMigration:
     """Handles adding reactions to existing Discord messages."""
     
-    def __init__(self, config: Config, dry_run: bool = False, batch_size: int = 50, delay: float = 1.0):
+    def __init__(self, config: Config, dry_run: bool = False, batch_size: int = 50, delay: float = 0.5):
         """
         Initialize the reaction migration handler.
         
@@ -49,7 +50,7 @@ class ReactionMigration:
             config: Configuration object
             dry_run: If True, only simulate adding reactions without actually doing it
             batch_size: Number of messages to process in each batch
-            delay: Delay in seconds between each reaction addition
+            delay: Delay in seconds between messages (not individual reactions)
         """
         self.config = config
         self.dry_run = dry_run
@@ -160,15 +161,15 @@ class ReactionMigration:
                 self.stats['skipped'] += 1
                 return True
             
-            # Add each reaction with delay to respect rate limits
-            for reaction in reactions_to_add:
+            # Add each reaction with minimal delay to respect rate limits
+            for i, reaction in enumerate(reactions_to_add):
                 try:
                     await message.add_reaction(reaction)
                     self.logger.debug(f"✅ Added reaction {reaction} to message {message_id}")
                     
-                    # Add delay between reactions to avoid rate limiting
-                    if self.delay > 0:
-                        await asyncio.sleep(self.delay)
+                    # Only add a small delay between reactions (not the full delay)
+                    if i < len(reactions_to_add) - 1:  # Don't delay after the last reaction
+                        await asyncio.sleep(0.2)  # Small 200ms delay between reactions
                         
                 except discord.HTTPException as e:
                     if e.status == 429:  # Rate limited
@@ -227,7 +228,7 @@ class ReactionMigration:
                 self.logger.info(f"📦 Processing batch {batch_num}/{total_batches} ({len(batch)} messages)")
                 
                 # Process each message in the batch
-                for message_data in batch:
+                for j, message_data in enumerate(batch):
                     self.stats['processed'] += 1
                     
                     success = await self.process_message(message_data)
@@ -236,6 +237,10 @@ class ReactionMigration:
                     else:
                         self.stats['failed'] += 1
                     
+                    # Small delay between messages to avoid overwhelming Discord API
+                    if j < len(batch) - 1:  # Don't delay after the last message in batch
+                        await asyncio.sleep(self.delay)
+                    
                     # Progress update every 25 messages
                     if self.stats['processed'] % 25 == 0:
                         progress = (self.stats['processed'] / len(messages)) * 100
@@ -243,8 +248,8 @@ class ReactionMigration:
                                        f"Success: {self.stats['successful']}, Failed: {self.stats['failed']}, Skipped: {self.stats['skipped']}")
                 
                 # Add delay between batches to be gentle on Discord API
-                if i + self.batch_size < len(messages) and self.delay > 0:
-                    await asyncio.sleep(self.delay * 2)  # Longer delay between batches
+                if i + self.batch_size < len(messages):
+                    await asyncio.sleep(self.delay)  # Brief pause between batches
             
             # Final statistics
             elapsed_time = time.time() - start_time
@@ -306,8 +311,8 @@ def main():
                        help='Simulate the migration without making changes')
     parser.add_argument('--batch-size', type=int, default=50,
                        help='Number of messages to process in each batch (default: 50)')
-    parser.add_argument('--delay', type=float, default=1.0,
-                       help='Delay in seconds between reaction additions (default: 1.0)')
+    parser.add_argument('--delay', type=float, default=0.5,
+                       help='Delay in seconds between messages (default: 0.5)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Enable verbose debug logging')
     
