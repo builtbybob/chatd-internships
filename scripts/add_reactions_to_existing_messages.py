@@ -34,7 +34,7 @@ import discord
 from discord.ext import commands
 
 from chatd.config import Config
-from chatd.database import DatabaseManager, MessageTracking
+from chatd.database import DatabaseManager, MessageTracking, create_database_manager
 from chatd.logging_utils import setup_logging
 
 
@@ -57,11 +57,12 @@ class ReactionMigration:
         self.delay = delay
         
         # Initialize database connection
-        self.db_manager = DatabaseManager(config)
+        self.db_manager = create_database_manager(config)
         
         # Initialize Discord bot
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.reactions = True  # Enable reaction intents for adding reactions
         self.bot = commands.Bot(command_prefix='!', intents=intents)
         
         # Statistics tracking
@@ -92,7 +93,11 @@ class ReactionMigration:
         try:
             with self.db_manager.session_scope() as session:
                 # Query all message tracking entries with job posting info
-                query = session.query(MessageTracking).all()
+                # Filter out any null message_id or channel_id entries for safety
+                query = session.query(MessageTracking).filter(
+                    MessageTracking.message_id.isnot(None),
+                    MessageTracking.channel_id.isnot(None)
+                ).all()
                 
                 messages = []
                 for entry in query:
@@ -166,7 +171,19 @@ class ReactionMigration:
                         await asyncio.sleep(self.delay)
                         
                 except discord.HTTPException as e:
-                    self.logger.warning(f"⚠️  Failed to add reaction {reaction} to message {message_id}: {e}")
+                    if e.status == 429:  # Rate limited
+                        self.logger.warning(f"⏱️  Rate limited adding reaction {reaction} to message {message_id}, waiting...")
+                        # Wait for the retry-after time if provided
+                        retry_after = getattr(e, 'retry_after', self.delay * 2)
+                        await asyncio.sleep(retry_after)
+                        # Try once more
+                        try:
+                            await message.add_reaction(reaction)
+                            self.logger.debug(f"✅ Added reaction {reaction} to message {message_id} (after rate limit)")
+                        except discord.HTTPException:
+                            self.logger.warning(f"⚠️  Failed to add reaction {reaction} to message {message_id} even after rate limit retry")
+                    else:
+                        self.logger.warning(f"⚠️  Failed to add reaction {reaction} to message {message_id}: {e}")
                     # Continue with other reactions even if one fails
             
             self.logger.info(f"✅ Successfully processed message {message_id} (job {job_id[:8]}...) - added {len(reactions_to_add)} reactions")
@@ -297,8 +314,8 @@ def main():
     args = parser.parse_args()
     
     # Setup logging
-    log_level = logging.DEBUG if args.verbose else logging.INFO
-    setup_logging(level=log_level)
+    log_level = 'DEBUG' if args.verbose else 'INFO'
+    setup_logging(log_level=log_level)
     logger = logging.getLogger(__name__)
     
     # Load configuration
@@ -318,7 +335,13 @@ def main():
         logger.error("❌ MESSAGE_REACTIONS not configured")
         return 1
     
+    # Validate that MESSAGE_REACTIONS is properly configured
+    if not isinstance(config.message_reactions, list) or len(config.message_reactions) == 0:
+        logger.error("❌ MESSAGE_REACTIONS must be a non-empty list of emoji")
+        return 1
+    
     logger.info(f"🎯 Will add reactions: {config.message_reactions}")
+    logger.info(f"🔧 Batch size: {args.batch_size}, Delay: {args.delay}s, Dry run: {args.dry_run}")
     
     # Create and run the migration
     migration = ReactionMigration(

@@ -132,12 +132,14 @@ Now that `/opt/thatd` is connected to the production Discord channel with the pr
 ```bash
 cd /opt/thatd
 
-# Test with dry run first
-source .venv/bin/activate
-python scripts/add_reactions_to_existing_messages.py --dry-run --batch-size 25
+# Copy the migration script from the development repository
+cp /home/rbarton/chatd-internships/scripts/add_reactions_to_existing_messages.py scripts/
 
-# Run actual migration
-python scripts/add_reactions_to_existing_messages.py --batch-size 25 --delay 2.0
+# Test with dry run first (using the current environment's Python)
+/opt/thatd/.venv/bin/python scripts/add_reactions_to_existing_messages.py --dry-run --batch-size 25 --verbose
+
+# Run actual migration with conservative settings
+/opt/thatd/.venv/bin/python scripts/add_reactions_to_existing_messages.py --batch-size 25 --delay 2.0 --verbose
 ```
 
 **Expected timeline**: 30-45 minutes to process ~1,816 messages
