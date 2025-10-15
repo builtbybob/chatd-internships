@@ -3,10 +3,10 @@ Tests for the messages module.
 """
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
-from chatd.messages import format_epoch, format_message, compare_roles
+from chatd.messages import format_epoch, format_message, compare_roles, get_reaction_tips
 
 
 class TestMessages(unittest.TestCase):
@@ -85,6 +85,107 @@ class TestMessages(unittest.TestCase):
         changes = compare_roles(old_role, new_role)
         self.assertEqual(len(changes), 1)
         self.assertIn("locations changed from ['San Francisco, CA'] to ['San Francisco, CA', 'Remote']", changes)
+    
+    def test_get_reaction_tips_disabled(self):
+        """Test reaction tips when reactions are disabled."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = False
+        mock_config.message_reactions = ['❓', '📝']
+        
+        with patch('chatd.config.config', mock_config):
+            result = get_reaction_tips()
+            self.assertEqual(result, "")
+    
+    def test_get_reaction_tips_no_reactions_configured(self):
+        """Test reaction tips when no reactions are configured."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = True
+        mock_config.message_reactions = []
+        
+        with patch('chatd.config.config', mock_config):
+            result = get_reaction_tips()
+            self.assertEqual(result, "")
+    
+    def test_get_reaction_tips_default_emojis(self):
+        """Test reaction tips with default emojis."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = True
+        mock_config.message_reactions = ['❓', '📝']
+        
+        with patch('chatd.config.config', mock_config):
+            result = get_reaction_tips()
+            self.assertEqual(result, "❓: More info • 📝: Mark applied")
+    
+    def test_get_reaction_tips_custom_emojis(self):
+        """Test reaction tips with custom emojis (custom emojis are ignored in tips)."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = True
+        mock_config.message_reactions = ['❓', '💼', '👍']
+        
+        with patch('chatd.config.config', mock_config):
+            result = get_reaction_tips()
+            self.assertEqual(result, "❓: More info")
+    
+    def test_get_reaction_tips_mixed_emojis(self):
+        """Test reaction tips with mix of known and custom emojis (only known emojis get tips)."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = True
+        mock_config.message_reactions = ['📝', '💯', '❓']
+        
+        with patch('chatd.config.config', mock_config):
+            result = get_reaction_tips()
+            self.assertEqual(result, "📝: Mark applied • ❓: More info")
+    
+    def test_get_reaction_tips_only_custom_emojis(self):
+        """Test reaction tips with only custom emojis (should return empty string)."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = True
+        mock_config.message_reactions = ['💼', '👍', '⭐']
+        
+        with patch('chatd.config.config', mock_config):
+            result = get_reaction_tips()
+            self.assertEqual(result, "")
+    
+    def test_format_message_with_reactions_enabled(self):
+        """Test message formatting includes reaction tips when reactions are enabled."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = True
+        mock_config.message_reactions = ['❓', '📝']
+        mock_config.timezone = 'America/New_York'  # Add proper timezone
+        
+        role = {
+            'title': 'Software Engineer Intern',
+            'company_name': 'Example Corp',
+            'url': 'https://example.com/jobs/123',
+            'locations': ['San Francisco, CA'],
+            'terms': ['Summer 2026'],
+            'date_posted': datetime.now().timestamp(),
+        }
+        
+        with patch('chatd.config.config', mock_config):
+            formatted = format_message(role)
+            self.assertIn('❓: More info • 📝: Mark applied', formatted)
+    
+    def test_format_message_with_reactions_disabled(self):
+        """Test message formatting excludes reaction tips when reactions are disabled."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = False
+        mock_config.message_reactions = ['❓', '📝']
+        mock_config.timezone = 'America/New_York'  # Add proper timezone
+        
+        role = {
+            'title': 'Software Engineer Intern',
+            'company_name': 'Example Corp',
+            'url': 'https://example.com/jobs/123',
+            'locations': ['San Francisco, CA'],
+            'terms': ['Summer 2026'],
+            'date_posted': datetime.now().timestamp(),
+        }
+        
+        with patch('chatd.config.config', mock_config):
+            formatted = format_message(role)
+            self.assertNotIn('❓: More info', formatted)
+            self.assertNotIn('📝: Mark applied', formatted)
 
 
 if __name__ == '__main__':
