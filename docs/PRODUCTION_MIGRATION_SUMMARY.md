@@ -136,10 +136,10 @@ cd /opt/thatd
 sudo docker-compose exec thatd-bot python scripts/add_reactions_to_existing_messages.py --dry-run --batch-size 25 --verbose
 
 # Run actual migration with conservative settings (inside Docker container)
-sudo docker-compose exec thatd-bot python scripts/add_reactions_to_existing_messages.py --batch-size 25 --delay 2.0 --verbose
+sudo docker-compose exec thatd-bot python scripts/add_reactions_to_existing_messages.py --batch-size 25 --delay 1.0
 ```
 
-**Expected timeline**: 30-45 minutes to process ~1,816 messages
+**Expected timeline**: ~65 minutes to process ~1,816 messages (based on test run: 219 messages in 8 minutes)
 
 ### Step 8: Create New Development Environment
 
