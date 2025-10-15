@@ -447,6 +447,12 @@ sudo chatd disk --alert              # Check if cleanup needed
   - [x] `CONGRATULATION_DM_ENABLED=true` (toggle for DM responses) ✅
   - [x] `MAX_RECENT_APPLICATIONS_SHOWN=5` (number of recent apps in DM) ✅
   - [x] `APPLICATION_MILESTONE_MESSAGES=true` (special messages for 1st, 5th, 10th applications) ✅
+- [x] **5.13** Configurable reaction set for job posting messages ✅ **COMPLETED**
+  - [x] `MESSAGE_REACTIONS=❓,📝` (comma-separated list of reactions to add to each job posting)
+  - [x] Support for both emoji and custom Discord emoji formats
+  - [x] Easy configuration changes without code modifications
+  - [x] Validation to ensure reaction emojis are properly formatted
+  - [x] Backward compatibility with existing reaction handling logic
 
 **Section 5.11 Implementation Results** ✅:
 - **Database Connection Failures**: Enhanced `handle_application_tracking()` with health checks before operations, automatic fallback to informative error messages when database unavailable
@@ -459,13 +465,6 @@ sudo chatd disk --alert              # Check if cleanup needed
 - **Application Tracking Status API**: New `get_application_tracking_status()` method provides detailed status information for monitoring and debugging
 - **Test Coverage**: 12 comprehensive tests covering all error scenarios including database failures, DM failures, invalid data, and spam prevention (100% pass rate)
 - **Backward Compatibility**: All existing application tracking functionality preserved while adding robust error handling
-
-- [x] **5.13** Configurable reaction set for job posting messages ✅ **COMPLETED**
-  - [x] `MESSAGE_REACTIONS=❓,📝` (comma-separated list of reactions to add to each job posting)
-  - [x] Support for both emoji and custom Discord emoji formats
-  - [x] Easy configuration changes without code modifications
-  - [x] Validation to ensure reaction emojis are properly formatted
-  - [x] Backward compatibility with existing reaction handling logic
 
 **Sections 5.1-5.10 Results Achieved**:
 - **Selective reaction processing**: Only ❓ reactions trigger enhanced company info (reduces Discord API load by ~90%)
