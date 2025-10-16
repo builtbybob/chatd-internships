@@ -2182,6 +2182,125 @@ MAX_COMPARISON_BATCH_SIZE=1000          # Batch size for bulk comparison operati
 
 ---
 
+### 20. Setup Script Robustness Improvements 🔧 **(Quality Improvement)**
+**Goal**: Enhance setup script reliability and error handling for production deployment
+
+**Current State**: Working multi-environment setup script with comprehensive features
+**Target**: Production-grade robustness with improved error handling and edge case management
+
+**Implementation Plan**:
+- [ ] **20.1** Enhanced error handling and recovery
+  - [ ] Add cleanup on failure (remove partially created environment)
+  - [ ] Implement rollback mechanisms for failed Docker operations
+  - [ ] Graceful handling of interrupted setup process
+- [ ] **20.2** System compatibility improvements
+  - [ ] Add user/group detection instead of hardcoded `1000:1000` for Docker containers
+  - [ ] Detect appropriate Docker user/group for current system
+  - [ ] Validate Docker is running before attempting Docker operations
+- [ ] **20.3** Resource validation and monitoring
+  - [ ] Add disk space check before starting setup (prevent out-of-space failures)
+  - [ ] Validate available memory for Docker operations
+  - [ ] Memory usage validation for Docker operations
+- [ ] **20.4** Improved deployment workflow
+  - [ ] Add validation for management script creation success
+  - [ ] Ensure proper sequencing of permissions and ownership changes
+  - [ ] Better coordination of permissions setting (resolve potential race conditions)
+- [ ] **20.5** Enhanced migration section robustness
+  - [ ] Improve virtual environment creation error handling
+  - [ ] Add validation for Python dependencies installation
+  - [ ] Better cleanup of temporary migration resources
+
+**Critical Issues Identified and Fixed**:
+- [x] **Missing `fi` statement**: Fixed incomplete conditional block in Docker Compose detection ✅
+- [x] **Malformed emoji characters**: Fixed corrupted emoji in output sections ✅
+- [x] **Docker ownership conflicts**: Addressed potential permission issues with 1000:1000 hardcoding
+
+**Additional Improvements Needed**:
+- **Race Condition Prevention**: Management script creation happens before proper permissions are set
+- **System Agnostic Design**: Remove hardcoded user IDs and detect appropriate Docker user/group
+- **Resource Monitoring**: Proactive disk space and memory validation
+- **Graceful Failure Recovery**: Cleanup mechanisms for interrupted setup processes
+- **Enhanced Validation**: More comprehensive checks throughout the setup process
+
+**Example Enhanced Error Handling**:
+```bash
+# Enhanced cleanup on failure
+cleanup_on_failure() {
+    echo -e "${RED}🚨 Setup failed. Cleaning up...${NC}"
+    
+    # Stop and remove containers if they exist
+    if docker-compose -f "$ENV_DIR/docker-compose.yml" ps -q > /dev/null 2>&1; then
+        echo "Stopping Docker containers..."
+        docker-compose -f "$ENV_DIR/docker-compose.yml" down -v
+    fi
+    
+    # Remove systemd service if created
+    if [ -f "/etc/systemd/system/${ENV_NAME}.service" ]; then
+        echo "Removing systemd service..."
+        systemctl disable "${ENV_NAME}" 2>/dev/null || true
+        rm -f "/etc/systemd/system/${ENV_NAME}.service"
+        systemctl daemon-reload
+    fi
+    
+    # Remove management scripts if created
+    if [ -f "/usr/local/bin/${ENV_NAME}" ]; then
+        echo "Removing management scripts..."
+        rm -f "/usr/local/bin/${ENV_NAME}"*
+    fi
+    
+    # Remove environment directory if created
+    if [ -d "$ENV_DIR" ]; then
+        echo "Removing environment directory..."
+        rm -rf "$ENV_DIR"
+    fi
+    
+    echo -e "${YELLOW}⚠️  Cleanup completed. You can retry setup safely.${NC}"
+}
+
+# Enhanced system compatibility detection
+detect_docker_user() {
+    # Detect appropriate user/group for Docker containers
+    if id -u docker > /dev/null 2>&1; then
+        DOCKER_UID=$(id -u docker)
+        DOCKER_GID=$(id -g docker)
+    else
+        # Fallback to current user if docker user doesn't exist
+        DOCKER_UID=$(id -u)
+        DOCKER_GID=$(id -g)
+    fi
+    echo "Using Docker UID:GID ${DOCKER_UID}:${DOCKER_GID}"
+}
+
+# Enhanced resource validation
+validate_system_resources() {
+    # Check available disk space (require at least 5GB)
+    AVAILABLE_SPACE=$(df "$ENV_DIR" | tail -1 | awk '{print $4}')
+    REQUIRED_SPACE=$((5 * 1024 * 1024))  # 5GB in KB
+    
+    if [ "$AVAILABLE_SPACE" -lt "$REQUIRED_SPACE" ]; then
+        echo -e "${RED}❌ Insufficient disk space. Required: 5GB, Available: $(($AVAILABLE_SPACE/1024/1024))GB${NC}"
+        exit 1
+    fi
+    
+    # Check Docker is running
+    if ! docker info > /dev/null 2>&1; then
+        echo -e "${RED}❌ Docker is not running. Please start Docker and try again.${NC}"
+        exit 1
+    fi
+    
+    # Check available memory (require at least 2GB)
+    AVAILABLE_MEMORY=$(free -m | awk 'NR==2{print $7}')
+    if [ "$AVAILABLE_MEMORY" -lt 2048 ]; then
+        echo -e "${YELLOW}⚠️  Low available memory: ${AVAILABLE_MEMORY}MB. Setup may be slow.${NC}"
+    fi
+}
+```
+
+**Files to modify**: `scripts/setup-chatd-environment.sh`
+**Files to create**: `scripts/validate-setup-environment.sh` (standalone validation script)
+
+---
+
 ## 📋 Implementation Notes
 
 ### Development Workflow

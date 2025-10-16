@@ -23,7 +23,8 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 usage() {
     echo "Usage: sudo $0 <environment-name>"
     echo ""
-    echo "Creates a new ChatD environment with isolated containers, database, and management."
+    echo "Creates a new ChatD environment with isolated containeif [[ -f "$ENV_DIR/scripts/create-management-scripts.sh" ]]; then
+    echo -e "${BLUE}📋 Using create-management-scripts.sh for environment: $ENV_NAME${NC}", database, and management."
     echo ""
     echo "Examples:"
     echo "  sudo $0 thatd-internships     # Creates /opt/thatd-internships (development)"
@@ -393,75 +394,182 @@ sudo mv "/tmp/docker-compose-$ENV_NAME.yml" "$ENV_DIR/docker-compose.yml"
 echo -e "${YELLOW}⚙️  Creating environment configuration...${NC}"
 cat > "/tmp/.env-$ENV_NAME" << EOF
 ###############################################################
-# ChatD Environment: $ENV_NAME
+# ChatD Internships Bot - Environment: $ENV_NAME
 # Auto-generated on $(date)
 ###############################################################
 
 ###############################################################
-# Discord Bot Configuration (REQUIRED)
+# Discord Bot Configuration (Mandatory)
 ###############################################################
 
-# Discord bot token for $ENV_NAME environment
+# Your Discord bot token (get from Discord Developer Portal)
 DISCORD_TOKEN=$DISCORD_TOKEN
 
-# Comma-separated Discord channel IDs for $ENV_NAME
+# Comma-separated list of Discord channel IDs to post to
 CHANNEL_IDS=$CHANNEL_IDS
 
 ###############################################################
-# Database Configuration
+# Repository Settings (Required)
 ###############################################################
 
-# Database password for $ENV_NAME environment
+# URL of the internships repository
+REPO_URL=$REPO_URL
+
+###############################################################
+# Database Configuration (Required for database mode)
+###############################################################
+
+# Database password for PostgreSQL (required when MIGRATION_MODE=database_only)
 DB_PASSWORD=$DB_PASSWORD
 
-# Database configuration (auto-configured by Docker)
-DB_TYPE=postgresql
+# Database migration mode: json_only|dual_write|database_only
+MIGRATION_MODE=database_only
+
+# Enable automatic database backups during schema migrations (recommended for safety)
+ENABLE_DATABASE_BACKUPS=true
+
+# Database connection settings (must be setup for multiple environments)
 DB_HOST=${ENV_NAME}-postgres
 DB_PORT=5432
 DB_NAME=${ENV_NAME//-/_}
 DB_USER=${ENV_NAME//-/_}
-MIGRATION_MODE=database_only
+
+# Database connection settings (advanced)
+#DB_TYPE=postgresql
+#DB_CONNECTION_POOL_SIZE=5
+#DB_AUTO_VACUUM=true
+#DB_HEALTH_CHECK_INTERVAL=300
+#DB_MIGRATION_BATCH_SIZE=100
+#DB_BACKUP_RETENTION_DAYS=30
 
 ###############################################################
-# Repository Settings
+# Logging Configuration
 ###############################################################
 
-REPO_URL=$REPO_URL
-LOCAL_REPO_PATH=/app/Summer2026-Internships
-
-###############################################################
-# Performance Settings (from Section 4.1)
-###############################################################
-
-MESSAGE_POST_DELAY_MS=100
-REACTION_DELAY_MS=500
-BATCH_PROCESSING_DELAY_MS=50
-
-###############################################################
-# Reaction Batching Settings (from Section 4.3)
-###############################################################
-
-REACTION_BATCH_SIZE=5
-REACTION_BATCH_DELAY_MS=1000
-REACTION_RETRY_COUNT=3
-REACTION_RETRY_DELAY_MS=500
-
-###############################################################
-# Environment Settings
-###############################################################
-
+# Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_LEVEL=INFO
-ENABLE_REACTIONS=true
+
+# Maximum log file size in bytes before rotation
+#LOG_MAX_BYTES=10485760
+
+# Number of rotated log files to keep
+#LOG_BACKUP_COUNT=5
+
+# Log file path (default: /app/logs/chatd.log)
+#LOG_FILE=/app/logs/chatd.log
+
+###############################################################
+# Bot Behavior
+###############################################################
+
+# Maximum number of retries for failed operations
 MAX_RETRIES=3
+
+# How often to check for new job postings (minutes)
 CHECK_INTERVAL_MINUTES=1
+
+# Maximum age of job postings to display (days)
 MAX_POST_AGE_DAYS=3
 
-# Environment-specific settings
-DB_CONNECTION_POOL_SIZE=5
-DB_AUTO_VACUUM=true
-DB_HEALTH_CHECK_INTERVAL=300
-DB_MIGRATION_BATCH_SIZE=100
-DB_BACKUP_RETENTION_DAYS=30
+###############################################################
+# Reaction Features (Application Tracking & Company Info)
+###############################################################
+
+# Enable reactions on posted messages (true/false)
+ENABLE_REACTIONS=true
+
+# Comma-separated list of reactions to add to each job posting (Section 5.13)
+# Standard emojis: ❓,📝,💼,🔗
+# Custom emojis: <:custom_name:emoji_id>
+MESSAGE_REACTIONS=❓,📝
+
+# Company info sharing settings (defaults shown)
+#ENABLE_COMPANY_INFO=true
+#INFO_REACTION_EMOJI=❓
+#COMPANY_INFO_DAYS=7
+#MAX_COMPANY_JOBS_IN_DM=10
+
+# Application tracking settings (defaults shown)
+#ENABLE_APPLICATION_TRACKING=true
+#APPLICATION_REACTION_EMOJI=📝
+#CONGRATULATION_DM_ENABLED=true
+#MAX_RECENT_APPLICATIONS_SHOWN=5
+#APPLICATION_MILESTONE_MESSAGES=true
+
+###############################################################
+# Message Performance Optimization (Optional)
+###############################################################
+
+# Delay between message posts in milliseconds (default: 100ms for optimized performance)
+#MESSAGE_POST_DELAY_MS=100
+
+# Delay between adding reactions in milliseconds (default: 500ms)
+#REACTION_DELAY_MS=500
+
+# Delay between batch processing operations in milliseconds (default: 50ms)
+#BATCH_PROCESSING_DELAY_MS=50
+
+###############################################################
+# Reaction Batching & Rate Limiting (Optional)
+###############################################################
+
+# Number of reactions to process per batch (default: 5)
+#REACTION_BATCH_SIZE=5
+
+# Delay between reaction batches in milliseconds (default: 1000ms)
+#REACTION_BATCH_DELAY_MS=1000
+
+# Maximum retry attempts for failed reactions (default: 3)
+#REACTION_RETRY_COUNT=3
+
+# Base delay for reaction retries in milliseconds (default: 500ms)
+#REACTION_RETRY_DELAY_MS=500
+
+###############################################################
+# Enhanced Failure Handling & Health Monitoring (Optional)
+###############################################################
+
+# Size of rolling window for failure rate calculation (default: 100)
+#HEALTH_WINDOW_SIZE=100
+
+# Failure rate threshold to enter degraded mode (default: 0.5 = 50%)
+#DEGRADATION_THRESHOLD=0.5
+
+# Failure rate threshold to exit degraded mode (default: 0.2 = 20%)
+#RECOVERY_THRESHOLD=0.2
+
+# Consecutive failures to trigger circuit breaker (default: 10)
+#CIRCUIT_BREAKER_THRESHOLD=10
+
+# Time to wait before retrying after circuit break in seconds (default: 300 = 5 minutes)
+#CIRCUIT_BREAKER_TIMEOUT_SECONDS=300
+
+# How often to log health statistics in seconds (default: 60)
+#HEALTH_CHECK_INTERVAL_SECONDS=60
+
+###############################################################
+# Timezone Configuration (Optional)
+###############################################################
+
+# Use system timezone if not specified, or set to a specific timezone
+# Examples: America/New_York, America/Chicago, America/Los_Angeles, UTC
+#TIMEZONE=America/New_York
+
+###############################################################
+# Custom Deployment (Optional)
+###############################################################
+
+# Local path to clone the internships repository
+#LOCAL_REPO_PATH=/app/Summer2026-Internships
+
+# Path to previous data file (for change tracking)
+#DATA_FILE=/app/data/previous_data.json
+
+# Path to message tracking file
+#MESSAGES_FILE=/app/data/message_tracking.json
+
+# Path to file storing current git head
+#CURRENT_HEAD_FILE=/app/data/current_head.txt
 EOF
 
 sudo mv "/tmp/.env-$ENV_NAME" "$ENV_DIR/.env"
@@ -544,229 +652,23 @@ EOF
 
 sudo mv "/tmp/$ENV_NAME.service" "/etc/systemd/system/$ENV_NAME.service"
 
-# Create management script
-echo -e "${YELLOW}🛠️  Creating management command...${NC}"
-cat > "/tmp/$ENV_NAME-mgmt" << 'MGMT_SCRIPT_EOF'
-#!/bin/bash
-
-###############################################################
-# ChatD Environment Management Script
-# Environment: ENV_NAME_PLACEHOLDER
-###############################################################
-
-set -euo pipefail
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-ENV_NAME="ENV_NAME_PLACEHOLDER"
-ENV_DIR="/opt/$ENV_NAME"
-SERVICE_NAME="$ENV_NAME.service"
-
-# Determine which Docker Compose command to use
-if command -v docker-compose &> /dev/null; then
-    DOCKER_COMPOSE_CMD="docker-compose"
-elif docker compose version &> /dev/null; then
-    DOCKER_COMPOSE_CMD="docker compose"
+# Create management scripts using the dedicated script
+echo -e "${YELLOW}🛠️  Creating management commands...${NC}"
+if [[ -f "$ENV_DIR/scripts/create-management-scripts.sh" ]]; then
+    echo -e "${BLUE}� Using create-management-scripts.sh for environment: $ENV_NAME${NC}"
+    if bash "$ENV_DIR/scripts/create-management-scripts.sh" "$ENV_NAME"; then
+        echo -e "${GREEN}✅ Management scripts created successfully${NC}"
+    else
+        echo -e "${RED}❌ Failed to create management scripts${NC}"
+        echo "Falling back to manual creation..."
+        # Could add fallback logic here if needed
+        exit 1
+    fi
 else
-    echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
+    echo -e "${RED}❌ create-management-scripts.sh not found in $ENV_DIR/scripts/${NC}"
+    echo "This should not happen - the script should be cloned with the repository."
     exit 1
 fi
-
-# Check if we're in the right directory
-if [[ ! -d "$ENV_DIR" ]]; then
-    echo -e "${RED}❌ Environment directory not found: $ENV_DIR${NC}"
-    exit 1
-fi
-
-cd "$ENV_DIR"
-
-case "${1:-}" in
-    "status")
-        echo -e "${BLUE}📊 $ENV_NAME Environment Status${NC}"
-        echo "=================================="
-        echo ""
-        echo -e "${YELLOW}🔧 Systemd Service:${NC}"
-        sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-        echo ""
-        echo -e "${YELLOW}🐳 Docker Containers:${NC}"
-        $DOCKER_COMPOSE_CMD ps
-        echo ""
-        echo -e "${YELLOW}💾 Database Status:${NC}"
-        $DOCKER_COMPOSE_CMD exec ${ENV_NAME}-postgres pg_isready -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_} 2>/dev/null && echo "✅ Database is ready" || echo "❌ Database not accessible"
-        ;;
-    "logs")
-        CONTAINER="${2:-}"
-        if [[ -n "$CONTAINER" ]]; then
-            echo -e "${BLUE}📋 Logs for $ENV_NAME-$CONTAINER${NC}"
-            $DOCKER_COMPOSE_CMD logs -f "${ENV_NAME}-${CONTAINER}"
-        else
-            echo -e "${BLUE}📋 All logs for $ENV_NAME${NC}"
-            $DOCKER_COMPOSE_CMD logs -f
-        fi
-        ;;
-    "start")
-        echo -e "${GREEN}🚀 Starting $ENV_NAME environment...${NC}"
-        sudo systemctl start "$SERVICE_NAME"
-        ;;
-    "stop")
-        echo -e "${YELLOW}🛑 Stopping $ENV_NAME environment...${NC}"
-        sudo systemctl stop "$SERVICE_NAME"
-        ;;
-    "restart")
-        echo -e "${BLUE}🔄 Restarting $ENV_NAME environment...${NC}"
-        sudo systemctl restart "$SERVICE_NAME"
-        ;;
-    "enable")
-        echo -e "${GREEN}🔧 Enabling $ENV_NAME to start on boot...${NC}"
-        sudo systemctl enable "$SERVICE_NAME"
-        ;;
-    "disable")
-        echo -e "${YELLOW}🔧 Disabling $ENV_NAME auto-start...${NC}"
-        sudo systemctl disable "$SERVICE_NAME"
-        ;;
-    "build")
-        echo -e "${BLUE}🔨 Building $ENV_NAME containers...${NC}"
-        $DOCKER_COMPOSE_CMD build
-        ;;
-    "pull")
-        echo -e "${BLUE}📥 Pulling latest images for $ENV_NAME...${NC}"
-        $DOCKER_COMPOSE_CMD pull
-        ;;
-    "shell")
-        CONTAINER="${2:-bot}"
-        echo -e "${BLUE}🐚 Opening shell in $ENV_NAME-$CONTAINER...${NC}"
-        $DOCKER_COMPOSE_CMD exec "${ENV_NAME}-${CONTAINER}" /bin/bash
-        ;;
-    "db")
-        echo -e "${BLUE}🗄️  Connecting to $ENV_NAME database...${NC}"
-        $DOCKER_COMPOSE_CMD exec ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}
-        ;;
-    "update")
-        echo -e "${BLUE}🔄 Updating $ENV_NAME environment...${NC}"
-        echo "Pulling latest code..."
-        $DOCKER_COMPOSE_CMD pull
-        echo "Rebuilding containers..."
-        $DOCKER_COMPOSE_CMD build
-        echo "Restarting services..."
-        $DOCKER_COMPOSE_CMD up -d
-        ;;
-    "cleanup")
-        echo -e "${YELLOW}🧹 Cleaning up $ENV_NAME Docker resources...${NC}"
-        $DOCKER_COMPOSE_CMD down
-        echo "Removing unused images..."
-        docker image prune -f
-        echo "Removing unused volumes (excluding data)..."
-        docker volume prune -f
-        ;;
-    "loglevel")
-        LEVEL="${2:-}"
-        CONTAINER_NAME="${ENV_NAME}-bot"
-        
-        # Check if container is running
-        if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-            echo -e "${RED}❌ ${ENV_NAME} bot container is not running${NC}"
-            echo "   Start it with: $ENV_NAME start"
-            exit 1
-        fi
-        
-        case "${LEVEL:-}" in
-            debug|DEBUG)
-                echo "DEBUG" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
-                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
-                echo -e "${GREEN}📝 Log level changed to: DEBUG${NC}"
-                echo -e "${BLUE}   🔍 Debug logging enabled - very verbose output${NC}"
-                echo -e "${BLUE}   View logs with: $ENV_NAME logs bot${NC}"
-                ;;
-            info|INFO)
-                echo "INFO" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
-                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
-                echo -e "${GREEN}📝 Log level changed to: INFO${NC}"
-                echo -e "${BLUE}   ℹ️  Info logging enabled - normal operational messages${NC}"
-                ;;
-            warning|WARNING|warn|WARN)
-                echo "WARNING" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
-                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
-                echo -e "${GREEN}📝 Log level changed to: WARNING${NC}"
-                echo -e "${BLUE}   ⚠️  Warning logging enabled - warnings and errors only${NC}"
-                ;;
-            error|ERROR)
-                echo "ERROR" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
-                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
-                echo -e "${GREEN}📝 Log level changed to: ERROR${NC}"
-                echo -e "${BLUE}   ❌ Error logging enabled - errors and critical only${NC}"
-                ;;
-            critical|CRITICAL|crit|CRIT)
-                echo "CRITICAL" | docker exec -i "${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
-                docker kill --signal=HUP "${CONTAINER_NAME}" > /dev/null
-                echo -e "${GREEN}📝 Log level changed to: CRITICAL${NC}"
-                echo -e "${BLUE}   🚨 Critical logging enabled - critical errors only${NC}"
-                ;;
-            "")
-                echo "Usage: $ENV_NAME loglevel <level>"
-                echo ""
-                echo "Available log levels:"
-                echo "  debug    - Very verbose, shows all debug information"
-                echo "  info     - Normal operations, startup/shutdown messages"
-                echo "  warning  - Warnings and more severe messages only"
-                echo "  error    - Error conditions and critical issues only"
-                echo "  critical - Only critical system failures"
-                echo ""
-                echo "Current container status:"
-                docker ps --format "  {{.Names}}: {{.Status}}" --filter name="${CONTAINER_NAME}"
-                exit 1
-                ;;
-            *)
-                echo -e "${RED}❌ Invalid log level: $LEVEL${NC}"
-                echo "   Valid levels: debug, info, warning, error, critical"
-                exit 1
-                ;;
-        esac
-        ;;
-    *)
-        echo "Usage: $ENV_NAME <command>"
-        echo ""
-        echo "Environment Management:"
-        echo "  status              Show environment status"
-        echo "  start               Start the environment"
-        echo "  stop                Stop the environment"
-        echo "  restart             Restart the environment"
-        echo "  enable              Enable auto-start on boot"
-        echo "  disable             Disable auto-start"
-        echo ""
-        echo "Container Management:"
-        echo "  logs [container]    Show logs (bot, postgres, or all)"
-        echo "  loglevel <level>    Change log level (debug, info, warning, error, critical)"
-        echo "  build               Build containers"
-        echo "  pull                Pull latest images"
-        echo "  shell [container]   Open shell (default: bot)"
-        echo "  update              Pull, build, and restart"
-        echo ""
-        echo "Database:"
-        echo "  db                  Connect to PostgreSQL"
-        echo ""
-        echo "Maintenance:"
-        echo "  cleanup             Clean up Docker resources"
-        echo ""
-        echo "Examples:"
-        echo "  $ENV_NAME status"
-        echo "  $ENV_NAME logs bot"
-        echo "  $ENV_NAME loglevel debug"
-        echo "  $ENV_NAME shell postgres"
-        echo "  $ENV_NAME db"
-        ;;
-esac
-MGMT_SCRIPT_EOF
-
-# Replace placeholder in the management script
-sed "s/ENV_NAME_PLACEHOLDER/$ENV_NAME/g" "/tmp/$ENV_NAME-mgmt" > "/tmp/$ENV_NAME-final"
-sudo mv "/tmp/$ENV_NAME-final" "/usr/local/bin/$ENV_NAME"
-sudo chmod +x "/usr/local/bin/$ENV_NAME"
-sudo rm -f "/tmp/$ENV_NAME-mgmt"
 
 # Set ownership and permissions
 echo -e "${YELLOW}🔐 Setting permissions...${NC}"
@@ -827,45 +729,48 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                     deactivate
                 fi
                 
-                if ! sudo $DOCKER_COMPOSE_CMD up -d "$ENV_NAME-postgres"; then
-                    echo -e "${RED}❌ Failed to start database container${NC}"
-                    echo "Migration will be skipped. Check Docker logs for details."
-                    echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
-                else
-                    echo -e "${BLUE}⏳ Waiting for database to be ready...${NC}"
-                    # Wait for database container to be healthy (up to 60 seconds)
-                    WAIT_COUNT=0
-                    while [ $WAIT_COUNT -lt 60 ]; do
-                        if sudo $DOCKER_COMPOSE_CMD ps "$ENV_NAME-postgres" | grep -q "healthy"; then
-                            echo -e "${GREEN}✅ Database is ready!${NC}"
-                            break
-                        fi
-                        echo -n "."
-                        sleep 1
-                        WAIT_COUNT=$((WAIT_COUNT + 1))
-                    done
-                    
-                    if [ $WAIT_COUNT -ge 60 ]; then
-                        echo -e "${YELLOW}⚠️  Database health check timed out, proceeding anyway...${NC}"
-                    fi
-                    
-                    # Run migration
-                    echo -e "${BLUE}🗃️  Running migration script...${NC}"
-                    # Run the migration script from the environment's chatd repository
-                    cd "$ENV_DIR"
-                    # Use the venv's Python executable with sudo to access both packages and secure .env file
-                    if sudo DOCKER_CONTAINER=false DB_PORT="$POSTGRES_PORT" "$VENV_DIR/bin/python3" scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
-                        echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
-                        echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
+                # Only proceed if Docker Compose is available
+                if [[ -n "${DOCKER_COMPOSE_CMD:-}" ]]; then
+                    if ! sudo $DOCKER_COMPOSE_CMD up -d "$ENV_NAME-postgres"; then
+                        echo -e "${RED}❌ Failed to start database container${NC}"
+                        echo "Migration will be skipped. Check Docker logs for details."
+                        echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
                     else
-                        echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
-                        echo "You can retry manually from $ENV_DIR: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+                        echo -e "${BLUE}⏳ Waiting for database to be ready...${NC}"
+                        # Wait for database container to be healthy (up to 60 seconds)
+                        WAIT_COUNT=0
+                        while [ $WAIT_COUNT -lt 60 ]; do
+                            if sudo $DOCKER_COMPOSE_CMD ps "$ENV_NAME-postgres" | grep -q "healthy"; then
+                                echo -e "${GREEN}✅ Database is ready!${NC}"
+                                break
+                            fi
+                            echo -n "."
+                            sleep 1
+                            WAIT_COUNT=$((WAIT_COUNT + 1))
+                        done
+                        
+                        if [ $WAIT_COUNT -ge 60 ]; then
+                            echo -e "${YELLOW}⚠️  Database health check timed out, proceeding anyway...${NC}"
+                        fi
+                        
+                        # Run migration
+                        echo -e "${BLUE}🗃️  Running migration script...${NC}"
+                        # Run the migration script from the environment's chatd repository
+                        cd "$ENV_DIR"
+                        # Use the venv's Python executable with sudo to access both packages and secure .env file
+                        if sudo DOCKER_CONTAINER=false DB_PORT="$POSTGRES_PORT" "$VENV_DIR/bin/python3" scripts/migrate_json_to_database.py --repo-path "$CLONED_REPO_PATH"; then
+                            echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
+                            echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
+                        else
+                            echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
+                            echo "You can retry manually from $ENV_DIR: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+                        fi
+                        
+                        # Stop only the database (bot was never started)
+                        echo -e "${BLUE}🛑 Stopping database...${NC}"
+                        cd "$ENV_DIR" && sudo $DOCKER_COMPOSE_CMD stop "$ENV_NAME-postgres" > /dev/null 2>&1
                     fi
-                    
-                    # Stop only the database (bot was never started)
-                    echo -e "${BLUE}🛑 Stopping database...${NC}"
-                    cd "$ENV_DIR" && sudo $DOCKER_COMPOSE_CMD stop "$ENV_NAME-postgres" > /dev/null 2>&1
-                fi
+                fi  # End of Docker Compose availability check
             else
                 echo -e "${RED}❌ Failed to install Python requirements${NC}"
                 echo "Migration will be skipped. Install requirements manually and run:"
@@ -889,8 +794,8 @@ echo ""
 echo -e "${BLUE}📁 Location:${NC} $ENV_DIR"
 echo -e "${BLUE}🐳 Containers:${NC} ${ENV_NAME}-postgres, ${ENV_NAME}-bot"
 echo -e "${BLUE}🔌 PostgreSQL Port:${NC} $POSTGRES_PORT"
-echo -e "${BLUE}� Database Password:${NC} Auto-generated and configured"
-echo -e "${BLUE}�🛠️  Management Command:${NC} $ENV_NAME"
+echo -e "${BLUE}🔒 Database Password:${NC} Auto-generated and configured"
+echo -e "${BLUE}🛠️ Management Command:${NC} $ENV_NAME"
 echo -e "${BLUE}🔧 Systemd Service:${NC} $ENV_NAME.service"
 echo ""
 echo -e "${YELLOW}📝 Next Steps:${NC}"
