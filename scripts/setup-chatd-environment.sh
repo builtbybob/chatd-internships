@@ -723,7 +723,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
     if [[ ! -f "$LISTINGS_JSON_PATH" ]]; then
         echo -e "${YELLOW}⚠️  Warning: listings.json not found at $LISTINGS_JSON_PATH${NC}"
         echo "Migration will be skipped. You can run it manually later."
-        echo "To run manually: python3 scripts/migrate_json_to_database.py '$ENV_DIR' --repo-path '$CLONED_REPO_PATH'"
+        echo "To run manually: cd $ENV_DIR && docker-compose exec $ENV_NAME-bot python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships"
     else
         # Create Python virtual environment for migration
         echo -e "${BLUE}📦 Setting up Python environment...${NC}"
@@ -752,7 +752,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                 else
                     echo -e "${RED}❌ Neither docker-compose nor docker compose found${NC}"
                     echo "Migration will be skipped. Please install Docker Compose."
-                    echo "You can retry manually: python3 scripts/migrate_json_to_database.py '$ENV_DIR' --repo-path '$CLONED_REPO_PATH'"
+                    echo "You can retry manually: cd $ENV_DIR && docker-compose exec $ENV_NAME-bot python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships"
                     deactivate
                 fi
                 
@@ -799,7 +799,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                                 if [[ $DOCKER_START_ATTEMPTS -eq $MAX_DOCKER_ATTEMPTS ]]; then
                                     echo -e "${RED}❌ All container start attempts failed${NC}"
                                     echo "Migration will be skipped. Check Docker logs for details."
-                                    echo "You can retry manually: python3 scripts/migrate_json_to_database.py '$ENV_DIR' --repo-path '$CLONED_REPO_PATH'"
+                                    echo "You can retry manually: cd $ENV_DIR && docker-compose exec $ENV_NAME-bot python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships"
                                     break
                                 fi
                                 
@@ -831,16 +831,14 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                         fi
                         
                         # Run migration
-                        echo -e "${BLUE}🗃️  Running migration script...${NC}"
-                        # Run the migration script from the environment's chatd repository
-                        cd "$ENV_DIR"
-                        # Use the venv's Python executable with sudo to access both packages and secure .env file
-                        if sudo DOCKER_CONTAINER=false DB_PORT="$POSTGRES_PORT" "$VENV_DIR/bin/python3" scripts/migrate_json_to_database.py "$ENV_DIR" --repo-path "$CLONED_REPO_PATH"; then
+                        echo -e "${BLUE}🗃️  Running migration script inside Docker container...${NC}"
+                        # Run the migration script inside the Docker container where all config is correct
+                        if $DOCKER_COMPOSE_CMD exec -T "$ENV_NAME-bot" python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships; then
                             echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
                             echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
                         else
                             echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
-                            echo "You can retry manually from $ENV_DIR: python3 scripts/migrate_json_to_database.py '$ENV_DIR' --repo-path '$CLONED_REPO_PATH'"
+                            echo "You can retry manually: $DOCKER_COMPOSE_CMD exec $ENV_NAME-bot python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships"
                         fi
                         
                         # Stop only the database (bot was never started)
@@ -851,7 +849,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
             else
                 echo -e "${RED}❌ Failed to install Python requirements${NC}"
                 echo "Migration will be skipped. Install requirements manually and run:"
-                echo "python3 scripts/migrate_json_to_database.py '$ENV_DIR' --repo-path '$CLONED_REPO_PATH'"
+                echo "cd $ENV_DIR && docker-compose exec $ENV_NAME-bot python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships"
             fi
             
             deactivate
@@ -859,7 +857,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
     fi
 else
     echo -e "${BLUE}ℹ️  Skipping database migration.${NC}"
-    echo "You can run it later with: python3 scripts/migrate_json_to_database.py '$ENV_DIR' --repo-path '$CLONED_REPO_PATH'"
+    echo "You can run it later with: cd $ENV_DIR && docker-compose exec $ENV_NAME-bot python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships"
 fi
 
 # Reload systemd after all service files are finalized
