@@ -2197,6 +2197,7 @@ MAX_COMPARISON_BATCH_SIZE=1000          # Batch size for bulk comparison operati
   - [ ] Add user/group detection instead of hardcoded `1000:1000` for Docker containers
   - [ ] Detect appropriate Docker user/group for current system
   - [ ] Validate Docker is running before attempting Docker operations
+  - [x] **Intelligent port allocation**: Enhanced port finding to check system, Docker, and compose files ✅
 - [ ] **20.3** Resource validation and monitoring
   - [ ] Add disk space check before starting setup (prevent out-of-space failures)
   - [ ] Validate available memory for Docker operations
@@ -2214,6 +2215,7 @@ MAX_COMPARISON_BATCH_SIZE=1000          # Batch size for bulk comparison operati
 - [x] **Missing `fi` statement**: Fixed incomplete conditional block in Docker Compose detection ✅
 - [x] **Malformed emoji characters**: Fixed corrupted emoji in output sections ✅
 - [x] **Docker ownership conflicts**: Addressed potential permission issues with 1000:1000 hardcoding
+- [x] **Port allocation conflicts**: Improved intelligent port finding to avoid Docker container conflicts ✅
 
 **Additional Improvements Needed**:
 - **Race Condition Prevention**: Management script creation happens before proper permissions are set
@@ -2221,6 +2223,49 @@ MAX_COMPARISON_BATCH_SIZE=1000          # Batch size for bulk comparison operati
 - **Resource Monitoring**: Proactive disk space and memory validation
 - **Graceful Failure Recovery**: Cleanup mechanisms for interrupted setup processes
 - **Enhanced Validation**: More comprehensive checks throughout the setup process
+
+**Port Allocation Enhancement** ✅ **IMPLEMENTED**:
+The setup script now includes intelligent port allocation that prevents conflicts between multiple environments:
+
+```bash
+# Enhanced port allocation logic
+find_available_port() {
+    local base_port=$1
+    local port=$base_port
+    
+    while true; do
+        # Check system processes
+        if ss -tuln | grep -q ":$port "; then
+            ((port++)); continue
+        fi
+        
+        # Check Docker containers (including stopped ones)
+        if docker ps -a --format "table {{.Ports}}" | grep -q ":$port->"; then
+            ((port++)); continue
+        fi
+        
+        # Check docker-compose.yml files in /opt/*/
+        if find /opt -name "docker-compose.yml" -exec grep -l ":$port:" {} \; 2>/dev/null | head -1 | grep -q .; then
+            ((port++)); continue
+        fi
+        
+        break  # Port is available
+    done
+    
+    echo $port
+}
+
+# Start from 5433 to avoid standard PostgreSQL port
+find_available_postgres_port() {
+    find_available_port 5433
+}
+```
+
+**Benefits**:
+- **Automatic conflict resolution**: No more "port already allocated" errors
+- **Multi-environment support**: Unlimited concurrent environments
+- **Comprehensive checking**: Validates against system, Docker, and configuration files
+- **Graceful port retry**: Automatic port reallocation during container startup failures
 
 **Example Enhanced Error Handling**:
 ```bash

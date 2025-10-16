@@ -90,30 +90,57 @@ generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
 }
 
-# Function to find next available port
+# Function to find next available port, checking both system and Docker usage
 find_available_port() {
     local base_port=$1
     local port=$base_port
     
-    while ss -tuln | grep -q ":$port "; do
-        ((port++))
+    while true; do
+        # Check if port is in use by system processes
+        if ss -tuln | grep -q ":$port "; then
+            ((port++))
+            continue
+        fi
+        
+        # Check if port is in use by any Docker containers (including stopped ones)
+        if docker ps -a --format "table {{.Ports}}" | grep -q ":$port->"; then
+            ((port++))
+            continue
+        fi
+        
+        # Check if port is defined in any docker-compose.yml files in /opt/*/
+        if find /opt -name "docker-compose.yml" -exec grep -l ":$port:" {} \; 2>/dev/null | head -1 | grep -q .; then
+            ((port++))
+            continue
+        fi
+        
+        # Port is available
+        break
     done
     
     echo $port
 }
 
-# Assign unique ports
-POSTGRES_PORT=$(find_available_port 5432)
-if [[ $POSTGRES_PORT == 5432 ]]; then
-    # If 5432 is available, use 5433 to avoid conflicts with template
-    POSTGRES_PORT=5433
-fi
+# Function to find available PostgreSQL port starting from 5433 (avoid standard 5432)
+find_available_postgres_port() {
+    local base_port=5433  # Start from 5433 to avoid conflicts with standard PostgreSQL
+    find_available_port $base_port
+}
 
-WEB_PORT=$(find_available_port 8080)
-if [[ $WEB_PORT == 8080 ]]; then
-    # If 8080 is available, use 8081 to avoid conflicts
-    WEB_PORT=8081
-fi
+# Function to find available web port starting from 8081 (avoid standard 8080)
+find_available_web_port() {
+    local base_port=8081  # Start from 8081 to avoid conflicts with standard HTTP
+    find_available_port $base_port
+}
+
+# Assign unique ports with intelligent allocation
+echo -e "${BLUE}🔍 Finding available ports for $ENV_NAME environment...${NC}"
+POSTGRES_PORT=$(find_available_postgres_port)
+WEB_PORT=$(find_available_web_port)
+
+echo -e "${GREEN}✅ Port allocation complete:${NC}"
+echo -e "   PostgreSQL: $POSTGRES_PORT"
+echo -e "   Web interface: $WEB_PORT"
 
 # Generate secure database password
 DB_PASSWORD=$(generate_password)
@@ -731,11 +758,61 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                 
                 # Only proceed if Docker Compose is available
                 if [[ -n "${DOCKER_COMPOSE_CMD:-}" ]]; then
-                    if ! sudo $DOCKER_COMPOSE_CMD up -d "$ENV_NAME-postgres"; then
-                        echo -e "${RED}❌ Failed to start database container${NC}"
-                        echo "Migration will be skipped. Check Docker logs for details."
-                        echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
-                    else
+                    echo -e "${BLUE}🐳 Starting database container for migration...${NC}"
+                    
+                    # Try to start the database container with retry logic for port conflicts
+                    DOCKER_START_ATTEMPTS=0
+                    MAX_DOCKER_ATTEMPTS=3
+                    
+                    while [[ $DOCKER_START_ATTEMPTS -lt $MAX_DOCKER_ATTEMPTS ]]; do
+                        if sudo $DOCKER_COMPOSE_CMD up -d "$ENV_NAME-postgres" 2>/tmp/docker_start_error.log; then
+                            echo -e "${GREEN}✅ Database container started successfully${NC}"
+                            break
+                        else
+                            ((DOCKER_START_ATTEMPTS++))
+                            
+                            # Check if it's a port conflict
+                            if grep -q "port is already allocated\|address already in use" /tmp/docker_start_error.log; then
+                                echo -e "${YELLOW}⚠️  Port conflict detected. Finding new port...${NC}"
+                                
+                                # Find a new PostgreSQL port
+                                OLD_POSTGRES_PORT=$POSTGRES_PORT
+                                POSTGRES_PORT=$(find_available_postgres_port)
+                                
+                                echo -e "${BLUE}🔄 Updating port from $OLD_POSTGRES_PORT to $POSTGRES_PORT${NC}"
+                                
+                                # Update the docker-compose.yml file with new port
+                                sed -i "s/$OLD_POSTGRES_PORT:5432/$POSTGRES_PORT:5432/g" "$ENV_DIR/docker-compose.yml"
+                                
+                                # Update the .env file with new port (for future reference)
+                                if grep -q "DB_PORT=" "$ENV_DIR/.env"; then
+                                    sed -i "s/DB_PORT=.*/DB_PORT=$POSTGRES_PORT/" "$ENV_DIR/.env"
+                                else
+                                    echo "DB_PORT=$POSTGRES_PORT" >> "$ENV_DIR/.env"
+                                fi
+                                
+                                echo -e "${BLUE}📝 Configuration updated. Retrying container start...${NC}"
+                            else
+                                echo -e "${RED}❌ Failed to start database container (attempt $DOCKER_START_ATTEMPTS/$MAX_DOCKER_ATTEMPTS)${NC}"
+                                cat /tmp/docker_start_error.log
+                                
+                                if [[ $DOCKER_START_ATTEMPTS -eq $MAX_DOCKER_ATTEMPTS ]]; then
+                                    echo -e "${RED}❌ All container start attempts failed${NC}"
+                                    echo "Migration will be skipped. Check Docker logs for details."
+                                    echo "You can retry manually: python3 scripts/migrate_json_to_database.py --repo-path '$CLONED_REPO_PATH'"
+                                    break
+                                fi
+                                
+                                sleep 2
+                            fi
+                        fi
+                    done
+                    
+                    # Clean up error log
+                    rm -f /tmp/docker_start_error.log
+                    
+                    # Only proceed with migration if container started successfully
+                    if [[ $DOCKER_START_ATTEMPTS -lt $MAX_DOCKER_ATTEMPTS ]]; then
                         echo -e "${BLUE}⏳ Waiting for database to be ready...${NC}"
                         # Wait for database container to be healthy (up to 60 seconds)
                         WAIT_COUNT=0
@@ -803,6 +880,11 @@ echo "1. Configuration is fully complete! ✅"
 echo "2. Start the environment: $ENV_NAME start"
 echo "3. Enable auto-start: $ENV_NAME enable"
 echo "4. Check status: $ENV_NAME status"
+echo ""
+echo -e "${BLUE}💡 Port Information:${NC}"
+echo "   PostgreSQL is accessible on localhost:$POSTGRES_PORT"
+echo "   Ports are automatically allocated to avoid conflicts"
+echo "   Multiple environments can run simultaneously"
 echo ""
 echo -e "${GREEN}🎉 Your environment is ready to use immediately!${NC}"
 echo ""
