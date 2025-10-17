@@ -848,8 +848,8 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                             return 1
                         fi
                         
-                        # Load environment variables from the target environment
-                        source "$ENV_DIR/.env"
+                        # Load environment variables from the target environment using eval method (like manual approach)
+                        eval "$(sudo cat "$ENV_DIR/.env" | grep -E '^[A-Z_]' | sed 's/^/export /')"
                         
                         # Override database host and port for host-based access to Docker container
                         export DB_HOST=localhost
@@ -861,7 +861,7 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                             echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
                         else
                             echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
-                            echo "You can retry manually: source $ENV_DIR/.env && export DB_HOST=localhost DB_PORT=$POSTGRES_PORT && cd $MIGRATION_SOURCE_DIR && source .venv/bin/activate && python scripts/migrate_json_to_database.py $ENV_DIR --repo-path $ENV_DIR/Summer2026-Internships"
+                            echo "You can retry manually: cd $ENV_DIR && eval \"\$(sudo cat .env | grep -E '^[A-Z_]' | sed 's/^/export /')\" && export DB_HOST=localhost DB_PORT=$POSTGRES_PORT && cd $MIGRATION_SOURCE_DIR && source .venv/bin/activate && python scripts/migrate_json_to_database.py $ENV_DIR --repo-path $ENV_DIR/Summer2026-Internships"
                         fi
                         
                         # Stop only the database (bot was never started)
