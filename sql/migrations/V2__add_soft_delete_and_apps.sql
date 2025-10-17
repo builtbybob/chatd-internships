@@ -1,5 +1,5 @@
--- Migration 002: Add soft delete support and student applications table
--- This migration implements application tracking functionality by adding:
+-- Migration V2: Add soft delete support and student applications table
+-- This migration upgrades V1 schema to V2 by adding:
 -- 1. Soft delete support for job postings to preserve application history
 -- 2. Student applications table to track user application activity
 
@@ -99,8 +99,8 @@ BEGIN
         UPDATE job_postings SET is_deleted = true WHERE id = test_job_id;
         UPDATE job_postings SET is_deleted = false WHERE id = test_job_id;
         
-        RAISE NOTICE 'Migration 002 completed successfully. Added soft delete support and student_applications table.';
+        RAISE NOTICE 'Migration V2 completed successfully. Added soft delete support and student_applications table.';
     ELSE
-        RAISE NOTICE 'Migration 002 completed. No test jobs available for validation.';
+        RAISE NOTICE 'Migration V2 completed. No test jobs available for validation.';
     END IF;
 END $$;

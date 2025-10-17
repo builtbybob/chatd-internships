@@ -69,7 +69,7 @@ if [[ -d "$ENV_DIR" ]]; then
 fi
 
 # Check if we're running from the correct repository (optional check)
-if [[ -f "$REPO_DIR/chatd/bot.py" ]] && [[ -f "$REPO_DIR/sql/init/001_initial_schema.sql" ]]; then
+if [[ -f "$REPO_DIR/chatd/bot.py" ]] && [[ -f "$REPO_DIR/sql/schema/V2__with_soft_delete_and_apps.sql" ]]; then
     echo -e "${GREEN}✅ Running from ChatD repository${NC}"
 elif git rev-parse --git-dir > /dev/null 2>&1; then
     echo -e "${YELLOW}⚠️  Warning: Not running from a ChatD repository${NC}"
@@ -351,6 +351,7 @@ services:
     volumes:
       - ${ENV_NAME}_postgres_data:/var/lib/postgresql/data
       - $ENV_DIR/sql/init:/docker-entrypoint-initdb.d:ro
+      - $ENV_DIR/sql/schema:/schema:ro
     ports:
       - "${POSTGRES_PORT}:5432"
     networks:
@@ -830,15 +831,37 @@ if [[ $MIGRATE_DATA =~ ^[Yy]$ ]]; then
                             echo -e "${YELLOW}⚠️  Database health check timed out, proceeding anyway...${NC}"
                         fi
                         
-                        # Run migration
-                        echo -e "${BLUE}🗃️  Running migration script inside Docker container...${NC}"
-                        # Run the migration script inside the Docker container where all config is correct
-                        if $DOCKER_COMPOSE_CMD exec -T "$ENV_NAME-bot" python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships; then
+                                                # Run migration
+                        echo -e "${BLUE}🗃️  Running migration script from host environment...${NC}"
+                        # Use the host Python environment to run migration (simpler than Docker issues)
+                        # Try to find the source repo with virtual environment
+                        MIGRATION_SOURCE_DIR=""
+                        if [[ -f "/home/rbarton/chatd-internships/.venv/bin/activate" ]]; then
+                            MIGRATION_SOURCE_DIR="/home/rbarton/chatd-internships"
+                        elif [[ -f "$(pwd)/.venv/bin/activate" ]]; then
+                            MIGRATION_SOURCE_DIR="$(pwd)"
+                        elif [[ -f "$ENV_DIR/.venv/bin/activate" ]]; then
+                            MIGRATION_SOURCE_DIR="$ENV_DIR"
+                        else
+                            echo -e "${RED}❌ Could not find Python virtual environment for migration${NC}"
+                            echo "Please ensure you have a .venv directory with the required dependencies"
+                            return 1
+                        fi
+                        
+                        # Load environment variables from the target environment
+                        source "$ENV_DIR/.env"
+                        
+                        # Override database host and port for host-based access to Docker container
+                        export DB_HOST=localhost
+                        export DB_PORT=$POSTGRES_PORT
+                        
+                        cd "$MIGRATION_SOURCE_DIR"
+                        if source .venv/bin/activate && python scripts/migrate_json_to_database.py "$ENV_DIR" --repo-path "$ENV_DIR/Summer2026-Internships"; then
                             echo -e "${GREEN}✅ Database migration completed successfully!${NC}"
                             echo -e "${BLUE}ℹ️  Database is ready with migrated data. Start the full environment when ready: $ENV_NAME start${NC}"
                         else
                             echo -e "${YELLOW}⚠️  Migration encountered issues. Check logs for details.${NC}"
-                            echo "You can retry manually: $DOCKER_COMPOSE_CMD exec $ENV_NAME-bot python3 scripts/migrate_json_to_database.py /app --repo-path /app/Summer2026-Internships"
+                            echo "You can retry manually: source $ENV_DIR/.env && export DB_HOST=localhost DB_PORT=$POSTGRES_PORT && cd $MIGRATION_SOURCE_DIR && source .venv/bin/activate && python scripts/migrate_json_to_database.py $ENV_DIR --repo-path $ENV_DIR/Summer2026-Internships"
                         fi
                         
                         # Stop only the database (bot was never started)
