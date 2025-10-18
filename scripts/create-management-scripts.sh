@@ -755,7 +755,7 @@ EOF
 
 # Logs script - View bot logs
 create_chatd_logs() {
-    cat > /usr/local/bin/chatd-logs << 'EOF'
+    cat > "/usr/local/bin/${ENV_NAME}-logs" << 'EOF'
 #!/bin/bash
 
 # Function to show usage
@@ -844,12 +844,12 @@ case $LOG_TYPE in
         ;;
 esac
 EOF
-    chmod +x /usr/local/bin/chatd-logs
+    chmod +x "/usr/local/bin/${ENV_NAME}-logs"
 }
 
 # Backup script - Backup bot data
 create_chatd_backup() {
-    cat > /usr/local/bin/chatd-backup << 'EOF'
+    cat > "/usr/local/bin/${ENV_NAME}-backup" << 'EOF'
 #!/bin/bash
 set -e
 
@@ -877,12 +877,12 @@ else
     exit 1
 fi
 EOF
-    chmod +x /usr/local/bin/chatd-backup
+    chmod +x "/usr/local/bin/${ENV_NAME}-backup"
 }
 
 # Data inspection script
 create_chatd_data() {
-    cat > /usr/local/bin/chatd-data << 'EOF'
+    cat > "/usr/local/bin/${ENV_NAME}-data" << 'EOF'
 #!/bin/bash
 
 echo "📊 ChatD Bot Data Status"
@@ -944,7 +944,7 @@ echo "💾 Disk Usage:"
 echo "   Data: $(du -sh /opt/chatd 2>/dev/null | cut -f1 || echo 'unknown')"
 echo "   Logs: $(du -sh /opt/chatd/logs 2>/dev/null | cut -f1 || echo 'unknown')"
 EOF
-    chmod +x /usr/local/bin/chatd-data
+    chmod +x "/usr/local/bin/${ENV_NAME}-data"
 }
 
 # Control script - Start/stop/restart with shortcuts
@@ -963,9 +963,9 @@ show_usage() {
     echo "  status     Show service status"
     echo "  enable     Enable service to start on boot"
     echo "  disable    Disable service auto-start"
-    echo "  logs       Show recent logs (alias for chatd-logs)"
-    echo "  data       Show data status (alias for chatd-data)"
-    echo "  backup     Create backup (alias for chatd-backup)"
+    echo "  logs [container]  Show logs (bot, postgres, or all)"
+    echo "  data       Show data status (alias for ${ENV_NAME}-data)"
+    echo "  backup     Create backup (alias for ${ENV_NAME}-backup)"
     echo "  build      Build Docker image (alias for chatd-build)"
     echo "  deploy     Deploy with existing image (alias for chatd-deploy)"
     echo "  update     Build and deploy together (alias for chatd-update)"
@@ -988,7 +988,9 @@ show_usage() {
     echo "  ${ENV_NAME} deploy          # Deploy with existing image"
     echo "  ${ENV_NAME} update          # Build and deploy together"
     echo "  ${ENV_NAME} version         # Show current version"
-    echo "  ${ENV_NAME} logs -f         # Follow logs in real-time"
+    echo "  ${ENV_NAME} logs            # Follow all logs"
+    echo "  ${ENV_NAME} logs bot        # Follow bot logs only"
+    echo "  ${ENV_NAME} logs postgres   # Follow database logs only"
     echo "  ${ENV_NAME} status          # Check if bot is running"
     echo "  ${ENV_NAME} cleanup --dry-run   # Preview images to be deleted"
     echo "  ${ENV_NAME} cleanup --count 5   # Keep 5 images"
@@ -1038,14 +1040,20 @@ case "\$1" in
         sudo systemctl disable ${ENV_NAME}
         ;;
     logs)
-        shift
-        chatd-logs "\$@"
+        CONTAINER="\${2:-}"
+        if [[ -n "\$CONTAINER" ]]; then
+            echo "📋 Logs for ${ENV_NAME}-\$CONTAINER"
+            cd "${ENV_DIR}" && docker-compose logs -f "${ENV_NAME}-\${CONTAINER}"
+        else
+            echo "📋 All logs for ${ENV_NAME}"
+            cd "${ENV_DIR}" && docker-compose logs -f
+        fi
         ;;
     data)
-        chatd-data
+        ${ENV_NAME}-data
         ;;
     backup)
-        chatd-backup
+        ${ENV_NAME}-backup
         ;;
     build)
         shift
@@ -1158,16 +1166,16 @@ create_chatd_loglevel
 echo "✅ Created ${ENV_NAME}-loglevel"
 
 create_chatd_logs
-echo "✅ Created chatd-logs" 
+echo "✅ Created ${ENV_NAME}-logs" 
 
 create_chatd_backup
-echo "✅ Created chatd-backup"
+echo "✅ Created ${ENV_NAME}-backup"
 
 create_chatd_data
-echo "✅ Created chatd-data"
+echo "✅ Created ${ENV_NAME}-data"
 
 create_chatd_control
-echo "✅ Created chatd (main control script)"
+echo "✅ Created ${ENV_NAME} (main control script)"
 
 create_chatd_cleanup
 echo "✅ Created chatd-cleanup"
