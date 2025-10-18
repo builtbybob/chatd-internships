@@ -972,6 +972,8 @@ show_usage() {
     echo "  disable    Disable service auto-start"
     echo "  logs [container]  Show logs (bot, postgres, or all)"
     echo "  loglevel <level>  Change bot log level (debug, info, warning, error, critical)"
+    echo "  shell [container] Open bash shell in container (defaults to bot)"
+    echo "  db [query]     Connect to PostgreSQL database (or run inline query)"
     echo "  data       Show data status (alias for ${ENV_NAME}-data)"
     echo "  backup     Create backup (alias for ${ENV_NAME}-backup)"
     echo "  build      Build Docker image (alias for chatd-build)"
@@ -1000,6 +1002,10 @@ show_usage() {
     echo "  ${ENV_NAME} logs bot        # Follow bot logs only"
     echo "  ${ENV_NAME} logs postgres   # Follow database logs only"
     echo "  ${ENV_NAME} status          # Check if bot is running"
+    echo "  ${ENV_NAME} shell           # Open shell in bot container"
+    echo "  ${ENV_NAME} shell postgres  # Open shell in postgres container"
+    echo "  ${ENV_NAME} db              # Interactive PostgreSQL session"
+    echo "  ${ENV_NAME} db \"SELECT * FROM applicants LIMIT 5;\"  # Run inline query"
     echo "  ${ENV_NAME} cleanup --dry-run   # Preview images to be deleted"
     echo "  ${ENV_NAME} cleanup --count 5   # Keep 5 images"
     echo "  ${ENV_NAME} images              # List images with sizes"
@@ -1130,6 +1136,23 @@ case "\$1" in
                 exit 1
                 ;;
         esac
+        ;;
+    shell)
+        CONTAINER="\${2:-bot}"
+        echo -e "\${BLUE}🐚 Opening shell in ${ENV_NAME}-\$CONTAINER...\${NC}"
+        cd "${ENV_DIR}" && sudo -E docker-compose exec "${ENV_NAME}-\${CONTAINER}" /bin/bash
+        ;;
+    db)
+        QUERY="\${2:-}"
+        if [[ -n "\$QUERY" ]]; then
+            # Inline query mode - use -T flag for non-interactive
+            echo -e "\${BLUE}🗄️  Running query on ${ENV_NAME} database...\${NC}"
+            cd "${ENV_DIR}" && sudo -E docker-compose exec -T ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_} -c "\$QUERY"
+        else
+            # Interactive mode - open psql session
+            echo -e "\${BLUE}🗄️  Connecting to ${ENV_NAME} database...\${NC}"
+            cd "${ENV_DIR}" && sudo -E docker-compose exec ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}
+        fi
         ;;
     data)
         ${ENV_NAME}-data
