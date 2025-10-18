@@ -974,6 +974,9 @@ show_usage() {
     echo "  loglevel <level>  Change bot log level (debug, info, warning, error, critical)"
     echo "  shell [container] Open bash shell in container (defaults to bot)"
     echo "  db [query]     Connect to PostgreSQL database (or run inline query)"
+    echo "  pull       Pull latest Docker images"
+    echo "  docker-update  Pull images, rebuild, and restart (docker-compose workflow)"
+    echo "  docker-cleanup Clean up Docker resources (images, volumes)"
     echo "  data       Show data status (alias for ${ENV_NAME}-data)"
     echo "  backup     Create backup (alias for ${ENV_NAME}-backup)"
     echo "  build      Build Docker image (alias for chatd-build)"
@@ -1006,6 +1009,9 @@ show_usage() {
     echo "  ${ENV_NAME} shell postgres  # Open shell in postgres container"
     echo "  ${ENV_NAME} db              # Interactive PostgreSQL session"
     echo "  ${ENV_NAME} db \"SELECT * FROM applicants LIMIT 5;\"  # Run inline query"
+    echo "  ${ENV_NAME} pull            # Pull latest Docker images"
+    echo "  ${ENV_NAME} docker-update   # Pull, rebuild, and restart"
+    echo "  ${ENV_NAME} docker-cleanup  # Clean up Docker resources"
     echo "  ${ENV_NAME} cleanup --dry-run   # Preview images to be deleted"
     echo "  ${ENV_NAME} cleanup --count 5   # Keep 5 images"
     echo "  ${ENV_NAME} images              # List images with sizes"
@@ -1152,6 +1158,48 @@ case "\$1" in
             # Interactive mode - open psql session
             echo -e "\${BLUE}🗄️  Connecting to ${ENV_NAME} database...\${NC}"
             cd "${ENV_DIR}" && sudo -E docker-compose exec ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}
+        fi
+        ;;
+    pull)
+        echo -e "\${BLUE}📥 Pulling latest Docker images for ${ENV_NAME}...\${NC}"
+        if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
+            cd "${ENV_DIR}" && sudo -E docker-compose pull
+            echo -e "\${GREEN}✅ Images pulled successfully\${NC}"
+        else
+            echo -e "\${RED}❌ Working directory not found\${NC}"
+            exit 1
+        fi
+        ;;
+    docker-update)
+        echo -e "\${BLUE}🔄 Updating ${ENV_NAME} environment (pull + rebuild + restart)...\${NC}"
+        if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
+            cd "${ENV_DIR}"
+            echo -e "\${BLUE}📥 Pulling latest images...\${NC}"
+            sudo -E docker-compose pull
+            echo -e "\${BLUE}🔨 Rebuilding containers...\${NC}"
+            sudo -E docker-compose build
+            echo -e "\${BLUE}🔄 Restarting services...\${NC}"
+            sudo -E docker-compose up -d
+            echo -e "\${GREEN}✅ ${ENV_NAME} environment updated successfully\${NC}"
+        else
+            echo -e "\${RED}❌ Working directory not found\${NC}"
+            exit 1
+        fi
+        ;;
+    docker-cleanup)
+        echo -e "\${YELLOW}🧹 Cleaning up ${ENV_NAME} Docker resources...\${NC}"
+        if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
+            cd "${ENV_DIR}"
+            echo -e "\${YELLOW}Stopping containers...\${NC}"
+            sudo -E docker-compose down
+            echo -e "\${YELLOW}Removing unused images...\${NC}"
+            docker image prune -f
+            echo -e "\${YELLOW}Removing unused volumes (excluding data)...\${NC}"
+            docker volume prune -f
+            echo -e "\${GREEN}✅ Cleanup complete\${NC}"
+        else
+            echo -e "\${RED}❌ Working directory not found\${NC}"
+            exit 1
         fi
         ;;
     data)
