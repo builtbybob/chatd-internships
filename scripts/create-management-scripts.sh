@@ -4,6 +4,7 @@
 create_chatd_disk() {
     cat > /usr/local/bin/chatd-disk << 'EOF'
 #!/bin/bash
+set -euo pipefail
 
 DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9')
 AVAILABLE=$(df --output=avail / | tail -1)
@@ -23,7 +24,7 @@ elif [ "$DISK_USAGE" -ge 80 ]; then
 fi
 
 # Prometheus-style metrics for future monitoring
-if [[ "$1" == "--metrics" ]]; then
+if [[ "${1:-}" == "--metrics" ]]; then
     echo "chatd_disk_free_bytes $((AVAILABLE*1024))"
     echo "chatd_disk_used_percent $DISK_USAGE"
     echo "chatd_image_count $IMAGE_COUNT"
@@ -35,7 +36,7 @@ EOF
 create_chatd_cleanup() {
     cat > /usr/local/bin/chatd-cleanup << 'EOF'
 #!/bin/bash
-set -e
+set -euo pipefail
 
 RETENTION_COUNT=${CHATD_DOCKER_RETENTION:-3}
 DRY_RUN=false
@@ -116,6 +117,8 @@ EOF
 create_chatd_images() {
     cat > /usr/local/bin/chatd-images << 'EOF'
 #!/bin/bash
+set -euo pipefail
+
 echo "📋 ChatD Docker Images (chatd-internships)"
 docker images chatd-internships --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
 EOF
@@ -126,7 +129,7 @@ EOF
 create_chatd_prune() {
     cat > /usr/local/bin/chatd-prune << 'EOF'
 #!/bin/bash
-set -e
+set -euo pipefail
 
 echo "🧨 Aggressive Docker image prune: keeping only the latest image..."
 LATEST_TAG=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest | head -n 1)
@@ -190,7 +193,7 @@ echo ""
 create_chatd_build() {
     cat > /usr/local/bin/${ENV_NAME}-build << EOF
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Detect docker-compose command
 if docker compose version >/dev/null 2>&1; then
@@ -323,7 +326,7 @@ EOF
 create_chatd_deploy() {
     cat > /usr/local/bin/${ENV_NAME}-deploy << EOF
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Detect docker-compose command
 if docker compose version >/dev/null 2>&1; then
@@ -443,7 +446,7 @@ EOF
 create_chatd_update() {
     cat > /usr/local/bin/${ENV_NAME}-update << EOF
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Detect docker-compose command
 if docker compose version >/dev/null 2>&1; then
@@ -603,6 +606,7 @@ EOF
 create_chatd_version() {
     cat > /usr/local/bin/chatd-version << 'EOF'
 #!/bin/bash
+set -euo pipefail
 
 show_usage() {
     echo "ChatD Bot Version Management"
@@ -714,6 +718,8 @@ EOF
 create_chatd_loglevel() {
     cat > "/usr/local/bin/${ENV_NAME}-loglevel" << EOF
 #!/bin/bash
+set -euo pipefail
+
 # ${ENV_NAME} Bot - Dynamic Log Level Control
 # Change log levels without restarting the bot
 
@@ -790,6 +796,7 @@ EOF
 create_chatd_logs() {
     cat > "/usr/local/bin/${ENV_NAME}-logs" << 'EOF'
 #!/bin/bash
+set -euo pipefail
 
 # Function to show usage
 show_usage() {
@@ -884,7 +891,7 @@ EOF
 create_chatd_backup() {
     cat > "/usr/local/bin/${ENV_NAME}-backup" << 'EOF'
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Create backup with timestamp
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -917,6 +924,7 @@ EOF
 create_chatd_data() {
     cat > "/usr/local/bin/${ENV_NAME}-data" << 'EOF'
 #!/bin/bash
+set -euo pipefail
 
 echo "📊 ChatD Bot Data Status"
 echo "========================"
@@ -984,6 +992,7 @@ EOF
 create_chatd_control() {
     cat > /usr/local/bin/${ENV_NAME} << EOF
 #!/bin/bash
+set -euo pipefail
 
 # Detect docker-compose command
 if docker compose version >/dev/null 2>&1; then
