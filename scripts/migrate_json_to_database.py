@@ -56,39 +56,28 @@ class DataMigrator:
             raise MigrationError(f"Failed to load JSON data: {e}")
     """Handles migration of JSON data to PostgreSQL database."""
     
-    def __init__(self, json_data_path: str = None, json_messages_path: str = None):
-        """Initialize the migrator with data paths."""
-        # Use provided paths or fall back to config defaults
-        self.json_data_path = json_data_path or config.data_file
-        self.json_messages_path = json_messages_path or config.messages_file
+    def __init__(self, json_data_path: str = None, json_messages_path: str = None, env_path: str = None):
+        """Initialize the migrator with data paths and environment path."""
+        # Store environment information
+        self.env_path = env_path or os.getcwd()
+        self.env_name = os.path.basename(self.env_path)
         
-        # Handle the actual production path for job data
-        if json_data_path and not os.path.exists(json_data_path):
-            prod_data_path = "/opt/chatd/data/previous_data.json"
-            if os.path.exists(prod_data_path):
-                self.json_data_path = prod_data_path
-                logger.info(f"Using production data file: {prod_data_path}")
-        elif not json_data_path:
-            prod_data_path = "/opt/chatd/data/previous_data.json"
-            if os.path.exists(prod_data_path):
-                self.json_data_path = prod_data_path
-                logger.info(f"Using production data file: {prod_data_path}")
-            else:
-                logger.info(f"Production data file not found, using config default: {self.json_data_path}")
-
-        # Handle the actual production path for message tracking
-        if json_messages_path and not os.path.exists(json_messages_path):
-            prod_messages_path = "/opt/chatd/data/message_tracking.json"
-            if os.path.exists(prod_messages_path):
-                self.json_messages_path = prod_messages_path
-                logger.info(f"Using production message tracking file: {prod_messages_path}")
-        elif not json_messages_path:
-            prod_messages_path = "/opt/chatd/data/message_tracking.json"
-            if os.path.exists(prod_messages_path):
-                self.json_messages_path = prod_messages_path
-                logger.info(f"Using production message tracking file: {prod_messages_path}")
-            else:
-                logger.info(f"Production message tracking file not found, using config default: {self.json_messages_path}")
+        logger.info(f"Initializing migrator for environment: {self.env_name}")
+        logger.info(f"Environment path: {self.env_path}")
+        
+        # Set data paths explicitly - no fallbacks to production
+        self.json_data_path = json_data_path
+        self.json_messages_path = json_messages_path
+        
+        # Validate that data file exists
+        if not self.json_data_path or not os.path.exists(self.json_data_path):
+            raise MigrationError(f"Data file not found: {self.json_data_path}")
+        
+        # Messages file is optional - None means skip message migration
+        if self.json_messages_path and not os.path.exists(self.json_messages_path):
+            logger.warning(f"Message tracking file not found: {self.json_messages_path}")
+            logger.info("Message migration will be skipped")
+            self.json_messages_path = None
         
         # Initialize database manager
         self.db_manager = None
@@ -328,6 +317,13 @@ class DataMigrator:
                                 logger.warning(f"⚠️  Message tracking for job {job_id} already exists, skipping")
                                 continue
 
+                            # CRITICAL: Check if the job actually exists in job_postings table
+                            job_exists = session.query(JobPosting).filter_by(id=job_id).first()
+                            if not job_exists:
+                                logger.warning(f"⚠️  Job {job_id} not found in job_postings table, skipping message tracking")
+                                failed_count += 1
+                                continue
+
                             session.add(message_tracking)
 
                         success_count += 1
@@ -400,7 +396,7 @@ class DataMigrator:
             # Step 2: Create backups
             if create_backups and not dry_run:
                 self.create_backup(self.json_data_path, "pre_migration")
-                if os.path.exists(self.json_messages_path):
+                if self.json_messages_path and os.path.exists(self.json_messages_path):
                     self.create_backup(self.json_messages_path, "pre_migration")
             
             # Step 3: Load JSON data
@@ -409,11 +405,13 @@ class DataMigrator:
                 logger.warning("No job data found, skipping job migration")
             
             messages_data = {}
-            if os.path.exists(self.json_messages_path):
+            if self.json_messages_path and os.path.exists(self.json_messages_path):
                 try:
                     messages_data = self.load_messages_json_data(self.json_messages_path)
                 except MigrationError as e:
                     logger.warning(f"Message data is not in expected format, skipping message migration: {e}")
+            elif self.json_messages_path is None:
+                logger.info("No message tracking file configured, skipping message migration")
             
             # Step 4: Migrate job postings
             if job_data:
@@ -449,35 +447,66 @@ class DataMigrator:
 def main():
     """Main entry point for the migration script."""
     parser = argparse.ArgumentParser(description='Migrate JSON data to PostgreSQL database')
-    parser.add_argument('--data-file', help='Path to JSON data file (default: use config or repo/.github/scripts/listings.json)')
-    parser.add_argument('--messages-file', help='Path to message tracking JSON file (default: use config)')
+    parser.add_argument('env_path', help='Path to the environment directory (e.g., /opt/chatd, /opt/bratd)')
+    parser.add_argument('--data-file', help='Path to JSON data file (default: env_path/data/listings.json)')
+    parser.add_argument('--messages-file', help='Path to message tracking JSON file (default: env_path/data/message_tracking.json)')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without making actual changes')
     parser.add_argument('--no-backup', action='store_true', help='Skip creating backup files')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
-    parser.add_argument('--repo-path', help='Path to the cloned repository (default: use config or current dir)')
+    parser.add_argument('--repo-path', help='Path to the cloned repository (default: env_path/repo_name)')
     
     args = parser.parse_args()
     
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
+    # Validate environment path
+    env_path = os.path.abspath(args.env_path)
+    if not os.path.exists(env_path):
+        logger.error(f"Environment path does not exist: {env_path}")
+        sys.exit(1)
+    
+    # Determine environment name from path
+    env_name = os.path.basename(env_path)
+    logger.info(f"Operating on environment: {env_name} at {env_path}")
+    
     # Determine data file path
     if args.data_file:
         data_file = args.data_file
-    elif args.repo_path:
-        data_file = os.path.join(args.repo_path, '.github', 'scripts', 'listings.json')
     else:
-        # Try to use config path or fallback to current directory
-        try:
-            from chatd.config import Config
-            config = Config()
-            data_file = config.json_file_path
-        except:
-            data_file = os.path.join(os.getcwd(), '.github', 'scripts', 'listings.json')
+        # Default to env_path/data/listings.json
+        data_file = os.path.join(env_path, 'data', 'listings.json')
+        if not os.path.exists(data_file):
+            # Fallback to repo path if provided or try to find repo directory
+            if args.repo_path:
+                repo_path = args.repo_path
+            else:
+                # Look for common repo directory names in env_path
+                for repo_name in ['Summer2026-Internships', 'chatd-internships']:
+                    potential_repo = os.path.join(env_path, repo_name)
+                    if os.path.exists(potential_repo):
+                        repo_path = potential_repo
+                        break
+                else:
+                    logger.error(f"Could not find data file: {data_file}")
+                    logger.error("Please specify --data-file or ensure listings.json exists in data directory")
+                    sys.exit(1)
+            
+            data_file = os.path.join(repo_path, '.github', 'scripts', 'listings.json')
+    
+    # Determine messages file path
+    if args.messages_file:
+        messages_file = args.messages_file
+    else:
+        # Default to env_path/data/message_tracking.json (may not exist for fresh environments)
+        messages_file = os.path.join(env_path, 'data', 'message_tracking.json')
+        if not os.path.exists(messages_file):
+            messages_file = None  # Will be handled by DataMigrator
     
     migrator = DataMigrator(
         json_data_path=data_file,
-        json_messages_path=args.messages_file
+        json_messages_path=messages_file,
+        env_path=env_path
     )
     
     success = migrator.run_migration(

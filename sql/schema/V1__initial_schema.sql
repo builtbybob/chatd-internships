@@ -1,4 +1,4 @@
--- ChatD Internships Database Schema
+-- ChatD Internships Database Schema - V1
 -- Initial schema for PostgreSQL database implementation
 
 -- Enable UUID extension for UUID primary keys
@@ -104,5 +104,5 @@ DECLARE
     record_count INTEGER;
 BEGIN
     SELECT COUNT(*) INTO record_count FROM job_postings_readable;
-    RAISE NOTICE 'Schema initialized successfully. Test records created: %', record_count;
+    RAISE NOTICE 'Schema V1 initialized successfully. Test records created: %', record_count;
 END $$;
