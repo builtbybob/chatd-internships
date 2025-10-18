@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Disk usage and image status script
 create_chatd_disk() {
     cat > /usr/local/bin/chatd-disk << 'EOF'
@@ -174,11 +176,28 @@ echo "Creating ChatD management scripts for environment: $ENV_NAME"
 echo "Working directory: $ENV_DIR"
 echo ""
 
+# Detect docker-compose command (v2 plugin vs v1 standalone)
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+    echo "✅ Detected Docker Compose V2 (docker compose)"
+else
+    DOCKER_COMPOSE_CMD="docker-compose"
+    echo "✅ Detected Docker Compose V1 (docker-compose)"
+fi
+echo ""
+
 # Build script - Build Docker image only with smart commit-based detection
 create_chatd_build() {
     cat > /usr/local/bin/${ENV_NAME}-build << EOF
 #!/bin/bash
 set -e
+
+# Detect docker-compose command
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
+    DOCKER_COMPOSE_CMD="docker-compose"
+fi
 
 # Show help if requested
 if [[ "\$1" == "--help" || "\$1" == "-h" ]]; then
@@ -277,7 +296,7 @@ fi
 
 # Build new docker image with commit tag
 echo "🐳 Building Docker image for commit ${COMMIT_HASH}..."
-docker-compose build chatd-bot
+\$DOCKER_COMPOSE_CMD build chatd-bot
 
 # Tag the built image with commit hash and latest
 BUILT_IMAGE_ID=$(docker images -q chatd_chatd-bot:latest)
@@ -305,6 +324,13 @@ create_chatd_deploy() {
     cat > /usr/local/bin/${ENV_NAME}-deploy << EOF
 #!/bin/bash
 set -e
+
+# Detect docker-compose command
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
+    DOCKER_COMPOSE_CMD="docker-compose"
+fi
 
 echo "🚀 Deploying ${ENV_NAME} Internships Bot..."
 
@@ -363,11 +389,11 @@ echo "🐳 Using docker-compose.yml in $WORK_DIR"
 
 # Stop any existing containers
 echo "🛑 Stopping existing containers..."
-docker-compose down --remove-orphans || echo "   (No containers were running)"
+\$DOCKER_COMPOSE_CMD down --remove-orphans || echo "   (No containers were running)"
 
 # Start services with docker-compose
 echo "🚀 Starting services with docker-compose..."
-if docker-compose up -d; then
+if \$DOCKER_COMPOSE_CMD up -d; then
     echo "✅ Bot deployed successfully via docker-compose!"
     
     # Wait a moment for containers to start
@@ -376,7 +402,7 @@ if docker-compose up -d; then
     # Show status
     echo ""
     echo "📊 Container Status:"
-    docker-compose ps
+    \$DOCKER_COMPOSE_CMD ps
 else
     echo "❌ Error: docker-compose deployment failed"
     echo "   Falling back to systemctl for compatibility..."
@@ -418,6 +444,13 @@ create_chatd_update() {
     cat > /usr/local/bin/${ENV_NAME}-update << EOF
 #!/bin/bash
 set -e
+
+# Detect docker-compose command
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
+    DOCKER_COMPOSE_CMD="docker-compose"
+fi
 
 # Configuration
 REPO_URL="https://github.com/builtbybob/chatd-internships.git"
@@ -477,7 +510,7 @@ if docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
 else
     # Build new docker image with commit tag
     echo "🐳 Building Docker image for commit ${COMMIT_HASH}..."
-    docker-compose build chatd-bot
+    \$DOCKER_COMPOSE_CMD build chatd-bot
     
     # Tag the built image with commit hash and latest
     BUILT_IMAGE_ID=$(docker images -q chatd_chatd-bot:latest)
@@ -513,11 +546,11 @@ echo "🐳 Using docker-compose.yml in $(pwd)"
 
 # Stop any existing containers
 echo "🛑 Stopping existing containers..."
-docker-compose down --remove-orphans || echo "   (No containers were running)"
+\$DOCKER_COMPOSE_CMD down --remove-orphans || echo "   (No containers were running)"
 
 # Start services with docker-compose
 echo "� Starting services with docker-compose..."
-if docker-compose up -d; then
+if \$DOCKER_COMPOSE_CMD up -d; then
     echo "✅ Bot updated and deployed via docker-compose!"
     echo "📦 Running: ${IMAGE_TAG}"
     
@@ -527,7 +560,7 @@ if docker-compose up -d; then
     # Show status
     echo ""
     echo "📊 Container Status:"
-    docker-compose ps
+    \$DOCKER_COMPOSE_CMD ps
 else
     echo "❌ Error: docker-compose deployment failed"
     echo "   Falling back to systemctl for compatibility..."
@@ -952,6 +985,13 @@ create_chatd_control() {
     cat > /usr/local/bin/${ENV_NAME} << EOF
 #!/bin/bash
 
+# Detect docker-compose command
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
+    DOCKER_COMPOSE_CMD="docker-compose"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1049,14 +1089,14 @@ case "\$1" in
         echo ""
         echo -e "\${YELLOW}🐳 Docker Containers:\${NC}"
         if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
-            sudo bash -c "cd ${ENV_DIR} && docker-compose ps"
+            sudo bash -c "cd ${ENV_DIR} && \$DOCKER_COMPOSE_CMD ps"
         else
             echo -e "   \${RED}❌ Working directory not found\${NC}"
         fi
         echo ""
         echo -e "\${YELLOW}💾 Database Status:\${NC}"
         if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
-            sudo bash -c "cd ${ENV_DIR} && docker-compose exec -T ${ENV_NAME}-postgres pg_isready -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}" 2>/dev/null && echo -e "   \${GREEN}✅ Database is ready\${NC}" || echo -e "   \${RED}❌ Database not accessible\${NC}"
+            sudo bash -c "cd ${ENV_DIR} && \$DOCKER_COMPOSE_CMD exec -T ${ENV_NAME}-postgres pg_isready -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}" 2>/dev/null && echo -e "   \${GREEN}✅ Database is ready\${NC}" || echo -e "   \${RED}❌ Database not accessible\${NC}"
         else
             echo -e "   \${RED}❌ Working directory not found\${NC}"
         fi
@@ -1073,10 +1113,10 @@ case "\$1" in
         CONTAINER="\${2:-}"
         if [[ -n "\$CONTAINER" ]]; then
             echo -e "\${BLUE}📋 Logs for ${ENV_NAME}-\$CONTAINER\${NC}"
-            cd "${ENV_DIR}" && docker-compose logs -f "${ENV_NAME}-\${CONTAINER}"
+            cd "${ENV_DIR}" && \$DOCKER_COMPOSE_CMD logs -f "${ENV_NAME}-\${CONTAINER}"
         else
             echo -e "\${BLUE}📋 All logs for ${ENV_NAME}\${NC}"
-            cd "${ENV_DIR}" && docker-compose logs -f
+            cd "${ENV_DIR}" && \$DOCKER_COMPOSE_CMD logs -f
         fi
         ;;
     loglevel)
@@ -1146,24 +1186,24 @@ case "\$1" in
     shell)
         CONTAINER="\${2:-bot}"
         echo -e "\${BLUE}🐚 Opening shell in ${ENV_NAME}-\$CONTAINER...\${NC}"
-        cd "${ENV_DIR}" && sudo -E docker-compose exec "${ENV_NAME}-\${CONTAINER}" /bin/bash
+        cd "${ENV_DIR}" && sudo -E \$DOCKER_COMPOSE_CMD exec "${ENV_NAME}-\${CONTAINER}" /bin/bash
         ;;
     db)
         QUERY="\${2:-}"
         if [[ -n "\$QUERY" ]]; then
             # Inline query mode - use -T flag for non-interactive
             echo -e "\${BLUE}🗄️  Running query on ${ENV_NAME} database...\${NC}"
-            cd "${ENV_DIR}" && sudo -E docker-compose exec -T ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_} -c "\$QUERY"
+            cd "${ENV_DIR}" && sudo -E \$DOCKER_COMPOSE_CMD exec -T ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_} -c "\$QUERY"
         else
             # Interactive mode - open psql session
             echo -e "\${BLUE}🗄️  Connecting to ${ENV_NAME} database...\${NC}"
-            cd "${ENV_DIR}" && sudo -E docker-compose exec ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}
+            cd "${ENV_DIR}" && sudo -E \$DOCKER_COMPOSE_CMD exec ${ENV_NAME}-postgres psql -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}
         fi
         ;;
     pull)
         echo -e "\${BLUE}📥 Pulling latest Docker images for ${ENV_NAME}...\${NC}"
         if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
-            cd "${ENV_DIR}" && sudo -E docker-compose pull
+            cd "${ENV_DIR}" && sudo -E \$DOCKER_COMPOSE_CMD pull
             echo -e "\${GREEN}✅ Images pulled successfully\${NC}"
         else
             echo -e "\${RED}❌ Working directory not found\${NC}"
@@ -1175,11 +1215,11 @@ case "\$1" in
         if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
             cd "${ENV_DIR}"
             echo -e "\${BLUE}📥 Pulling latest images...\${NC}"
-            sudo -E docker-compose pull
+            sudo -E \$DOCKER_COMPOSE_CMD pull
             echo -e "\${BLUE}🔨 Rebuilding containers...\${NC}"
-            sudo -E docker-compose build
+            sudo -E \$DOCKER_COMPOSE_CMD build
             echo -e "\${BLUE}🔄 Restarting services...\${NC}"
-            sudo -E docker-compose up -d
+            sudo -E \$DOCKER_COMPOSE_CMD up -d
             echo -e "\${GREEN}✅ ${ENV_NAME} environment updated successfully\${NC}"
         else
             echo -e "\${RED}❌ Working directory not found\${NC}"
@@ -1191,7 +1231,7 @@ case "\$1" in
         if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
             cd "${ENV_DIR}"
             echo -e "\${YELLOW}Stopping containers...\${NC}"
-            sudo -E docker-compose down
+            sudo -E \$DOCKER_COMPOSE_CMD down
             echo -e "\${YELLOW}Removing unused images...\${NC}"
             docker image prune -f
             echo -e "\${YELLOW}Removing unused volumes (excluding data)...\${NC}"
@@ -1244,9 +1284,9 @@ case "\$1" in
         if [[ -d "\$WORK_DIR" && -f "\$WORK_DIR/docker-compose.yml" ]]; then
             cd "\$WORK_DIR"
             echo "🐳 Using docker-compose.yml in \$WORK_DIR"
-            docker-compose up -d
+            \$DOCKER_COMPOSE_CMD up -d
             echo "📊 Container Status:"
-            docker-compose ps
+            \$DOCKER_COMPOSE_CMD ps
         else
             echo "❌ Working directory \$WORK_DIR not found or missing docker-compose.yml"
             echo "   Run '${ENV_NAME} build' first to set up the working directory"
@@ -1258,7 +1298,7 @@ case "\$1" in
         WORK_DIR="${ENV_DIR}"
         if [[ -d "\$WORK_DIR" && -f "\$WORK_DIR/docker-compose.yml" ]]; then
             cd "\$WORK_DIR"
-            docker-compose down --remove-orphans
+            \$DOCKER_COMPOSE_CMD down --remove-orphans
         else
             echo "❌ Working directory \$WORK_DIR not found or missing docker-compose.yml"
         fi
@@ -1269,7 +1309,7 @@ case "\$1" in
         WORK_DIR="${ENV_DIR}"
         if [[ -d "\$WORK_DIR" && -f "\$WORK_DIR/docker-compose.yml" ]]; then
             cd "\$WORK_DIR"
-            docker-compose ps
+            \$DOCKER_COMPOSE_CMD ps
         else
             echo "❌ Working directory \$WORK_DIR not found or missing docker-compose.yml"
         fi
@@ -1281,7 +1321,7 @@ case "\$1" in
         if [[ -d "\$WORK_DIR" && -f "\$WORK_DIR/docker-compose.yml" ]]; then
             cd "\$WORK_DIR"
             shift
-            docker-compose logs "\$@"
+            \$DOCKER_COMPOSE_CMD logs "\$@"
         else
             echo "❌ Working directory \$WORK_DIR not found or missing docker-compose.yml"
         fi
@@ -1304,16 +1344,16 @@ EOF
 echo "Creating ChatD management scripts..."
 
 create_chatd_build
-echo "✅ Created chatd-build"
+echo "✅ Created chatd-build (shared across all environments)"
 
 create_chatd_deploy
-echo "✅ Created chatd-deploy"
+echo "✅ Created chatd-deploy (shared across all environments)"
 
 create_chatd_update
-echo "✅ Created chatd-update"
+echo "✅ Created chatd-update (shared across all environments)"
 
 create_chatd_version
-echo "✅ Created chatd-version"
+echo "✅ Created chatd-version (shared across all environments)"
 
 create_chatd_loglevel
 echo "✅ Created ${ENV_NAME}-loglevel"
@@ -1331,16 +1371,16 @@ create_chatd_control
 echo "✅ Created ${ENV_NAME} (main control script)"
 
 create_chatd_cleanup
-echo "✅ Created chatd-cleanup"
+echo "✅ Created chatd-cleanup (shared across all environments)"
 
 create_chatd_images
-echo "✅ Created chatd-images"
+echo "✅ Created chatd-images (shared across all environments)"
 
 create_chatd_prune
-echo "✅ Created chatd-prune"
+echo "✅ Created chatd-prune (shared across all environments)"
 
 create_chatd_disk
-echo "✅ Created chatd-disk"
+echo "✅ Created chatd-disk (shared across all environments)"
 
 echo ""
 echo "🎉 All management scripts created successfully for environment: $ENV_NAME!"

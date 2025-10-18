@@ -32,7 +32,20 @@ Before starting, ensure you have:
 sudo apt update && sudo apt upgrade -y
 
 # Install essential packages
-sudo apt install -y git docker.io docker-compose curl
+sudo apt install -y git docker.io curl
+
+# Install Docker Compose V2 (recommended)
+# Download latest Docker Compose V2 plugin
+curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /tmp/docker-compose-v2
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo mv /tmp/docker-compose-v2 /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# Verify installation
+docker compose version  # Should show v2.x.x
+
+# Alternative: Install Docker Compose V1 (legacy, deprecated)
+# sudo apt install -y docker-compose
 
 # Add current user to docker group
 sudo usermod -aG docker $USER
@@ -40,6 +53,11 @@ sudo usermod -aG docker $USER
 # Log out and back in (or reboot) to apply group changes
 sudo reboot
 ```
+
+**Note on Docker Compose Versions:**
+- **V2 (recommended)**: `docker compose` - Faster, actively maintained, native Docker CLI plugin
+- **V1 (deprecated)**: `docker-compose` - Legacy standalone tool, maintenance-only mode
+- The ChatD scripts **automatically detect** which version is available and use the appropriate command
 
 ### Get ChatD Repository
 
