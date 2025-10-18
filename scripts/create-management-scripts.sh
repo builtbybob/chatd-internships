@@ -952,6 +952,13 @@ create_chatd_control() {
     cat > /usr/local/bin/${ENV_NAME} << EOF
 #!/bin/bash
 
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
 show_usage() {
     echo "${ENV_NAME} Bot Control Script"
     echo "Usage: ${ENV_NAME} <command>"
@@ -964,6 +971,7 @@ show_usage() {
     echo "  enable     Enable service to start on boot"
     echo "  disable    Disable service auto-start"
     echo "  logs [container]  Show logs (bot, postgres, or all)"
+    echo "  loglevel <level>  Change bot log level (debug, info, warning, error, critical)"
     echo "  data       Show data status (alias for ${ENV_NAME}-data)"
     echo "  backup     Create backup (alias for ${ENV_NAME}-backup)"
     echo "  build      Build Docker image (alias for chatd-build)"
@@ -1009,45 +1017,119 @@ show_usage() {
 
 case "\$1" in
     start)
-        echo "🚀 Starting ${ENV_NAME} bot..."
+        echo -e "\${GREEN}🚀 Starting ${ENV_NAME} bot...\${NC}"
         sudo systemctl start ${ENV_NAME}
         ;;
     stop)
-        echo "⏹️  Stopping ${ENV_NAME} bot..."
+        echo -e "\${YELLOW}⏹️  Stopping ${ENV_NAME} bot...\${NC}"
         sudo systemctl stop ${ENV_NAME}
         ;;
     restart)
-        echo "🔄 Restarting ${ENV_NAME} bot..."
+        echo -e "\${BLUE}🔄 Restarting ${ENV_NAME} bot...\${NC}"
         sudo systemctl restart ${ENV_NAME}
         ;;
     status)
-        echo "⚙️  Service Status:"
-        systemctl status ${ENV_NAME} --no-pager
+        echo -e "\${BLUE}📊 ${ENV_NAME} Environment Status\${NC}"
+        echo "=================================="
         echo ""
-        echo "🐳 Container Status:"
+        echo -e "\${YELLOW}🔧 Systemd Service:\${NC}"
+        sudo systemctl status ${ENV_NAME} --no-pager -l || true
+        echo ""
+        echo -e "\${YELLOW}🐳 Docker Containers:\${NC}"
         if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
-            cd ${ENV_DIR} && docker-compose ps
+            sudo bash -c "cd ${ENV_DIR} && docker-compose ps"
         else
-            echo "   ❌ Working directory not found"
+            echo -e "   \${RED}❌ Working directory not found\${NC}"
+        fi
+        echo ""
+        echo -e "\${YELLOW}💾 Database Status:\${NC}"
+        if [[ -d "${ENV_DIR}" && -f "${ENV_DIR}/docker-compose.yml" ]]; then
+            sudo bash -c "cd ${ENV_DIR} && docker-compose exec -T ${ENV_NAME}-postgres pg_isready -U ${ENV_NAME//-/_} -d ${ENV_NAME//-/_}" 2>/dev/null && echo -e "   \${GREEN}✅ Database is ready\${NC}" || echo -e "   \${RED}❌ Database not accessible\${NC}"
+        else
+            echo -e "   \${RED}❌ Working directory not found\${NC}"
         fi
         ;;
     enable)
-        echo "✅ Enabling ${ENV_NAME} bot auto-start..."
+        echo -e "\${GREEN}✅ Enabling ${ENV_NAME} bot auto-start...\${NC}"
         sudo systemctl enable ${ENV_NAME}
         ;;
     disable)
-        echo "❌ Disabling ${ENV_NAME} bot auto-start..."
+        echo -e "\${YELLOW}❌ Disabling ${ENV_NAME} bot auto-start...\${NC}"
         sudo systemctl disable ${ENV_NAME}
         ;;
     logs)
         CONTAINER="\${2:-}"
         if [[ -n "\$CONTAINER" ]]; then
-            echo "📋 Logs for ${ENV_NAME}-\$CONTAINER"
+            echo -e "\${BLUE}📋 Logs for ${ENV_NAME}-\$CONTAINER\${NC}"
             cd "${ENV_DIR}" && docker-compose logs -f "${ENV_NAME}-\${CONTAINER}"
         else
-            echo "📋 All logs for ${ENV_NAME}"
+            echo -e "\${BLUE}📋 All logs for ${ENV_NAME}\${NC}"
             cd "${ENV_DIR}" && docker-compose logs -f
         fi
+        ;;
+    loglevel)
+        LEVEL="\${2:-}"
+        CONTAINER_NAME="${ENV_NAME}-bot"
+        
+        # Check if container is running
+        if ! docker ps --format '{{.Names}}' | grep -q "^\${CONTAINER_NAME}\$"; then
+            echo -e "\${RED}❌ ${ENV_NAME} bot container is not running\${NC}"
+            echo "   Start it with: ${ENV_NAME} start"
+            exit 1
+        fi
+        
+        case "\${LEVEL}" in
+            debug|DEBUG)
+                echo "DEBUG" | docker exec -i "\${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "\${CONTAINER_NAME}" > /dev/null
+                echo -e "\${GREEN}📝 Log level changed to: DEBUG\${NC}"
+                echo -e "\${BLUE}   🔍 Debug logging enabled - very verbose output\${NC}"
+                echo -e "\${BLUE}   View logs with: ${ENV_NAME} logs bot\${NC}"
+                ;;
+            info|INFO)
+                echo "INFO" | docker exec -i "\${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "\${CONTAINER_NAME}" > /dev/null
+                echo -e "\${GREEN}📝 Log level changed to: INFO\${NC}"
+                echo -e "\${BLUE}   ℹ️  Info logging enabled - normal operational messages\${NC}"
+                ;;
+            warning|WARNING|warn|WARN)
+                echo "WARNING" | docker exec -i "\${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "\${CONTAINER_NAME}" > /dev/null
+                echo -e "\${GREEN}📝 Log level changed to: WARNING\${NC}"
+                echo -e "\${BLUE}   ⚠️  Warning logging enabled - warnings and errors only\${NC}"
+                ;;
+            error|ERROR)
+                echo "ERROR" | docker exec -i "\${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "\${CONTAINER_NAME}" > /dev/null
+                echo -e "\${GREEN}📝 Log level changed to: ERROR\${NC}"
+                echo -e "\${BLUE}   ❌ Error logging enabled - errors and critical only\${NC}"
+                ;;
+            critical|CRITICAL|crit|CRIT)
+                echo "CRITICAL" | docker exec -i "\${CONTAINER_NAME}" tee /tmp/chatd_loglevel > /dev/null
+                docker kill --signal=HUP "\${CONTAINER_NAME}" > /dev/null
+                echo -e "\${GREEN}📝 Log level changed to: CRITICAL\${NC}"
+                echo -e "\${BLUE}   🚨 Critical logging enabled - critical errors only\${NC}"
+                ;;
+            "")
+                echo "Usage: ${ENV_NAME} loglevel <level>"
+                echo ""
+                echo "Available log levels:"
+                echo "  debug    - Very verbose, shows all debug information"
+                echo "  info     - Normal operations, startup/shutdown messages"
+                echo "  warning  - Warnings and more severe messages only"
+                echo "  error    - Error conditions and critical issues only"
+                echo "  critical - Only critical system failures"
+                echo ""
+                echo "Current container status:"
+                docker ps --format "  {{.Names}}: {{.Status}}" --filter name="\${CONTAINER_NAME}"
+                exit 1
+                ;;
+            *)
+                echo -e "\${RED}❌ Invalid log level: \$LEVEL\${NC}"
+                echo "   Valid levels: debug, info, warning, error, critical"
+                exit 1
+                ;;
+        esac
         ;;
     data)
         ${ENV_NAME}-data
