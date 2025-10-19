@@ -203,7 +203,7 @@ else
 fi
 
 # Show help if requested
-if [[ "\$1" == "--help" || "\$1" == "-h" ]]; then
+if [[ "\${1:-}" == "--help" || "\${1:-}" == "-h" ]]; then
     echo "${ENV_NAME} Bot Build Script"
     echo "Usage: ${ENV_NAME}-build [BRANCH]"
     echo ""
@@ -233,37 +233,37 @@ WORK_DIR="${ENV_DIR}"
 BRANCH="\${1:-\${CHATD_BRANCH:-main}}"
 
 echo "🔄 Building ${ENV_NAME} Internships Bot..."
-echo "📍 Repository: ${REPO_URL}"
-echo "🌿 Branch: ${BRANCH}"
-echo "📁 Working directory: ${WORK_DIR}"
+echo "📍 Repository: \$REPO_URL"
+echo "🌿 Branch: \$BRANCH"
+echo "📁 Working directory: \$WORK_DIR"
 
 # Show branch source for clarity
-if [[ -n "$1" ]]; then
+if [[ -n "\${1:-}" ]]; then
     echo "   (specified via command line)"
-elif [[ -n "$CHATD_BRANCH" ]]; then
+elif [[ -n "\${CHATD_BRANCH:-}" ]]; then
     echo "   (from CHATD_BRANCH environment variable)"
 else
     echo "   (default branch)"
 fi
 
 # Disk space monitoring logic
-DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9')
-AVAILABLE=$(df --output=avail / | tail -1)
-if [ "$DISK_USAGE" -ge 90 ]; then
+DISK_USAGE=\$(df --output=pcent / | tail -1 | tr -dc '0-9')
+AVAILABLE=\$(df --output=avail / | tail -1)
+if [ "\$DISK_USAGE" -ge 90 ]; then
     echo "⚠️ Disk usage above 90%. Running emergency cleanup..."
     sudo chatd-prune
-elif [ "$DISK_USAGE" -ge 80 ]; then
-    echo "⚠️ Warning: Disk usage at ${DISK_USAGE}%. Consider manual cleanup."
+elif [ "\$DISK_USAGE" -ge 80 ]; then
+    echo "⚠️ Warning: Disk usage at \${DISK_USAGE}%. Consider manual cleanup."
 fi
-if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
+if [ "\$AVAILABLE" -lt \$((1024 * 1024)) ]; then
     echo "❌ Not enough disk space to build new images. Aborting."
     exit 1
 fi
 
 # Create or update working directory
-if [[ -d "$WORK_DIR" ]]; then
+if [[ -d "\$WORK_DIR" ]]; then
     echo "📡 Updating existing repository..."
-    cd "$WORK_DIR"
+    cd "\$WORK_DIR"
     
     # Preserve .env file during git operations
     if [[ -f ".env" ]]; then
@@ -272,40 +272,40 @@ if [[ -d "$WORK_DIR" ]]; then
     
     # Update to latest code
     git fetch origin
-    git checkout "$BRANCH"
-    git reset --hard "origin/$BRANCH"
+    git checkout "\$BRANCH"
+    git reset --hard "origin/\$BRANCH"
 else
     echo "📡 Cloning repository to working directory..."
-    mkdir -p "$(dirname "$WORK_DIR")"
-    git clone --branch "$BRANCH" "$REPO_URL" "$WORK_DIR"
-    cd "$WORK_DIR"
+    mkdir -p "\$(dirname "\$WORK_DIR")"
+    git clone --branch "\$BRANCH" "\$REPO_URL" "\$WORK_DIR"
+    cd "\$WORK_DIR"
 fi
 
 # Get current git commit hash
-COMMIT_HASH=$(git rev-parse --short HEAD)
-IMAGE_TAG="chatd-internships:${COMMIT_HASH}"
+COMMIT_HASH=\$(git rev-parse --short HEAD)
+IMAGE_TAG="chatd-internships:\${COMMIT_HASH}"
 LATEST_TAG="chatd-internships:latest"
 
-echo "📋 Current commit: ${COMMIT_HASH}"
+echo "📋 Current commit: \${COMMIT_HASH}"
 
 # Check if image for this commit already exists
-if docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
-    echo "✅ Image for commit ${COMMIT_HASH} already exists!"
+if docker image inspect "\${IMAGE_TAG}" >/dev/null 2>&1; then
+    echo "✅ Image for commit \${COMMIT_HASH} already exists!"
     echo "🏷️  Tagging as latest..."
-    docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
+    docker tag "\${IMAGE_TAG}" "\${LATEST_TAG}"
     echo "⚡ Build skipped - no changes detected"
     exit 0
 fi
 
 # Build new docker image with commit tag
-echo "🐳 Building Docker image for commit ${COMMIT_HASH}..."
-\$DOCKER_COMPOSE_CMD build chatd-bot
+echo "🐳 Building Docker image for commit \${COMMIT_HASH}..."
+\$DOCKER_COMPOSE_CMD build ${ENV_NAME}-bot
 
 # Tag the built image with commit hash and latest
-BUILT_IMAGE_ID=$(docker images -q chatd_chatd-bot:latest)
-if [[ -n "$BUILT_IMAGE_ID" ]]; then
-    docker tag "$BUILT_IMAGE_ID" "${IMAGE_TAG}"
-    docker tag "$BUILT_IMAGE_ID" "${LATEST_TAG}"
+BUILT_IMAGE_ID=\$(docker images -q ${ENV_NAME}_${ENV_NAME}-bot:latest)
+if [[ -n "\$BUILT_IMAGE_ID" ]]; then
+    docker tag "\$BUILT_IMAGE_ID" "\${IMAGE_TAG}"
+    docker tag "\$BUILT_IMAGE_ID" "\${LATEST_TAG}"
 else
     echo "❌ Failed to find built image"
     exit 1
@@ -313,10 +313,10 @@ fi
 
 # Also tag as latest
 echo "🏷️  Tagging as latest..."
-docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
+docker tag "\${IMAGE_TAG}" "\${LATEST_TAG}"
 
 echo "✅ Bot image built successfully!"
-echo "📦 Image: ${IMAGE_TAG}"
+echo "📦 Image: \${IMAGE_TAG}"
 echo "ℹ️  Use 'chatd deploy' to restart with the new image."
 EOF
     chmod +x /usr/local/bin/${ENV_NAME}-build
@@ -346,15 +346,15 @@ fi
 
 
 # Disk space monitoring logic
-DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9')
-AVAILABLE=$(df --output=avail / | tail -1)
-if [ "$DISK_USAGE" -ge 90 ]; then
+DISK_USAGE=\$(df --output=pcent / | tail -1 | tr -dc '0-9')
+AVAILABLE=\$(df --output=avail / | tail -1)
+if [ "\$DISK_USAGE" -ge 90 ]; then
     echo "⚠️ Disk usage above 90%. Running emergency cleanup..."
     sudo chatd-prune
-elif [ "$DISK_USAGE" -ge 80 ]; then
-    echo "⚠️ Warning: Disk usage at ${DISK_USAGE}%. Consider manual cleanup."
+elif [ "\$DISK_USAGE" -ge 80 ]; then
+    echo "⚠️ Warning: Disk usage at \${DISK_USAGE}%. Consider manual cleanup."
 fi
-if [ "$AVAILABLE" -lt $((1024 * 1024)) ]; then
+if [ "\$AVAILABLE" -lt \$((1024 * 1024)) ]; then
     echo "❌ Not enough disk space to deploy new images. Aborting."
     exit 1
 fi
@@ -366,29 +366,29 @@ WORK_DIR="${ENV_DIR}"
 
 # Check if working directory exists
 if [[ ! -d "\$WORK_DIR" ]]; then
-    echo "❌ Error: Working directory $WORK_DIR not found"
+    echo "❌ Error: Working directory \$WORK_DIR not found"
     echo "   Run 'chatd build' first to set up the working directory"
     exit 1
 fi
 
 # Change to working directory
-cd "$WORK_DIR"
+cd "\$WORK_DIR"
 
 # Verify required files exist
 if [[ ! -f "docker-compose.yml" ]]; then
-    echo "❌ Error: docker-compose.yml not found in $WORK_DIR"
+    echo "❌ Error: docker-compose.yml not found in \$WORK_DIR"
     echo "   Run 'chatd build' to update the working directory"
     exit 1
 fi
 
 if [[ ! -f ".env" ]]; then
-    echo "⚠️  Warning: .env file not found in $WORK_DIR"
+    echo "⚠️  Warning: .env file not found in \$WORK_DIR"
     echo "   Create .env file with your configuration before deployment"
     echo "   Example: cp examples/.env.example .env && nano .env"
     exit 1
 fi
 
-echo "🐳 Using docker-compose.yml in $WORK_DIR"
+echo "🐳 Using docker-compose.yml in \$WORK_DIR"
 
 # Stop any existing containers
 echo "🛑 Stopping existing containers..."
@@ -422,22 +422,22 @@ fi
 
 # --- Docker Image Auto-Pruning ---
 echo "🧹 Cleaning up old Docker images..."
-RETENTION_COUNT=${CHATD_DOCKER_RETENTION:-3}
+RETENTION_COUNT=\${CHATD_DOCKER_RETENTION:-3}
 
-echo "📊 Retention policy: keeping $RETENTION_COUNT images (current + 2 rollback options)"
+echo "📊 Retention policy: keeping \$RETENTION_COUNT images (current + 2 rollback options)"
 
 # Get all chatd-internships image tags sorted by creation date (newest first)
-IMAGE_TAGS=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest)
+IMAGE_TAGS=\$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest)
 
 # Remove images older than retention count
-echo "$IMAGE_TAGS" | tail -n +$((RETENTION_COUNT + 1)) | while read tag; do
-    if [[ -n "$tag" ]]; then
-        echo "🗑️  Removing old image: chatd-internships:$tag"
-        docker rmi "chatd-internships:$tag" 2>/dev/null || true
+echo "\$IMAGE_TAGS" | tail -n +\$((RETENTION_COUNT + 1)) | while read tag; do
+    if [[ -n "\$tag" ]]; then
+        echo "🗑️  Removing old image: chatd-internships:\$tag"
+        docker rmi "chatd-internships:\$tag" 2>/dev/null || true
     fi
 done
 
-echo "✅ Cleanup complete. Retained $RETENTION_COUNT images."
+echo "✅ Cleanup complete. Retained \$RETENTION_COUNT images."
 EOF
     chmod +x /usr/local/bin/${ENV_NAME}-deploy
 }
@@ -463,23 +463,23 @@ WORK_DIR="${ENV_DIR}"
 BRANCH="\${1:-\${CHATD_BRANCH:-main}}"
 
 echo "🔄 Updating ${ENV_NAME} Internships Bot (build + deploy)..."
-echo "📍 Repository: ${REPO_URL}"
-echo "🌿 Branch: ${BRANCH}"
-echo "📁 Working directory: ${WORK_DIR}"
+echo "📍 Repository: \$REPO_URL"
+echo "🌿 Branch: \$BRANCH"
+echo "📁 Working directory: \$WORK_DIR"
 
 # Show branch source for clarity
-if [[ -n "$1" ]]; then
+if [[ -n "\${1:-}" ]]; then
     echo "   (specified via command line)"
-elif [[ -n "$CHATD_BRANCH" ]]; then
+elif [[ -n "\${CHATD_BRANCH:-}" ]]; then
     echo "   (from CHATD_BRANCH environment variable)"
 else
     echo "   (default branch)"
 fi
 
 # Create or update working directory
-if [[ -d "$WORK_DIR" ]]; then
+if [[ -d "\$WORK_DIR" ]]; then
     echo "📡 Updating existing repository..."
-    cd "$WORK_DIR"
+    cd "\$WORK_DIR"
     
     # Preserve .env file during git operations
     if [[ -f ".env" ]]; then
@@ -488,38 +488,38 @@ if [[ -d "$WORK_DIR" ]]; then
     
     # Update to latest code
     git fetch origin
-    git checkout "$BRANCH"
-    git reset --hard "origin/$BRANCH"
+    git checkout "\$BRANCH"
+    git reset --hard "origin/\$BRANCH"
 else
     echo "📡 Cloning repository to working directory..."
-    mkdir -p "$(dirname "$WORK_DIR")"
-    git clone --branch "$BRANCH" "$REPO_URL" "$WORK_DIR"
-    cd "$WORK_DIR"
+    mkdir -p "\$(dirname "\$WORK_DIR")"
+    git clone --branch "\$BRANCH" "\$REPO_URL" "\$WORK_DIR"
+    cd "\$WORK_DIR"
 fi
 
 # Get current git commit hash
-COMMIT_HASH=$(git rev-parse --short HEAD)
-IMAGE_TAG="chatd-internships:${COMMIT_HASH}"
+COMMIT_HASH=\$(git rev-parse --short HEAD)
+IMAGE_TAG="chatd-internships:\${COMMIT_HASH}"
 LATEST_TAG="chatd-internships:latest"
 
-echo "📋 Current commit: ${COMMIT_HASH}"
+echo "📋 Current commit: \${COMMIT_HASH}"
 
 # Check if image for this commit already exists
-if docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
-    echo "✅ Image for commit ${COMMIT_HASH} already exists!"
+if docker image inspect "\${IMAGE_TAG}" >/dev/null 2>&1; then
+    echo "✅ Image for commit \${COMMIT_HASH} already exists!"
     echo "🏷️  Tagging as latest..."
-    docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
+    docker tag "\${IMAGE_TAG}" "\${LATEST_TAG}"
     echo "⚡ Build skipped - no changes detected"
 else
     # Build new docker image with commit tag
-    echo "🐳 Building Docker image for commit ${COMMIT_HASH}..."
-    \$DOCKER_COMPOSE_CMD build chatd-bot
+    echo "🐳 Building Docker image for commit \${COMMIT_HASH}..."
+    \$DOCKER_COMPOSE_CMD build ${ENV_NAME}-bot
     
     # Tag the built image with commit hash and latest
-    BUILT_IMAGE_ID=$(docker images -q chatd_chatd-bot:latest)
-    if [[ -n "$BUILT_IMAGE_ID" ]]; then
-        docker tag "$BUILT_IMAGE_ID" "${IMAGE_TAG}"
-        docker tag "$BUILT_IMAGE_ID" "${LATEST_TAG}"
+    BUILT_IMAGE_ID=\$(docker images -q ${ENV_NAME}_${ENV_NAME}-bot:latest)
+    if [[ -n "\$BUILT_IMAGE_ID" ]]; then
+        docker tag "\$BUILT_IMAGE_ID" "\${IMAGE_TAG}"
+        docker tag "\$BUILT_IMAGE_ID" "\${LATEST_TAG}"
         echo "✅ Bot image built successfully!"
     else
         echo "❌ Failed to find built image"
@@ -545,7 +545,7 @@ if [[ ! -f ".env" ]]; then
     exit 1
 fi
 
-echo "🐳 Using docker-compose.yml in $(pwd)"
+echo "🐳 Using docker-compose.yml in \$(pwd)"
 
 # Stop any existing containers
 echo "🛑 Stopping existing containers..."
@@ -555,7 +555,7 @@ echo "🛑 Stopping existing containers..."
 echo "� Starting services with docker-compose..."
 if \$DOCKER_COMPOSE_CMD up -d; then
     echo "✅ Bot updated and deployed via docker-compose!"
-    echo "📦 Running: ${IMAGE_TAG}"
+    echo "📦 Running: \${IMAGE_TAG}"
     
     # Wait a moment for containers to start
     sleep 3
@@ -571,33 +571,33 @@ else
         echo "🔄 Restarting service..."
         systemctl restart ${ENV_NAME}
         echo "✅ Bot updated and deployed!"
-        echo "📦 Running: ${IMAGE_TAG}"
+        echo "📦 Running: \${IMAGE_TAG}"
     else
         echo "🚀 Starting bot service..."
         systemctl start ${ENV_NAME}
         echo "✅ Bot built and started!"
-        echo "📦 Running: ${IMAGE_TAG}"
+        echo "📦 Running: \${IMAGE_TAG}"
     fi
 fi
 
 # --- Docker Image Auto-Pruning ---
 echo "🧹 Cleaning up old Docker images..."
-RETENTION_COUNT=${CHATD_DOCKER_RETENTION:-3}
+RETENTION_COUNT=\${CHATD_DOCKER_RETENTION:-3}
 
-echo "📊 Retention policy: keeping $RETENTION_COUNT images (current + 2 rollback options)"
+echo "📊 Retention policy: keeping \$RETENTION_COUNT images (current + 2 rollback options)"
 
 # Get all chatd-internships image tags sorted by creation date (newest first)
-IMAGE_TAGS=$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest)
+IMAGE_TAGS=\$(docker images chatd-internships --format "{{.Tag}}" | grep -v latest)
 
 # Remove images older than retention count
-echo "$IMAGE_TAGS" | tail -n +$((RETENTION_COUNT + 1)) | while read tag; do
-    if [[ -n "$tag" ]]; then
-        echo "🗑️  Removing old image: chatd-internships:$tag"
-        docker rmi "chatd-internships:$tag" 2>/dev/null || true
+echo "\$IMAGE_TAGS" | tail -n +\$((\$RETENTION_COUNT + 1)) | while read tag; do
+    if [[ -n "\$tag" ]]; then
+        echo "🗑️  Removing old image: chatd-internships:\$tag"
+        docker rmi "chatd-internships:\$tag" 2>/dev/null || true
     fi
 done
 
-echo "✅ Cleanup complete. Retained $RETENTION_COUNT images."
+echo "✅ Cleanup complete. Retained \$RETENTION_COUNT images."
 EOF
     chmod +x /usr/local/bin/${ENV_NAME}-update
 }
@@ -628,12 +628,15 @@ show_current_version() {
     echo "🔍 Current ChatD Bot Version Information"
     echo "========================================"
     
-    # Check if container is running
-    if docker ps -q -f name=chatd-bot >/dev/null 2>&1; then
-        CONTAINER_ID=$(docker ps -q -f name=chatd-bot)
+    # Detect which ChatD environment is running
+    RUNNING_CONTAINER=$(docker ps --filter "name=-bot" --format "{{.Names}}" | grep -E "^(chatd|bratd|[a-z]+-bot)" | head -1)
+    
+    if [ -n "$RUNNING_CONTAINER" ]; then
+        CONTAINER_ID=$(docker ps -q -f name=$RUNNING_CONTAINER)
         IMAGE_ID=$(docker inspect --format='{{.Image}}' $CONTAINER_ID 2>/dev/null)
         IMAGE_TAG=$(docker inspect --format='{{index .RepoTags 0}}' $IMAGE_ID 2>/dev/null || echo "Unknown")
         
+        echo "🏷️  Environment: $RUNNING_CONTAINER"
         echo "📦 Running Image: $IMAGE_TAG"
         echo "🆔 Image ID: $(echo $IMAGE_ID | cut -c1-12)"
         echo "📅 Created: $(docker inspect --format='{{.Created}}' $IMAGE_ID 2>/dev/null | cut -c1-19)"
@@ -865,12 +868,12 @@ case $LOG_TYPE in
         fi
         ;;
     "docker")
-        if [[ "$FOLLOW" == "true" ]]; then
+        if [[ "\$FOLLOW" == "true" ]]; then
             echo "🐳 Following Docker container logs..."
-            docker logs -f chatd-bot 2>/dev/null || echo "❌ Container not running or not found"
+            docker logs -f ${ENV_NAME}-bot 2>/dev/null || echo "❌ Container not running or not found"
         else
-            echo "🐳 Last $LINES lines of Docker logs:"
-            docker logs --tail "$LINES" chatd-bot 2>/dev/null || echo "❌ Container not running or not found"
+            echo "🐳 Last \$LINES lines of Docker logs:"
+            docker logs --tail "\$LINES" ${ENV_NAME}-bot 2>/dev/null || echo "❌ Container not running or not found"
         fi
         ;;
     "system")
@@ -922,31 +925,86 @@ EOF
 
 # Data inspection script
 create_chatd_data() {
-    cat > "/usr/local/bin/${ENV_NAME}-data" << 'EOF'
+    cat > "/usr/local/bin/${ENV_NAME}-data" << EOF
 #!/bin/bash
 set -euo pipefail
 
-echo "📊 ChatD Bot Data Status"
+WORK_DIR="${ENV_DIR}"
+CONTAINER_NAME="${ENV_NAME}-bot"
+
+echo "📊 ${ENV_NAME} Bot Data Status"
 echo "========================"
 
-# Bot Data Files
+# Detect storage/migration mode from .env (check both variable names for compatibility)
+STORAGE_MODE="unknown"
+if [[ -f "\$WORK_DIR/.env" ]]; then
+    # Try STORAGE_MODE first, then MIGRATION_MODE for backward compatibility
+    STORAGE_MODE=\$(grep "^STORAGE_MODE=" "\$WORK_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || \
+                   grep "^MIGRATION_MODE=" "\$WORK_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || \
+                   echo "unknown")
+fi
+
+echo "💾 Storage Mode: \$STORAGE_MODE"
 echo ""
-echo "📁 Bot Data Files:"
-if [[ -d "/opt/chatd/data" ]]; then
-    ls -la /opt/chatd/data/ 2>/dev/null || echo "   (empty)"
-else
-    echo "   ❌ Data directory not found"
+
+# Database Statistics (for dual_write and database_only modes)
+if [[ "\$STORAGE_MODE" == "dual_write" || "\$STORAGE_MODE" == "database_only" ]]; then
+    echo ""
+    echo "� Database Statistics:"
+    
+    # Check if postgres container is running
+    if docker ps --format "{{.Names}}" | grep -q "${ENV_NAME}-postgres"; then
+        # Get database stats using docker exec (based on V2 schema)
+        TOTAL_JOBS=\$(docker exec ${ENV_NAME}-postgres psql -U ${ENV_NAME} -d ${ENV_NAME} -t -A -c \
+            "SELECT COUNT(*) FROM job_postings;" 2>/dev/null | tr -d ' ')
+        ACTIVE_JOBS=\$(docker exec ${ENV_NAME}-postgres psql -U ${ENV_NAME} -d ${ENV_NAME} -t -A -c \
+            "SELECT COUNT(*) FROM job_postings WHERE active = true AND is_visible = true AND is_deleted = false;" 2>/dev/null | tr -d ' ')
+        DELETED_JOBS=\$(docker exec ${ENV_NAME}-postgres psql -U ${ENV_NAME} -d ${ENV_NAME} -t -A -c \
+            "SELECT COUNT(*) FROM job_postings WHERE is_deleted = true;" 2>/dev/null | tr -d ' ')
+        INACTIVE_JOBS=\$(docker exec ${ENV_NAME}-postgres psql -U ${ENV_NAME} -d ${ENV_NAME} -t -A -c \
+            "SELECT COUNT(*) FROM job_postings WHERE (active = false OR is_visible = false) AND is_deleted = false;" 2>/dev/null | tr -d ' ')
+        TOTAL_MESSAGES=\$(docker exec ${ENV_NAME}-postgres psql -U ${ENV_NAME} -d ${ENV_NAME} -t -A -c \
+            "SELECT COUNT(*) FROM message_tracking;" 2>/dev/null | tr -d ' ')
+        TOTAL_APPLICATIONS=\$(docker exec ${ENV_NAME}-postgres psql -U ${ENV_NAME} -d ${ENV_NAME} -t -A -c \
+            "SELECT COUNT(*) FROM student_applications;" 2>/dev/null | tr -d ' ')
+        UNIQUE_APPLICANTS=\$(docker exec ${ENV_NAME}-postgres psql -U ${ENV_NAME} -d ${ENV_NAME} -t -A -c \
+            "SELECT COUNT(DISTINCT discord_user_id) FROM student_applications;" 2>/dev/null | tr -d ' ')
+        
+        if [[ -n "\$TOTAL_JOBS" && "\$TOTAL_JOBS" =~ ^[0-9]+\$ ]]; then
+            echo "   📊 Job Postings: \$TOTAL_JOBS total"
+            echo "      ✅ Active: \$ACTIVE_JOBS"
+            echo "      ⏸️  Inactive: \$INACTIVE_JOBS"
+            echo "      🗑️  Deleted: \$DELETED_JOBS"
+            echo "   📨 Message Tracking: \$TOTAL_MESSAGES posted messages"
+            echo "   📝 Student Applications: \$TOTAL_APPLICATIONS applications from \$UNIQUE_APPLICANTS unique students"
+        else
+            echo "   ⚠️  Could not query database"
+        fi
+    else
+        echo "   ❌ Database container not running"
+    fi
+fi
+
+# Bot Data Files (for json_only and dual_write modes)
+if [[ "\$STORAGE_MODE" == "json_only" || "\$STORAGE_MODE" == "dual_write" ]]; then
+    echo ""
+    echo "📁 JSON Data Files:"
+    if [[ -d "\$WORK_DIR/data" ]]; then
+        ls -lh "\$WORK_DIR/data"/*.json 2>/dev/null | tail -10 || echo "   (no JSON files found)"
+    else
+        echo "   ❌ Data directory not found"
+    fi
 fi
 
 # Repository Status
 echo ""
 echo "📚 Repository Status:"
-if [[ -d "/opt/chatd/Summer2026-Internships" ]]; then
-    cd /opt/chatd/Summer2026-Internships 2>/dev/null && {
+if [[ -d "\$WORK_DIR/Summer2026-Internships" ]]; then
+    cd "\$WORK_DIR/Summer2026-Internships" 2>/dev/null && {
         if [[ -d ".git" ]]; then
-            echo "   📍 Branch: $(git branch --show-current 2>/dev/null || echo 'unknown')"
-            echo "   🔄 Last commit: $(git log -1 --pretty=format:'%h %s' 2>/dev/null || echo 'unknown')"
-            echo "   📅 Last pull: $(stat -c %y .git/FETCH_HEAD 2>/dev/null || echo 'never')"
+            echo "   📍 Branch: \$(git branch --show-current 2>/dev/null || echo 'unknown')"
+            echo "   🔄 Last commit: \$(git log -1 --pretty=format:'%h %s' 2>/dev/null || echo 'unknown')"
+            echo "   📅 Last pull: \$(stat -c %y .git/FETCH_HEAD 2>/dev/null || echo 'never')"
         else
             echo "   ❌ Not a git repository"
         fi
@@ -958,8 +1016,8 @@ fi
 # Container Status
 echo ""
 echo "🐳 Container Status:"
-if docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep -q chatd-bot; then
-    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep chatd-bot
+if docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep -q "\$CONTAINER_NAME"; then
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep "\$CONTAINER_NAME"
 else
     echo "   ❌ Container not running"
 fi
@@ -967,14 +1025,14 @@ fi
 # Service Status
 echo ""
 echo "⚙️  Service Status:"
-systemctl status ${ENV_NAME} --no-pager -l || echo "   ❌ Service status unknown"
+systemctl status ${ENV_NAME} --no-pager -l 2>&1 | head -10 || echo "   ❌ Service status unknown"
 
 # Recent Log Summary
 echo ""
 echo "📋 Recent Activity:"
-if [[ -f "/opt/chatd/logs/chatd.log" ]]; then
+if [[ -f "\$WORK_DIR/logs/chatd.log" ]]; then
     echo "   Last 5 log entries:"
-    tail -5 /opt/chatd/logs/chatd.log | sed 's/^/   /'
+    tail -5 "\$WORK_DIR/logs/chatd.log" | sed 's/^/   /'
 else
     echo "   ❌ No log file found"
 fi
@@ -982,8 +1040,11 @@ fi
 # Disk Usage
 echo ""
 echo "💾 Disk Usage:"
-echo "   Data: $(du -sh /opt/chatd 2>/dev/null | cut -f1 || echo 'unknown')"
-echo "   Logs: $(du -sh /opt/chatd/logs 2>/dev/null | cut -f1 || echo 'unknown')"
+echo "   Work Dir: \$(du -sh "\$WORK_DIR" 2>/dev/null | cut -f1 || echo 'unknown')"
+echo "   Logs: \$(du -sh "\$WORK_DIR/logs" 2>/dev/null | cut -f1 || echo 'unknown')"
+if [[ -d "\$WORK_DIR/data" ]]; then
+    echo "   Data: \$(du -sh "\$WORK_DIR/data" 2>/dev/null | cut -f1 || echo 'unknown')"
+fi
 EOF
     chmod +x "/usr/local/bin/${ENV_NAME}-data"
 }
@@ -1028,9 +1089,9 @@ show_usage() {
     echo "  docker-cleanup Clean up Docker resources (images, volumes)"
     echo "  data       Show data status (alias for ${ENV_NAME}-data)"
     echo "  backup     Create backup (alias for ${ENV_NAME}-backup)"
-    echo "  build      Build Docker image (alias for chatd-build)"
-    echo "  deploy     Deploy with existing image (alias for chatd-deploy)"
-    echo "  update     Build and deploy together (alias for chatd-update)"
+    echo "  build      Build Docker image (alias for ${ENV_NAME}-build)"
+    echo "  deploy     Deploy with existing image (alias for ${ENV_NAME}-deploy)"
+    echo "  update     Build and deploy together (alias for ${ENV_NAME}-update)"
     echo "  version    Show version information (alias for chatd-version)"
     echo "  cleanup    Manual image cleanup (alias for chatd-cleanup)"
     echo "  images     List all ChatD images (alias for chatd-images)"
@@ -1082,7 +1143,7 @@ case "\$1" in
         sudo systemctl start ${ENV_NAME}
         ;;
     stop)
-        echo -e "\${YELLOW}⏹️  Stopping ${ENV_NAME} bot...\${NC}"
+        echo -e "\${YELLOW}🛑 Stopping ${ENV_NAME} bot...\${NC}"
         sudo systemctl stop ${ENV_NAME}
         ;;
     restart)
@@ -1259,14 +1320,14 @@ case "\$1" in
         ;;
     build)
         shift
-        chatd-build "\$@"
+        ${ENV_NAME}-build "\$@"
         ;;
     deploy)
-        chatd-deploy
+        ${ENV_NAME}-deploy
         ;;
     update)
         shift
-        chatd-update "\$@"
+        ${ENV_NAME}-update "\$@"
         ;;
     version)
         shift
@@ -1353,13 +1414,13 @@ EOF
 echo "Creating ChatD management scripts..."
 
 create_chatd_build
-echo "✅ Created chatd-build (shared across all environments)"
+echo "✅ Created ${ENV_NAME}-build"
 
 create_chatd_deploy
-echo "✅ Created chatd-deploy (shared across all environments)"
+echo "✅ Created ${ENV_NAME}-deploy"
 
 create_chatd_update
-echo "✅ Created chatd-update (shared across all environments)"
+echo "✅ Created ${ENV_NAME}-update"
 
 create_chatd_version
 echo "✅ Created chatd-version (shared across all environments)"
