@@ -445,6 +445,74 @@ def test_process_job_changes():
         return True
 
 
+def test_abort_on_empty_storage_configuration():
+    """Test the configurable ABORT_ON_EMPTY_STORAGE safety setting."""
+    logger.info("🔍 Testing ABORT_ON_EMPTY_STORAGE configuration...")
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        
+        # Test Case 1: Safety enabled (default behavior - abort on empty storage)
+        logger.info("Testing with ABORT_ON_EMPTY_STORAGE=true (safe mode)...")
+        safe_config = create_test_config('json_only', temp_path)
+        safe_config.abort_on_empty_storage = True
+        safe_storage = DataStorage(safe_config)
+        
+        # Create test jobs
+        test_jobs = create_test_data()
+        
+        # With empty storage and safety enabled, should abort and return empty changes
+        changes = safe_storage.detect_job_changes(test_jobs)
+        
+        assert isinstance(changes, dict), "Expected dict result from detect_job_changes"
+        assert 'changes' in changes or 'added' in changes, "Expected changes structure in result"
+        
+        # When safety is enabled and storage is empty, it should abort
+        if 'changes' in changes:
+            assert len(changes['changes']['added']) == 0, "Safety mode should prevent additions when storage is empty"
+            assert len(changes['changes']['updated']) == 0, "Safety mode should prevent updates when storage is empty"
+            assert len(changes['changes']['removed']) == 0, "Safety mode should prevent removals when storage is empty"
+        else:
+            # Alternate structure
+            assert len(changes.get('added', [])) == 0, "Safety mode should prevent additions when storage is empty"
+        
+        logger.info("✅ Safety mode correctly aborted on empty storage")
+        
+        # Test Case 2: Safety disabled (allow processing with empty storage)
+        logger.info("Testing with ABORT_ON_EMPTY_STORAGE=false (unsafe mode)...")
+        unsafe_config = create_test_config('json_only', temp_path)
+        unsafe_config.abort_on_empty_storage = False
+        unsafe_storage = DataStorage(unsafe_config)
+        
+        # With empty storage and safety disabled, should proceed with treating all jobs as new
+        changes_unsafe = unsafe_storage.detect_job_changes(test_jobs)
+        
+        assert isinstance(changes_unsafe, dict), "Expected dict result from detect_job_changes"
+        
+        # When safety is disabled, it should proceed (but we can't guarantee additions in this test
+        # because it depends on the backend implementation)
+        logger.info(f"Unsafe mode returned changes: {len(changes_unsafe.get('added', changes_unsafe.get('changes', {}).get('added', [])))} additions")
+        
+        # Test Case 3: Normal operation with existing data (safety setting shouldn't matter)
+        logger.info("Testing normal operation with existing data...")
+        normal_config = create_test_config('json_only', temp_path)
+        normal_config.abort_on_empty_storage = True  # Doesn't matter since storage isn't empty
+        normal_storage = DataStorage(normal_config)
+        
+        # Save initial jobs
+        assert normal_storage.save_job_postings(test_jobs[:1]), "Failed to save initial jobs"
+        
+        # Detect changes with second job as "new"
+        changes_normal = normal_storage.detect_job_changes(test_jobs)
+        
+        # With existing data, safety setting shouldn't interfere
+        assert isinstance(changes_normal, dict), "Expected dict result from detect_job_changes"
+        logger.info(f"Normal operation with data: {changes_normal.get('added', changes_normal.get('changes', {}).get('added', []))}")
+        
+        logger.info("✅ ABORT_ON_EMPTY_STORAGE configuration test passed")
+        return True
+
+
 def test_error_handling_and_edge_cases():
     """Test error handling and edge cases."""
     logger.info("🔍 Testing error handling and edge cases...")
@@ -725,6 +793,10 @@ def main():
     
     # Test message tracking preservation during content correction
     if not test_message_tracking_preservation():
+        all_passed = False
+    
+    # Test ABORT_ON_EMPTY_STORAGE configuration
+    if not test_abort_on_empty_storage_configuration():
         all_passed = False
     
     # Test error handling and edge cases

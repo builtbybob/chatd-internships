@@ -975,14 +975,21 @@ class DataStorage:
         logger.info(f"Change detection: {len(current_jobs)} current jobs vs {len(previous_jobs)} previous jobs")
         if len(previous_jobs) == 0 and len(current_jobs) > 0:
             logger.error("CRITICAL: No previous jobs found from storage! All jobs will be treated as new.")
-            logger.error("SAFETY: Aborting change detection to prevent duplicate insertion attempts")
-            return {
-                'changes': {
-                    'added': [],
-                    'updated': [],
-                    'removed': []
+            
+            # Check configuration to determine whether to abort or proceed
+            if self.config.abort_on_empty_storage:
+                logger.error("SAFETY: Aborting change detection to prevent duplicate insertion attempts")
+                logger.error("   Set ABORT_ON_EMPTY_STORAGE=false to allow processing with empty storage")
+                return {
+                    'changes': {
+                        'added': [],
+                        'updated': [],
+                        'removed': []
+                    }
                 }
-            }
+            else:
+                logger.warning("PROCEEDING: ABORT_ON_EMPTY_STORAGE is disabled, treating all jobs as new")
+                logger.warning("   This may result in duplicate insertions if storage should not be empty")
         elif len(current_jobs) > 0 and len(previous_jobs) > 0:
             logger.debug(f"Sample current job ID: {current_jobs[0].get('id')} vs sample previous job ID: {previous_jobs[0].get('id')}")
         

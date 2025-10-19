@@ -74,6 +74,8 @@ DEFAULT_CONFIG = {
     'CONGRATULATION_DM_ENABLED': 'true',  # Toggle for congratulatory DMs
     'MAX_RECENT_APPLICATIONS_SHOWN': '5',  # Number of recent apps shown in DM
     'APPLICATION_MILESTONE_MESSAGES': 'true',  # Special messages for milestone applications (1st, 5th, 10th)
+    # Change detection safety settings
+    'ABORT_ON_EMPTY_STORAGE': 'true',  # Abort change detection if no previous jobs found (prevents duplicate insertions)
 }
 
 # Required configuration values that must be set
@@ -175,6 +177,7 @@ class Config:
         self.enable_application_tracking = self.enable_application_tracking.lower() in ('true', '1', 'yes', 'on')
         self.congratulation_dm_enabled = self.congratulation_dm_enabled.lower() in ('true', '1', 'yes', 'on')
         self.application_milestone_messages = self.application_milestone_messages.lower() in ('true', '1', 'yes', 'on')
+        self.abort_on_empty_storage = self.abort_on_empty_storage.lower() in ('true', '1', 'yes', 'on')
         
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')
