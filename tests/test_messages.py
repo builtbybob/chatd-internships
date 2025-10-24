@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
-from chatd.messages import format_epoch, format_message, compare_roles, get_reaction_tips
+from chatd.messages import format_epoch, format_message, compare_roles, get_reaction_tips, generate_generic_title
 
 
 class TestMessages(unittest.TestCase):
@@ -186,6 +186,143 @@ class TestMessages(unittest.TestCase):
             formatted = format_message(role)
             self.assertNotIn('❓: More info', formatted)
             self.assertNotIn('📝: Mark applied', formatted)
+    
+    def test_generate_generic_title_with_category(self):
+        """Test generic title generation with category."""
+        mock_config = MagicMock()
+        mock_config.generic_job_title = 'Intern'
+        
+        role = {
+            'category': 'AI/ML/Data',
+        }
+        
+        with patch('chatd.config.config', mock_config):
+            result = generate_generic_title(role)
+            self.assertEqual(result, 'Intern - AI/ML/Data')
+    
+    def test_generate_generic_title_without_category(self):
+        """Test generic title generation without category."""
+        mock_config = MagicMock()
+        mock_config.generic_job_title = 'Intern'
+        
+        role = {}
+        
+        with patch('chatd.config.config', mock_config):
+            result = generate_generic_title(role)
+            self.assertEqual(result, 'Intern')
+    
+    def test_generate_generic_title_custom_base_title(self):
+        """Test generic title generation with custom base title."""
+        mock_config = MagicMock()
+        mock_config.generic_job_title = 'New Grad'
+        
+        role = {
+            'category': 'Software Engineering',
+        }
+        
+        with patch('chatd.config.config', mock_config):
+            result = generate_generic_title(role)
+            self.assertEqual(result, 'New Grad - Software Engineering')
+    
+    def test_format_message_with_blank_title_enabled(self):
+        """Test message formatting with blank title and generic titles enabled."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = False
+        mock_config.message_reactions = []
+        mock_config.timezone = 'America/New_York'
+        mock_config.enable_generic_titles = True
+        mock_config.generic_job_title = 'Intern'
+        
+        role = {
+            'title': '',  # Blank title
+            'company_name': 'TechCorp',
+            'category': 'AI/ML/Data',
+            'url': 'https://example.com/jobs/456',
+            'locations': ['San Francisco, CA'],
+            'terms': ['Summer 2026'],
+            'date_posted': datetime.now().timestamp(),
+        }
+        
+        with patch('chatd.config.config', mock_config):
+            formatted = format_message(role)
+            # Should contain the generated title
+            self.assertIn('[Intern - AI/ML/Data]', formatted)
+            self.assertIn('TechCorp', formatted)
+    
+    def test_format_message_with_none_title_enabled(self):
+        """Test message formatting with None title and generic titles enabled."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = False
+        mock_config.message_reactions = []
+        mock_config.timezone = 'America/New_York'
+        mock_config.enable_generic_titles = True
+        mock_config.generic_job_title = 'Intern'
+        
+        role = {
+            'title': None,  # None title
+            'company_name': 'StartupCo',
+            'category': 'Software Engineering',
+            'url': 'https://example.com/jobs/789',
+            'locations': ['Remote'],
+            'terms': ['Summer 2026'],
+            'date_posted': datetime.now().timestamp(),
+        }
+        
+        with patch('chatd.config.config', mock_config):
+            formatted = format_message(role)
+            # Should contain the generated title
+            self.assertIn('[Intern - Software Engineering]', formatted)
+            self.assertIn('StartupCo', formatted)
+    
+    def test_format_message_with_whitespace_title_enabled(self):
+        """Test message formatting with whitespace-only title and generic titles enabled."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = False
+        mock_config.message_reactions = []
+        mock_config.timezone = 'America/New_York'
+        mock_config.enable_generic_titles = True
+        mock_config.generic_job_title = 'Intern'
+        
+        role = {
+            'title': '   ',  # Whitespace-only title
+            'company_name': 'DataCorp',
+            'category': 'Data Science',
+            'url': 'https://example.com/jobs/101',
+            'locations': ['New York, NY'],
+            'terms': ['Summer 2026'],
+            'date_posted': datetime.now().timestamp(),
+        }
+        
+        with patch('chatd.config.config', mock_config):
+            formatted = format_message(role)
+            # Should contain the generated title
+            self.assertIn('[Intern - Data Science]', formatted)
+            self.assertIn('DataCorp', formatted)
+    
+    def test_format_message_with_blank_title_disabled(self):
+        """Test message formatting with blank title when generic titles are disabled."""
+        mock_config = MagicMock()
+        mock_config.enable_reactions = False
+        mock_config.message_reactions = []
+        mock_config.timezone = 'America/New_York'
+        mock_config.enable_generic_titles = False
+        mock_config.generic_job_title = 'Intern'
+        
+        role = {
+            'title': '',  # Blank title
+            'company_name': 'CompanyX',
+            'category': 'Engineering',
+            'url': 'https://example.com/jobs/202',
+            'locations': ['Boston, MA'],
+            'terms': ['Summer 2026'],
+            'date_posted': datetime.now().timestamp(),
+        }
+        
+        with patch('chatd.config.config', mock_config):
+            formatted = format_message(role)
+            # Should contain empty brackets (blank title is not replaced)
+            self.assertIn('[]', formatted)
+            self.assertIn('CompanyX', formatted)
 
 
 if __name__ == '__main__':

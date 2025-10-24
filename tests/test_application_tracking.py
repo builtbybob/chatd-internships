@@ -273,11 +273,11 @@ class TestApplicationTrackingBotFunctions:
             # Test duplicate application
             await handle_application_tracking(mock_user, mock_job_data)
             
-            # Verify it logs info for duplicate (no DM sent)
-            mock_logger.info.assert_called()
-            # Check for the duplicate detection message
-            info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
-            assert any("Duplicate application detected" in msg for msg in info_calls)
+            # Verify it logs warning for duplicate or deleted job (no DM sent)
+            mock_logger.warning.assert_called()
+            # Check for the message covering both cases
+            warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
+            assert any("likely duplicate or deleted job" in msg for msg in warning_calls)
             
             # Verify storage was called but DM was not sent
             mock_storage.add_student_application.assert_called_once()

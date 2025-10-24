@@ -977,15 +977,15 @@ class DataStorage:
             logger.error("CRITICAL: No previous jobs found from storage! All jobs will be treated as new.")
             
             # Check configuration to determine whether to abort or proceed
-            if self.config.abort_on_empty_storage:
+            # Use getattr with default True for safety
+            abort_on_empty = getattr(self.config, 'abort_on_empty_storage', True)
+            if abort_on_empty:
                 logger.error("SAFETY: Aborting change detection to prevent duplicate insertion attempts")
                 logger.error("   Set ABORT_ON_EMPTY_STORAGE=false to allow processing with empty storage")
                 return {
-                    'changes': {
-                        'added': [],
-                        'updated': [],
-                        'removed': []
-                    }
+                    'added': [],
+                    'updated': [],
+                    'removed': []
                 }
             else:
                 logger.warning("PROCEEDING: ABORT_ON_EMPTY_STORAGE is disabled, treating all jobs as new")

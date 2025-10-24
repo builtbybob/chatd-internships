@@ -9,17 +9,24 @@ import tempfile
 import json
 import time
 import copy
+import importlib
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
 # Import the comprehensive mock
 from tests.mock_datastorage import MockDataStorage, setup_mock_datastorage
 
+# Import the module
+import chatd.storage_abstraction
+
+# IMPORTANT: test_storage_abstraction.py reloads this module to get real classes.
+# We need to re-mock it for THIS test file to use MockDataStorage.
+# First reload to clear any state, then mock it
+importlib.reload(chatd.storage_abstraction)
+setup_mock_datastorage()
+
 from chatd.storage_abstraction import DataStorage, JsonStorageBackend, DatabaseStorageBackend
 from chatd.config import Config
-
-# Set up the mock before any imports that might use DataStorage
-setup_mock_datastorage()
 
 
 @pytest.fixture
@@ -39,6 +46,7 @@ def mock_config(temp_json_files):
     config.data_file = data_file
     config.messages_file = messages_file
     config.migration_mode = 'json_only'
+    config.abort_on_empty_storage = False  # Allow processing with empty storage in tests
     return config
 
 
