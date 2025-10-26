@@ -33,8 +33,8 @@ import chatd.storage_abstraction
 
 # CRITICAL: Other test files (test_bot.py, test_update_support.py) call setup_mock_datastorage()
 # which replaces chatd.storage_abstraction.DataStorage with MockDataStorage globally.
-# We MUST reload the module to get the original classes for THIS test file.
-logger.info("Reloading chatd.storage_abstraction to ensure we have the REAL classes (not mocks)")
+# We must reload the module to get the original classes for this test file.
+logger.info("Reloading chatd.storage_abstraction to ensure we have the real classes (not mocks)")
 importlib.reload(chatd.storage_abstraction)
 
 from chatd.storage_abstraction import DataStorage, JsonStorageBackend, DatabaseStorageBackend
