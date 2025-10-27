@@ -132,6 +132,38 @@ def get_reaction_tips() -> str:
     return " • ".join(tips) if tips else ""
 
 
+def generate_generic_title(role: Dict[str, Any]) -> str:
+    """
+    Generate a generic title for a job posting with a blank title.
+    
+    Uses the pattern: "{GENERIC_JOB_TITLE} - {category}"
+    Example: "Intern - AI/ML/Data"
+    
+    Args:
+        role: Role data dictionary
+        
+    Returns:
+        str: Generated generic title
+    """
+    from chatd.config import config
+    
+    # Get the base job title from config (e.g., "Intern", "New Grad")
+    base_title = config.generic_job_title or "Intern"
+    
+    # Try to get the category from the role data
+    category = role.get('category', '').strip()
+    
+    # If we have a category, use the pattern
+    if category:
+        generic_title = f"{base_title} - {category}"
+    else:
+        # Fallback to just the base title if no category available
+        generic_title = base_title
+    
+    logger.info(f"Generated generic title for blank job posting: '{generic_title}'")
+    return generic_title
+
+
 def format_message(role: Dict[str, Any]) -> str:
     """
     Format a role for Discord message.
@@ -142,8 +174,11 @@ def format_message(role: Dict[str, Any]) -> str:
     Returns:
         str: Formatted message string for Discord
     """
-    # Build safe values
-    title = role.get('title', '').strip()
+    from chatd.config import config
+    
+    # Build safe values - handle None for title
+    title_value = role.get('title')
+    title = title_value.strip() if title_value else ''
     company = role.get('company_name', '').strip()
     url = role.get('url', '').strip() if role.get('url') else ''
     locations = role.get('locations') or []
@@ -151,6 +186,11 @@ def format_message(role: Dict[str, Any]) -> str:
     terms = role.get('terms') or []
     term_str = ' | '.join(terms) if terms else 'Not specified'
     sponsorship = role.get('sponsorship')
+    
+    # Check if title is blank and generic titles are enabled
+    if not title and config.enable_generic_titles:
+        title = generate_generic_title(role)
+        logger.debug(f"Blank title detected for {company}, using generic title: '{title}'")
 
     # Format the posting date
     posted_on = format_epoch(role.get('date_posted'))

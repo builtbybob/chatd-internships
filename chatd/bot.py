@@ -1479,11 +1479,11 @@ async def handle_application_tracking(user: discord.User, role_data: Dict[str, A
             if config.congratulation_dm_enabled:
                 await send_congratulatory_dm(user, role_data, storage)
         elif application_result is False:
-            # Duplicate application - don't send DM to prevent spam
-            logger.info(f"Duplicate application detected for user {user.display_name} on job {job_id} - no DM sent")
+            # Could be duplicate application or deleted job - don't send DM to prevent spam
+            logger.warning(f"Application not recorded for user {user.display_name} on job {job_id} - likely duplicate or deleted job")
         else:
             # Failure (None or other error indicator)
-            logger.warning(f"Failed to record application for user {user.display_name} on job {job_id} (deleted job or database error)")
+            logger.warning(f"Failed to record application for user {user.display_name} on job {job_id} (database error)")
             # Don't send error DM to avoid spam
             
     except Exception as e:

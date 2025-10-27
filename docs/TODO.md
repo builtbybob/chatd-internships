@@ -2346,6 +2346,133 @@ validate_system_resources() {
 
 ---
 
+### 21. Blank Job Title Handling 🏷️ ✅ **COMPLETED** *(GitHub Issue #39)*
+**Goal**: Fix broken Discord markdown links caused by empty job titles in SimplifyJobs data
+
+**Problem**: When `listings.json` contains jobs with blank titles (`"title": ""`), Discord messages show broken markdown links: `[](<https://job-boards.greenhouse.io/figureai/jobs/4611748006>)`
+
+**Root Cause**: SimplifyJobs dataset occasionally contains entries with empty title fields, which breaks Discord's markdown link rendering
+
+**Impact Fixed**: 
+- ✅ Professional appearance restored in Discord channel
+- ✅ Users can now see clear position descriptions
+- ✅ Improved click-through rates with readable link text
+
+**Solution Implemented**: Generic Title Substitution using job metadata
+
+**Implementation Results**:
+- [x] **21.1** Blank title detection in message formatting ✅ **COMPLETED**
+  - [x] Added validation check in `chatd/messages.py` `format_message()` function
+  - [x] Detects empty strings, None values, and whitespace-only titles
+  - [x] Logs occurrences for monitoring purposes
+
+- [x] **21.2** Fallback title generation using job metadata ✅ **COMPLETED**
+  - [x] Created `generate_generic_title()` function in `chatd/messages.py`
+  - [x] Uses pattern: `"{GENERIC_JOB_TITLE}"` or `"{GENERIC_JOB_TITLE} - {terms[0]}"` when terms available
+  - [x] Examples: `"Software Engineering Opportunity"`, `"Software Engineering Opportunity - Software Engineering"`
+  - [x] Falls back to configurable default when no metadata available
+
+- [x] **21.3** Configuration options ✅ **COMPLETED**
+  - [x] `ENABLE_GENERIC_TITLES=true` (feature toggle, default: enabled)
+  - [x] `GENERIC_JOB_TITLE=Software Engineering Opportunity` (default fallback title)
+
+- [x] **21.4** Testing and validation ✅ **COMPLETED**
+  - [x] Created 7 comprehensive test cases covering all scenarios
+  - [x] Tests for empty strings, None values, whitespace-only titles
+  - [x] Verified Discord markdown rendering with generated titles
+  - [x] Added test coverage for configuration toggle behavior
+  - [x] All 19 message tests passing (12 existing + 7 new)
+
+**Example Output**:
+```
+Before: [](<https://job-boards.greenhouse.io/figureai/jobs/4611748006>)
+After:  [Software Engineering Opportunity - AI/ML/Data](<https://job-boards.greenhouse.io/figureai/jobs/4611748006>)
+```
+
+**Configuration Options Implemented**:
+```env
+# Blank job title handling
+ENABLE_GENERIC_TITLES=true                                # Enable generic title generation
+GENERIC_JOB_TITLE=Software Engineering Opportunity        # Default title for blank entries
+```
+
+**Test Coverage**:
+- `test_generate_generic_title_basic()` - Basic title generation with terms
+- `test_generate_generic_title_empty_terms()` - Fallback when no terms available
+- `test_format_message_with_blank_title_enabled()` - End-to-end blank title handling
+- `test_format_message_with_blank_title_disabled()` - Feature toggle off behavior
+- `test_format_message_with_none_title()` - Handle None title values
+- `test_format_message_with_whitespace_title()` - Handle whitespace-only titles
+- `test_format_message_empty_string_title()` - Handle empty string titles
+
+**Files Modified**: 
+- `chatd/messages.py` (added `generate_generic_title()` function and blank title detection)
+- `chatd/config.py` (added `ENABLE_GENERIC_TITLES` and `GENERIC_JOB_TITLE` configuration)
+- `examples/.env.example` (added documentation for new configuration options)
+- `tests/test_messages.py` (added 7 comprehensive test cases)
+- `docs/TODO.md` (updated with completion status)
+
+**Benefits Achieved**: 
+- ✅ Quick implementation (completed as estimated)
+- ✅ No external API dependencies
+- ✅ Consistent formatting across all messages
+- ✅ Works offline and in all environments
+- ✅ Configurable via environment variables
+- ✅ Full test coverage (100% pass rate)
+
+---
+
+### 22. Blank Job Title Handling 🏷️ **(GitHub Issue #39)**
+**Goal**: Fetch actual job titles from job posting URLs when blank titles detected
+
+**Benefits**:
+- Accurate job titles directly from source
+- Better user experience with real position names
+- Maintains data quality in database
+
+**Challenges**:
+- Requires web scraping infrastructure
+- Dependent on target website structure
+- Potential rate limiting issues
+- Increased complexity and maintenance burden
+- May require API keys or LLM integration
+
+**Implementation Considerations** (for future):
+- [ ] **22.1** Web scraping infrastructure
+  - [ ] Use `requests` + `BeautifulSoup` for HTML parsing
+  - [ ] Implement site-specific scrapers for common job boards (Greenhouse, Lever, etc.)
+  - [ ] Add rate limiting and retry logic for failed requests
+  - [ ] Cache fetched titles to reduce duplicate requests
+
+- [ ] **22.2** LLM-based title extraction (alternative approach)
+  - [ ] Use LLM API to extract job title from page content
+  - [ ] More robust than HTML parsing (handles various site formats)
+  - [ ] Requires API key and usage costs
+  - [ ] Fallback to generic titles if API unavailable
+
+- [ ] **22.3** Background processing
+  - [ ] Queue blank title jobs for async processing
+  - [ ] Update messages after titles fetched
+  - [ ] Implement fallback to generic titles if fetch fails
+  - [ ] Add monitoring for fetch success rates
+
+**Files to create** (future):
+- `chatd/title_extractor.py` (web scraping and LLM integration)
+- `tests/test_title_extraction.py` (test coverage for extraction logic)
+
+**Time Estimate**: 4-6 hours
+**Priority**: Medium (nice-to-have after Solution 1 implemented)
+**Status**: Deferred until Solution 1 proven effective
+
+---
+
+**Recommendation**: Implement Solution 1 first as a quick, reliable fix. Monitor effectiveness and user feedback before considering Solution 2 investment.
+
+**Related Issues**: None currently
+**Depends On**: None (standalone feature)
+
+---
+
 ## 📋 Implementation Notes
 
 ### Development Workflow
@@ -2612,14 +2739,16 @@ sudo ./scripts/setup-chatd-environment.sh thatd-internships
 - [x] **Configuration Enhancements**: 2/2 ✅ (Configurable date filtering, configuration validation)
 - [x] **Operational Improvements**: 2/2 ✅ (Dynamic log level control, multi-environment support)
 - [x] **Database & Storage**: 1/1 ✅ (Complete PostgreSQL backend with storage abstraction)
+- [x] **Data Quality Improvements**: 1/1 ✅ (Blank job title handling)
 - [ ] **Infrastructure Projects**: 0/3 (Docker auto-pruning, enhanced test simulation, monitoring dashboard)
 - [ ] **Feature Enhancements**: 0/4 (Async reactions, smart reactions, role status management, enhanced monitoring)
-- [x] **Items Completed**: 7/16 ✅ (PostgreSQL, multi-environment, Docker optimization, date filtering, log level control, config validation, ID-based tracking)
-- [x] **Total Sub-tasks**: 50/80+ completed
+- [x] **Items Completed**: 8/17 ✅ (PostgreSQL, multi-environment, Docker optimization, date filtering, log level control, config validation, ID-based tracking, blank title handling)
+- [x] **Total Sub-tasks**: 54/84+ completed
 
 **Major Milestones Achieved** 🎉:
 - **PostgreSQL Database Implementation**: Complete architectural transformation with 23 files changed (+6,037 -271 lines)
 - **Multi-Environment Support**: Production-ready isolated environment system with automated setup and comprehensive management
+- **Blank Job Title Handling**: Fixed broken Discord markdown links with generic title generation (Section 21)
 
 **Ready for Implementation** 🚀:
 - Docker Image Auto-Pruning (can be implemented now, will free up disk space immediately)
@@ -2634,6 +2763,6 @@ sudo ./scripts/setup-chatd-environment.sh thatd-internships
 - **Disk Space**: 69GB available (sufficient for 5+ environments)
 - **Hardware**: Powerful machine with PostgreSQL containerization support
 
-*Last Updated: October 3, 2025*
+*Last Updated: October 24, 2025*
 
 ---

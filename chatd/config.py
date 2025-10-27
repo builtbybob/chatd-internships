@@ -76,6 +76,9 @@ DEFAULT_CONFIG = {
     'APPLICATION_MILESTONE_MESSAGES': 'true',  # Special messages for milestone applications (1st, 5th, 10th)
     # Change detection safety settings
     'ABORT_ON_EMPTY_STORAGE': 'true',  # Abort change detection if no previous jobs found (prevents duplicate insertions)
+    # Section 21: Blank job title handling
+    'ENABLE_GENERIC_TITLES': 'true',  # Generate generic titles for blank job titles
+    'GENERIC_JOB_TITLE': 'Intern',  # Base role to use in generic titles (e.g., "Intern", "New Grad")
 }
 
 # Required configuration values that must be set
@@ -178,6 +181,7 @@ class Config:
         self.congratulation_dm_enabled = self.congratulation_dm_enabled.lower() in ('true', '1', 'yes', 'on')
         self.application_milestone_messages = self.application_milestone_messages.lower() in ('true', '1', 'yes', 'on')
         self.abort_on_empty_storage = self.abort_on_empty_storage.lower() in ('true', '1', 'yes', 'on')
+        self.enable_generic_titles = self.enable_generic_titles.lower() in ('true', '1', 'yes', 'on')
         
         # Set Discord token
         self.discord_token = os.getenv('DISCORD_TOKEN')

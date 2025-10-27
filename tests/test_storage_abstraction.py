@@ -14,25 +14,34 @@ import json
 import logging
 import tempfile
 import pytest
+import importlib
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
 # Add the chatd module to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# Import the comprehensive mock
+# Set up logging first
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Import the comprehensive mock (but don't set it up - we test the real class here)
 from tests.mock_datastorage import MockDataStorage, setup_mock_datastorage
+
+# Import the module
+import chatd.storage_abstraction
+
+# CRITICAL: Other test files (test_bot.py, test_update_support.py) call setup_mock_datastorage()
+# which replaces chatd.storage_abstraction.DataStorage with MockDataStorage globally.
+# We must reload the module to get the original classes for this test file.
+logger.info("Reloading chatd.storage_abstraction to ensure we have the real classes (not mocks)")
+importlib.reload(chatd.storage_abstraction)
 
 from chatd.storage_abstraction import DataStorage, JsonStorageBackend, DatabaseStorageBackend
 from chatd.database import create_database_manager
 from chatd.config import config
 
-# Set up the mock before any imports that might use DataStorage
-setup_mock_datastorage()
-
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# DO NOT call setup_mock_datastorage() - we need to test the REAL DataStorage class
 
 
 def create_test_config(mode: str, temp_dir: Path):
@@ -42,6 +51,9 @@ def create_test_config(mode: str, temp_dir: Path):
             self.migration_mode = mode
             self.data_file = str(temp_dir / "test_data.json")
             self.messages_file = str(temp_dir / "test_messages.json")
+            
+            # Add abort_on_empty_storage default (can be overridden)
+            self.abort_on_empty_storage = True
             
             # Database config (use same as main config with uppercase attributes)
             self.db_type = config.db_type
@@ -456,13 +468,34 @@ def test_abort_on_empty_storage_configuration():
         logger.info("Testing with ABORT_ON_EMPTY_STORAGE=true (safe mode)...")
         safe_config = create_test_config('json_only', temp_path)
         safe_config.abort_on_empty_storage = True
+        logger.info(f"Test config data_file: {safe_config.data_file}")
+        logger.info(f"Test config messages_file: {safe_config.messages_file}")
+        logger.info(f"Test config migration_mode: {safe_config.migration_mode}")
+        logger.info(f"Test config abort_on_empty_storage: {safe_config.abort_on_empty_storage}")
+        
         safe_storage = DataStorage(safe_config)
+        logger.info(f"DataStorage initialized with migration_mode: {safe_storage.migration_mode}")
+        
+        # Explicitly ensure storage is empty before test
+        initial_jobs = safe_storage.get_job_postings()
+        logger.info(f"Initial job count in storage: {len(initial_jobs)}")
+        if initial_jobs:
+            logger.warning(f"Storage was not empty ({len(initial_jobs)} jobs), clearing it for test")
+            save_result = safe_storage.save_job_postings([])
+            logger.info(f"Save result: {save_result}")
+            # Verify it's actually empty now
+            verify_jobs = safe_storage.get_job_postings()
+            logger.info(f"After clear, job count: {len(verify_jobs)}")
         
         # Create test jobs
         test_jobs = create_test_data()
+        logger.info(f"Created {len(test_jobs)} test jobs")
         
         # With empty storage and safety enabled, should abort and return empty changes
         changes = safe_storage.detect_job_changes(test_jobs)
+        logger.info(f"detect_job_changes returned: {list(changes.keys())}")
+        logger.info(f"Added count: {len(changes.get('added', []))}")
+
         
         assert isinstance(changes, dict), "Expected dict result from detect_job_changes"
         assert 'changes' in changes or 'added' in changes, "Expected changes structure in result"

@@ -216,6 +216,7 @@ def create_mock_config():
     config.migration_mode = 'json_only'
     config.data_file = '/tmp/test_data.json'
     config.messages_file = '/tmp/test_messages.json'
+    config.abort_on_empty_storage = True  # Add safety setting
     
     # Database configuration
     config.db_type = 'postgresql'

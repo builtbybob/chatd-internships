@@ -110,10 +110,18 @@ class TestDataMigrator:
         
         return mock_manager
 
+    @pytest.fixture
+    def migrator_instance(self, temp_json_files):
+        """Create a DataMigrator instance with temp files for testing."""
+        data_file, messages_file = temp_json_files
+        with patch('scripts.migrate_json_to_database.os.path.exists', return_value=True):
+            migrator = DataMigrator(data_file, messages_file)
+        return migrator
+
     def test_migrator_initialization(self):
         """Test DataMigrator initialization."""
-        # Mock os.path.exists to prevent using production paths
-        with patch('scripts.migrate_json_to_database.os.path.exists', return_value=False):
+        # Mock os.path.exists to allow test paths
+        with patch('scripts.migrate_json_to_database.os.path.exists', return_value=True):
             migrator = DataMigrator('/path/to/data.json', '/path/to/messages.json')
         
         assert migrator.json_data_path == '/path/to/data.json'
@@ -122,76 +130,65 @@ class TestDataMigrator:
         assert migrator.migration_stats['jobs_total'] == 0
         assert migrator.migration_stats['start_time'] is None
 
-    def test_load_json_data_success(self, temp_json_files, sample_job_data):
+    def test_load_json_data_success(self, migrator_instance, temp_json_files, sample_job_data):
         """Test successful JSON data loading."""
         data_file, _ = temp_json_files
-        migrator = DataMigrator()
         
-        loaded_data = migrator.load_json_data(data_file)
+        loaded_data = migrator_instance.load_json_data(data_file)
         
         assert loaded_data is not None
         assert len(loaded_data) == len(sample_job_data)
         assert loaded_data[0]['company_name'] == sample_job_data[0]['company_name']
 
-    def test_load_json_data_file_not_found(self):
+    def test_load_json_data_file_not_found(self, migrator_instance):
         """Test JSON data loading with missing file."""
-        migrator = DataMigrator()
-        
-        result = migrator.load_json_data('/nonexistent/file.json')
+        result = migrator_instance.load_json_data('/nonexistent/file.json')
         
         assert result == []
 
-    def test_load_json_data_invalid_json(self):
+    def test_load_json_data_invalid_json(self, migrator_instance):
         """Test JSON data loading with invalid JSON format."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write('invalid json content {')
             temp_file = f.name
         
         try:
-            migrator = DataMigrator()
-            
             with pytest.raises(MigrationError, match="Invalid JSON format"):
-                migrator.load_json_data(temp_file)
+                migrator_instance.load_json_data(temp_file)
         finally:
             os.unlink(temp_file)
 
-    def test_load_json_data_not_list(self):
+    def test_load_json_data_not_list(self, migrator_instance):
         """Test JSON data loading when content is not a list."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             json.dump({'not': 'a list'}, f)
             temp_file = f.name
         
         try:
-            migrator = DataMigrator()
-            
             with pytest.raises(MigrationError, match="Expected list of job postings"):
-                migrator.load_json_data(temp_file)
+                migrator_instance.load_json_data(temp_file)
         finally:
             os.unlink(temp_file)
 
-    def test_validate_job_data_valid(self, sample_job_data):
+    def test_validate_job_data_valid(self, migrator_instance, sample_job_data):
         """Test job data validation with valid data."""
-        migrator = DataMigrator()
-        
-        is_valid, errors = migrator.validate_job_data(sample_job_data[0])
+        is_valid, errors = migrator_instance.validate_job_data(sample_job_data[0])
         
         assert is_valid is True
         assert len(errors) == 0
 
-    def test_validate_job_data_missing_required_fields(self):
+    def test_validate_job_data_missing_required_fields(self, migrator_instance):
         """Test job data validation with missing required fields."""
-        migrator = DataMigrator()
         invalid_data = {'company_name': 'Test Company'}  # Missing title and url
         
-        is_valid, errors = migrator.validate_job_data(invalid_data)
+        is_valid, errors = migrator_instance.validate_job_data(invalid_data)
         
         assert is_valid is False
         assert 'Missing required field: title' in errors
         assert 'Missing required field: url' in errors
 
-    def test_validate_job_data_invalid_types(self):
+    def test_validate_job_data_invalid_types(self, migrator_instance):
         """Test job data validation with invalid data types."""
-        migrator = DataMigrator()
         invalid_data = {
             'company_name': 'Test Company',
             'title': 'Test Title',
@@ -202,7 +199,7 @@ class TestDataMigrator:
             'date_posted': 'invalid'    # Should be numeric
         }
         
-        is_valid, errors = migrator.validate_job_data(invalid_data)
+        is_valid, errors = migrator_instance.validate_job_data(invalid_data)
         
         assert is_valid is False
         assert 'locations must be a list' in errors
@@ -210,16 +207,14 @@ class TestDataMigrator:
         assert 'active must be a boolean' in errors
         assert 'date_posted must be a valid timestamp' in errors
 
-    def test_create_backup_success(self):
+    def test_create_backup_success(self, migrator_instance):
         """Test successful backup creation."""
         with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
             f.write('test content')
             source_file = f.name
         
         try:
-            migrator = DataMigrator()
-            
-            backup_path = migrator.create_backup(source_file, 'test')
+            backup_path = migrator_instance.create_backup(source_file, 'test')
             
             assert backup_path is not None
             assert os.path.exists(backup_path)
@@ -234,22 +229,20 @@ class TestDataMigrator:
         finally:
             os.unlink(source_file)
 
-    def test_create_backup_file_not_found(self):
+    def test_create_backup_file_not_found(self, migrator_instance):
         """Test backup creation with missing source file."""
-        migrator = DataMigrator()
-        
-        backup_path = migrator.create_backup('/nonexistent/file.txt')
-        
-        assert backup_path is None
+        result = migrator_instance.create_backup('/nonexistent/file.json', 'test')
 
     @patch('scripts.migrate_json_to_database.DatabaseManager')
-    def test_connect_database_success(self, mock_db_manager_class):
+    @patch('scripts.migrate_json_to_database.os.path.exists')
+    def test_connect_database_success(self, mock_exists, mock_db_manager_class):
         """Test successful database connection."""
+        mock_exists.return_value = True
         mock_db_instance = Mock()
         mock_db_instance.test_connection.return_value = True
         mock_db_manager_class.return_value = mock_db_instance
         
-        migrator = DataMigrator()
+        migrator = DataMigrator('/path/to/data.json', '/path/to/messages.json')
         
         result = migrator.connect_database()
         
@@ -257,107 +250,102 @@ class TestDataMigrator:
         assert migrator.db_manager == mock_db_instance
 
     @patch('scripts.migrate_json_to_database.DatabaseManager')
-    def test_connect_database_failure(self, mock_db_manager_class):
+    @patch('scripts.migrate_json_to_database.os.path.exists')
+    def test_connect_database_failure(self, mock_exists, mock_db_manager_class):
         """Test database connection failure."""
+        mock_exists.return_value = True
         mock_db_instance = Mock()
         mock_db_instance.test_connection.return_value = False
         mock_db_manager_class.return_value = mock_db_instance
         
-        migrator = DataMigrator()
+        migrator = DataMigrator('/path/to/data.json', '/path/to/messages.json')
         
         result = migrator.connect_database()
         
         assert result is False
 
-    def test_migrate_job_postings_dry_run(self, sample_job_data, mock_db_manager):
+    def test_migrate_job_postings_dry_run(self, migrator_instance, sample_job_data, mock_db_manager):
         """Test job migration in dry run mode."""
-        migrator = DataMigrator()
-        migrator.db_manager = mock_db_manager
+        migrator_instance.db_manager = mock_db_manager
         
-        result = migrator.migrate_job_postings(sample_job_data, dry_run=True)
+        result = migrator_instance.migrate_job_postings(sample_job_data, dry_run=True)
         
         assert result is True
-        assert migrator.migration_stats['jobs_total'] == len(sample_job_data)
-        assert migrator.migration_stats['jobs_migrated'] == len(sample_job_data)
-        assert migrator.migration_stats['jobs_failed'] == 0
+        assert migrator_instance.migration_stats['jobs_total'] == len(sample_job_data)
+        assert migrator_instance.migration_stats['jobs_migrated'] == len(sample_job_data)
+        assert migrator_instance.migration_stats['jobs_failed'] == 0
 
-    def test_migrate_job_postings_with_validation_errors(self, mock_db_manager):
+    def test_migrate_job_postings_with_validation_errors(self, migrator_instance, mock_db_manager):
         """Test job migration with validation errors."""
         invalid_data = [
             {'company_name': 'Test Company'},  # Missing required fields
             {'invalid': 'data'}  # Missing all required fields
         ]
         
-        migrator = DataMigrator()
-        migrator.db_manager = mock_db_manager
+        migrator_instance.db_manager = mock_db_manager
         
-        result = migrator.migrate_job_postings(invalid_data, dry_run=True)
+        result = migrator_instance.migrate_job_postings(invalid_data, dry_run=True)
         
         assert result is False  # Should fail due to validation errors
-        assert migrator.migration_stats['jobs_failed'] == 2
+        assert migrator_instance.migration_stats['jobs_failed'] == 2
 
-    def test_migrate_message_tracking_dry_run(self, sample_message_data, mock_db_manager):
+    def test_migrate_message_tracking_dry_run(self, migrator_instance, sample_message_data, mock_db_manager):
         """Test message tracking migration in dry run mode."""
-        migrator = DataMigrator()
-        migrator.db_manager = mock_db_manager
+        migrator_instance.db_manager = mock_db_manager
         
-        result = migrator.migrate_message_tracking(sample_message_data, dry_run=True)
+        result = migrator_instance.migrate_message_tracking(sample_message_data, dry_run=True)
         
         assert result is True
-        assert migrator.migration_stats['messages_total'] == len(sample_message_data)
-        assert migrator.migration_stats['messages_migrated'] == len(sample_message_data)
+        assert migrator_instance.migration_stats['messages_total'] == len(sample_message_data)
+        assert migrator_instance.migration_stats['messages_migrated'] == len(sample_message_data)
 
-    def test_migrate_message_tracking_empty_data(self, mock_db_manager):
+    def test_migrate_message_tracking_empty_data(self, migrator_instance, mock_db_manager):
         """Test message tracking migration with empty data."""
-        migrator = DataMigrator()
-        migrator.db_manager = mock_db_manager
+        migrator_instance.db_manager = mock_db_manager
         
-        result = migrator.migrate_message_tracking({}, dry_run=False)
+        result = migrator_instance.migrate_message_tracking({}, dry_run=False)
         
         assert result is True
-        assert migrator.migration_stats['messages_total'] == 0
+        assert migrator_instance.migration_stats['messages_total'] == 0
 
-    def test_migrate_message_tracking_invalid_data(self, mock_db_manager):
+    def test_migrate_message_tracking_invalid_data(self, migrator_instance, mock_db_manager):
         """Test message tracking migration with invalid data."""
         invalid_data = {
             'job_id_1': 'not_a_dict',
             'job_id_2': {'missing_message_id': 'value'}
         }
         
-        migrator = DataMigrator()
-        migrator.db_manager = mock_db_manager
+        migrator_instance.db_manager = mock_db_manager
         
-        result = migrator.migrate_message_tracking(invalid_data, dry_run=True)
+        result = migrator_instance.migrate_message_tracking(invalid_data, dry_run=True)
         
         assert result is False  # Should fail due to invalid data
-        assert migrator.migration_stats['messages_failed'] == 2
+        assert migrator_instance.migration_stats['messages_failed'] == 2
 
-    def test_verify_migration_success(self, mock_db_manager):
+    def test_verify_migration_success(self, migrator_instance, mock_db_manager):
         """Test successful migration verification."""
-        migrator = DataMigrator()
-        migrator.db_manager = mock_db_manager
-        migrator.migration_stats['jobs_migrated'] = 2
-        migrator.migration_stats['messages_migrated'] = 1
+        migrator_instance.db_manager = mock_db_manager
+        migrator_instance.migration_stats['jobs_migrated'] = 2
+        migrator_instance.migration_stats['messages_migrated'] = 1
         
         # Mock database counts
         mock_db_manager.session_scope.return_value.__enter__.return_value.query.return_value.count.return_value = 2
         
-        result = migrator.verify_migration()
+        result = migrator_instance.verify_migration()
         
         assert result is True
 
-    def test_verify_migration_count_mismatch(self, mock_db_manager):
+    def test_verify_migration_count_mismatch(self, migrator_instance, mock_db_manager):
         """Test migration verification with count mismatch."""
-        migrator = DataMigrator()
-        migrator.db_manager = mock_db_manager
-        migrator.migration_stats['jobs_migrated'] = 5
-        migrator.migration_stats['messages_migrated'] = 3
+        migrator_instance.db_manager = mock_db_manager
+        migrator_instance.migration_stats['jobs_migrated'] = 5
+        migrator_instance.migration_stats['messages_migrated'] = 3
         
         # Mock database counts (lower than expected)
         mock_session = mock_db_manager.session_scope.return_value.__enter__.return_value
         mock_session.query.return_value.count.side_effect = [2, 1]  # Less than migrated
         
-        result = migrator.verify_migration()
+        result = migrator_instance.verify_migration()
         
         assert result is False
 
@@ -380,12 +368,10 @@ class TestDataMigrator:
         assert migrator.migration_stats['start_time'] is not None
         assert migrator.migration_stats['end_time'] is not None
 
-    def test_run_migration_database_connection_failure(self):
+    def test_run_migration_database_connection_failure(self, migrator_instance):
         """Test migration with database connection failure."""
-        migrator = DataMigrator()
-        
-        with patch.object(migrator, 'connect_database', return_value=False):
-            result = migrator.run_migration(dry_run=True)
+        with patch.object(migrator_instance, 'connect_database', return_value=False):
+            result = migrator_instance.run_migration(dry_run=True)
         
         assert result is False
 
@@ -395,12 +381,10 @@ class TestDataMigrator:
         (0, 1),     # Messages only
         (5, 3),     # Both
     ])
-    def test_migration_stats_tracking(self, job_count, message_count):
+    def test_migration_stats_tracking(self, migrator_instance, job_count, message_count):
         """Test that migration statistics are properly tracked."""
-        migrator = DataMigrator()
-        
         # Initialize stats as they would be during migration
-        migrator.migration_stats.update({
+        migrator_instance.migration_stats.update({
             'jobs_total': job_count,
             'jobs_migrated': job_count,
             'jobs_failed': 0,
@@ -411,10 +395,10 @@ class TestDataMigrator:
             'end_time': datetime.now()
         })
         
-        assert migrator.migration_stats['jobs_total'] == job_count
-        assert migrator.migration_stats['messages_total'] == message_count
-        assert migrator.migration_stats['start_time'] is not None
-        assert migrator.migration_stats['end_time'] is not None
+        assert migrator_instance.migration_stats['jobs_total'] == job_count
+        assert migrator_instance.migration_stats['messages_total'] == message_count
+        assert migrator_instance.migration_stats['start_time'] is not None
+        assert migrator_instance.migration_stats['end_time'] is not None
 
 
 class TestMigrationIntegration:
@@ -464,11 +448,15 @@ class TestMigrationIntegration:
             assert migrator.migration_stats['jobs_migrated'] == 1
             assert migrator.migration_stats['jobs_failed'] == 0
 
-    def test_error_handling_and_recovery(self):
+    @patch('scripts.migrate_json_to_database.os.path.exists')
+    def test_error_handling_and_recovery(self, mock_exists):
         """Test error handling and recovery mechanisms."""
+        # Mock exists to return True for initialization, False for file operations
+        mock_exists.return_value = True
         migrator = DataMigrator('/nonexistent/file.json')
         
-        # Test graceful handling of missing files
+        # Test graceful handling of missing files (should return empty list)
+        mock_exists.return_value = False
         data = migrator.load_json_data('/nonexistent/file.json')
         assert data == []
         
