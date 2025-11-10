@@ -384,8 +384,15 @@ class DatabaseStorageBackend(StorageBackend):
             logger.error(f"Failed to bulk load job postings to database: {e}")
             return False
     
-    def add_job_posting(self, job_data: Dict[str, Any]) -> bool:
-        """Add a single new job posting to database. Job must not already exist."""
+    def add_job_posting(self, job_data: Dict[str, Any]) -> tuple[bool, bool]:
+        """
+        Add a single new job posting to database. Job must not already exist.
+        
+        Returns:
+            tuple[bool, bool]: (success, was_resurrected)
+                - success: True if job was added or resurrected successfully
+                - was_resurrected: True if job was resurrected (not truly new)
+        """
         try:
             job_id = job_data['id']
             
@@ -393,18 +400,26 @@ class DatabaseStorageBackend(StorageBackend):
                 # Check if job already exists by ID
                 existing_job = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 if existing_job:
-                    logger.warning(f"Job {job_id} already exists, cannot add as new. Use update methods instead.")
-                    return False
+                    # Check if this is a soft-deleted job that needs resurrection
+                    if existing_job.is_deleted:
+                        logger.info(f"Job {job_id} exists but is soft-deleted. Attempting resurrection.")
+                        # Close this session and call resurrect in a new transaction
+                        session.expunge_all()
+                        success = self.resurrect_job_posting(job_id, job_data)
+                        return (success, True)  # True = was resurrected
+                    else:
+                        logger.warning(f"Job {job_id} already exists, cannot add as new. Use update methods instead.")
+                        return (False, False)
                 
                 # Add the new job
                 job_posting = job_posting_from_dict(job_data)
                 session.add(job_posting)
                 logger.debug(f"Added new job posting {job_id}")
-                return True
+                return (True, False)  # False = truly new job
                 
         except Exception as e:
             logger.error(f"Failed to add job posting {job_data.get('id', 'unknown')}: {e}")
-            return False
+            return (False, False)
     
     def update_job_posting(self, job_id: str, updates: Dict[str, Any]) -> bool:
         """
@@ -466,6 +481,40 @@ class DatabaseStorageBackend(StorageBackend):
                 
         except Exception as e:
             logger.error(f"Failed to soft delete job posting {job_id}: {e}")
+            return False
+    
+    def resurrect_job_posting(self, job_id: str, job_data: Dict[str, Any]) -> bool:
+        """
+        Resurrect a soft-deleted job posting by un-deleting it and updating its data.
+        This handles the case where a job reappears in listings after being soft-deleted.
+        """
+        try:
+            with self.db_manager.session_scope() as session:
+                job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
+                
+                if not job_posting:
+                    logger.error(f"Cannot resurrect job {job_id}: not found in database")
+                    return False
+                
+                if not job_posting.is_deleted:
+                    logger.warning(f"Job {job_id} is not soft-deleted, cannot resurrect")
+                    return False
+                
+                # Un-delete the job
+                job_posting.is_deleted = False
+                
+                # Update the job data using full refresh (handles relationships)
+                # This ensures all fields (including locations, terms, degrees) are updated
+                logger.info(f"Resurrecting job {job_id} and updating with current data")
+                
+                # Use the existing update logic to handle the full refresh
+                session.expunge_all()
+                
+            # Now perform the full update in a new transaction
+            return self.update_job_posting_with_refresh(job_id, job_data)
+                
+        except Exception as e:
+            logger.error(f"Failed to resurrect job posting {job_id}: {e}")
             return False
     
     def get_message_tracking(self) -> Dict[str, Dict[str, Any]]:
@@ -1123,6 +1172,9 @@ class DataStorage:
         # Handle new jobs (add them to storage)
         if changes['added']:
             try:
+                # Track which jobs were resurrected (not truly new)
+                resurrected_job_ids = set()
+                
                 # Handle JSON backend (bulk operation for efficiency)
                 if self.migration_mode in ['json_only', 'dual_write']:
                     all_jobs = self.json_backend.get_job_postings()
@@ -1134,9 +1186,21 @@ class DataStorage:
                 # Handle database backend efficiently
                 if self.migration_mode in ['dual_write', 'database_only']:
                     for job_data in changes['added']:
-                        if not self.database_backend.add_job_posting(job_data):
+                        success, was_resurrected = self.database_backend.add_job_posting(job_data)
+                        if not success:
                             logger.error(f"Failed to add job {job_data['id']} to database")
                             results['success'] = False
+                        elif was_resurrected:
+                            # Track resurrected jobs to remove from 'added' list
+                            resurrected_job_ids.add(job_data['id'])
+                            logger.info(f"Job {job_data['id']} was resurrected, will not send new Discord message")
+
+                # Remove resurrected jobs from changes['added'] to prevent duplicate Discord messages
+                if resurrected_job_ids:
+                    original_count = len(changes['added'])
+                    changes['added'] = [job for job in changes['added'] if job['id'] not in resurrected_job_ids]
+                    results['added_count'] = len(changes['added'])
+                    logger.info(f"Filtered {original_count - len(changes['added'])} resurrected jobs from 'added' list")
 
                 logger.debug(f"Added {len(changes['added'])} new job postings")
 
