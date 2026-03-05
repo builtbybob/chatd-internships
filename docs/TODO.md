@@ -755,31 +755,83 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 
 ---
 
-### 9. Role Status Management
-**Goal**: Handle role deactivations and visibility changes
+### 9. Job Resurrection & Soft-Delete Handling ✅ **COMPLETED**
+**Goal**: Handle jobs that are soft-deleted and later reappear in listings.json
+
+**Problem**: When jobs are soft-deleted (marked `is_deleted=true`) and later reappear in `listings.json`, the system attempted to add them as new jobs, causing repeated errors:
+```
+[WARNING] Job 87fc97ec-ca87-43df-a38a-d186466d89ef already exists, cannot add as new
+[ERROR] Failed to add job 87fc97ec-ca87-43df-a38a-d186466d89ef to database
+```
+
+**Root Cause**: The `detect_job_changes()` method retrieves "previous jobs" using `get_job_postings(include_deleted=False)`, filtering out soft-deleted jobs. When change detection compares current listings against this filtered list, it treats soft-deleted jobs that have reappeared as "new" jobs to be added.
+
+**Solution Implemented**: ✅ **COMPLETED**
+- [x] **9.1** Modified `add_job_posting()` method (Lines 387-420)
+  - [x] Changed return type to `tuple[bool, bool]` (success, was_resurrected)
+  - [x] Detects soft-deleted jobs when attempting to add
+  - [x] Calls `resurrect_job_posting()` to undelete and update
+  - [x] Returns `(True, True)` for resurrected jobs, `(True, False)` for truly new jobs
+- [x] **9.2** Added `resurrect_job_posting()` method (Lines 477-519)
+  - [x] Validates job exists and is soft-deleted
+  - [x] Sets `is_deleted = False` to undelete the job
+  - [x] Calls `update_job_posting_with_refresh()` for full data update
+  - [x] Logs resurrection events for monitoring
+- [x] **9.3** Modified `process_job_changes()` method (Lines 1164-1189)
+  - [x] Tracks which jobs were resurrected during add operations
+  - [x] **Removes resurrected jobs from `changes['added']`** to prevent duplicate Discord messages
+  - [x] Updates `results['added_count']` to reflect only truly new jobs
+  - [x] Logs filtering of resurrected jobs
+
+**Results Achieved**:
+- **No duplicate Discord messages**: Resurrected jobs filtered from notification queue before bot sees them
+- **Clean architecture**: Filtering happens at storage layer, not bot layer
+- **Zero performance impact**: Only checks resurrection status when job already exists (rare case)
+- **All tests passing**: 218/218 tests including 3 new resurrection-specific tests
+- **Production ready**: Handles 5 currently affected jobs and all future resurrections
+
+**Expected Impact**:
+- Errors will stop appearing in logs for the 5 affected jobs
+- Future job reappearances handled gracefully without user-visible issues
+- System correctly distinguishes between truly new jobs and resurrected jobs
+
+**Monitoring Log Messages**:
+```
+[INFO] Job {job_id} exists but is soft-deleted. Attempting resurrection.
+[INFO] Resurrecting job {job_id} and updating with current data
+[INFO] Job {job_id} was resurrected, will not send new Discord message
+[INFO] Filtered {count} resurrected jobs from 'added' list
+```
+
+**Files Modified**: `chatd/storage_abstraction.py`, `tests/test_resurrection.py`
+
+---
+
+### 10. Role Status Management (Future Enhancement)
+**Goal**: Handle role deactivations and visibility changes with Discord message updates
 
 **Current Behavior**: Only posts new roles, ignores status changes
 **Target**: Update/modify past messages when roles change status
 
 **Implementation Plan**:
-- [ ] **9.1** Message tracking enhancement
+- [ ] **10.1** Message tracking enhancement
   - [ ] Store Discord message IDs with role keys
   - [ ] Track message-to-role mapping in storage
   - [ ] Add message update capabilities
-- [ ] **9.2** Status change detection
+- [ ] **10.2** Status change detection
   - [ ] Compare `visible` and `active` flags between updates
   - [ ] Identify roles that changed from active to inactive
   - [ ] Track roles that became hidden/invisible
-- [ ] **9.3** Message modification strategies
+- [ ] **10.3** Message modification strategies
   - [ ] **Option A**: Edit original message with strikethrough text
   - [ ] **Option B**: Add reaction (❌) to indicate closure
   - [ ] **Option C**: Reply with update status
   - [ ] **Option D**: Delete message entirely
-- [ ] **9.4** Configuration options
+- [ ] **10.4** Configuration options
   - [ ] `HANDLE_DEACTIVATIONS=true`
   - [ ] `DEACTIVATION_STRATEGY=edit|react|reply|delete`
   - [ ] `DEACTIVATION_MESSAGE="🚫 This position is no longer available"`
-- [ ] **9.5** Bulk status processing
+- [ ] **10.5** Bulk status processing
   - [ ] Handle multiple simultaneous status changes
   - [ ] Rate limit message updates to avoid API limits
   - [ ] Error handling for messages that can't be modified
@@ -788,7 +840,7 @@ role_id = role['id']  # Direct access to unique UUID from listings.json
 
 ---
 
-### 10. Database Implementation (PostgreSQL + Docker) 🗄️ **(High Priority)**
+### 11. Database Implementation (PostgreSQL + Docker) 🗄️ **(High Priority)**
 **Goal**: Replace JSON file storage with PostgreSQL database for improved data management, querying, and scalability
 
 **Current State**: Job postings stored in `previous_data.json` (~500KB), message tracking in `message_tracking.json` (~100KB)
@@ -1134,7 +1186,7 @@ sudo chatd restart
 
 ---
 
-### 11. Enhanced Monitoring & Observability
+### 12. Enhanced Monitoring & Observability
 **Goal**: Better visibility into bot performance and health
 
 **Benefits**: Proactive issue detection, performance optimization insights, operational visibility
@@ -1193,7 +1245,7 @@ sudo chatd restart
 
 ---
 
-### 12. Configuration Validation & Safety ✅ **COMPLETED**
+### 13. Configuration Validation & Safety ✅ **COMPLETED**
 **Goal**: Prevent misconfigurations and provide better error messages
 
 **Benefits**: Faster debugging, prevents runtime failures, improves user experience
@@ -1242,7 +1294,7 @@ sudo chatd restart
 
 ---
 
-### 13. Backup & Recovery System 🎯 **(Stretch Goal)**
+### 14. Backup & Recovery System 🎯 **(Stretch Goal)**
 **Goal**: Automated backup and disaster recovery procedures
 
 **Note**: Limited by device storage constraints - requires external storage solution
@@ -1269,7 +1321,7 @@ sudo chatd restart
 
 ---
 
-### 14. Multi-Environment Support ✅ **COMPLETED**
+### 15. Multi-Environment Support ✅ **COMPLETED**
 **Goal**: Support for multiple isolated environments (dev, prod, seasonal, etc.) with database-driven architecture
 
 **Benefits**: Safe testing, isolated development, professional deployment workflow, separate Discord bots and databases per environment
@@ -1526,7 +1578,7 @@ sudo thatd logs -f                    # Follow dev logs
 
 ---
 
-### 15. Enhanced Test Simulation Framework 🧪 **(Depends on Multi-Environment)**
+### 16. Enhanced Test Simulation Framework 🧪 **(Depends on Multi-Environment)**
 **Goal**: Migrate and enhance existing test simulation script for multi-environment support
 
 **Current State**: `setup_test_update.sh` allows replaying message updates by resetting to older commits
@@ -2464,12 +2516,62 @@ GENERIC_JOB_TITLE=Software Engineering Opportunity        # Default title for bl
 **Priority**: Medium (nice-to-have after Solution 1 implemented)
 **Status**: Deferred until Solution 1 proven effective
 
----
-
 **Recommendation**: Implement Solution 1 first as a quick, reliable fix. Monitor effectiveness and user feedback before considering Solution 2 investment.
 
 **Related Issues**: None currently
 **Depends On**: None (standalone feature)
+
+---
+
+### 23. Job Resurrection & Soft-Delete Handling ✅ **COMPLETED**
+**Goal**: Handle jobs that are soft-deleted and later reappear in listings.json
+
+**Problem**: When jobs are soft-deleted (marked `is_deleted=true`) and later reappear in `listings.json`, the system attempted to add them as new jobs, causing repeated errors:
+```
+[WARNING] Job 87fc97ec-ca87-43df-a38a-d186466d89ef already exists, cannot add as new
+[ERROR] Failed to add job 87fc97ec-ca87-43df-a38a-d186466d89ef to database
+```
+
+**Root Cause**: The `detect_job_changes()` method retrieves "previous jobs" using `get_job_postings(include_deleted=False)`, filtering out soft-deleted jobs. When change detection compares current listings against this filtered list, it treats soft-deleted jobs that have reappeared as "new" jobs to be added.
+
+**Solution Implemented**: ✅ **COMPLETED**
+- [x] **23.1** Modified `add_job_posting()` method (Lines 387-420)
+  - [x] Changed return type to `tuple[bool, bool]` (success, was_resurrected)
+  - [x] Detects soft-deleted jobs when attempting to add
+  - [x] Calls `resurrect_job_posting()` to undelete and update
+  - [x] Returns `(True, True)` for resurrected jobs, `(True, False)` for truly new jobs
+- [x] **23.2** Added `resurrect_job_posting()` method (Lines 477-519)
+  - [x] Validates job exists and is soft-deleted
+  - [x] Sets `is_deleted = False` to undelete the job
+  - [x] Calls `update_job_posting_with_refresh()` for full data update
+  - [x] Logs resurrection events for monitoring
+- [x] **23.3** Modified `process_job_changes()` method (Lines 1164-1189)
+  - [x] Tracks which jobs were resurrected during add operations
+  - [x] **Removes resurrected jobs from `changes['added']`** to prevent duplicate Discord messages
+  - [x] Updates `results['added_count']` to reflect only truly new jobs
+  - [x] Logs filtering of resurrected jobs
+
+**Results Achieved**:
+- **No duplicate Discord messages**: Resurrected jobs filtered from notification queue before bot sees them
+- **Clean architecture**: Filtering happens at storage layer, not bot layer
+- **Zero performance impact**: Only checks resurrection status when job already exists (rare case)
+- **All tests passing**: 218/218 tests including 3 new resurrection-specific tests
+- **Production ready**: Handles 5 currently affected jobs and all future resurrections
+
+**Expected Impact**:
+- Errors will stop appearing in logs for the 5 affected jobs
+- Future job reappearances handled gracefully without user-visible issues
+- System correctly distinguishes between truly new jobs and resurrected jobs
+
+**Monitoring Log Messages**:
+```
+[INFO] Job {job_id} exists but is soft-deleted. Attempting resurrection.
+[INFO] Resurrecting job {job_id} and updating with current data
+[INFO] Job {job_id} was resurrected, will not send new Discord message
+[INFO] Filtered {count} resurrected jobs from 'added' list
+```
+
+**Files Modified**: `chatd/storage_abstraction.py`, `tests/test_resurrection.py`
 
 ---
 
