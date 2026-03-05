@@ -15,7 +15,7 @@ import os
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple
 from datetime import datetime
 from pathlib import Path
 
@@ -384,7 +384,7 @@ class DatabaseStorageBackend(StorageBackend):
             logger.error(f"Failed to bulk load job postings to database: {e}")
             return False
     
-    def add_job_posting(self, job_data: Dict[str, Any]) -> tuple[bool, bool]:
+    def add_job_posting(self, job_data: Dict[str, Any]) -> Tuple[bool, bool]:
         """
         Add a single new job posting to database. Job must not already exist.
         
@@ -487,35 +487,11 @@ class DatabaseStorageBackend(StorageBackend):
         """
         Resurrect a soft-deleted job posting by un-deleting it and updating its data.
         This handles the case where a job reappears in listings after being soft-deleted.
+        Delegates to update_job_posting_with_refresh with resurrect=True so that
+        is_deleted is cleared atomically in the same transaction as the field updates.
         """
-        try:
-            with self.db_manager.session_scope() as session:
-                job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
-                
-                if not job_posting:
-                    logger.error(f"Cannot resurrect job {job_id}: not found in database")
-                    return False
-                
-                if not job_posting.is_deleted:
-                    logger.warning(f"Job {job_id} is not soft-deleted, cannot resurrect")
-                    return False
-                
-                # Un-delete the job
-                job_posting.is_deleted = False
-                
-                # Update the job data using full refresh (handles relationships)
-                # This ensures all fields (including locations, terms, degrees) are updated
-                logger.info(f"Resurrecting job {job_id} and updating with current data")
-                
-                # Use the existing update logic to handle the full refresh
-                session.expunge_all()
-                
-            # Now perform the full update in a new transaction
-            return self.update_job_posting_with_refresh(job_id, job_data)
-                
-        except Exception as e:
-            logger.error(f"Failed to resurrect job posting {job_id}: {e}")
-            return False
+        logger.info(f"Resurrecting job {job_id} and updating with current data")
+        return self.update_job_posting_with_refresh(job_data, resurrect=True)
     
     def get_message_tracking(self) -> Dict[str, Dict[str, Any]]:
         """Get message tracking data from database."""
@@ -1313,41 +1289,42 @@ class DataStorage:
         status['available'] = True
         return status
 
-    def update_job_posting_with_refresh(self, job: dict) -> bool:
+    def update_job_posting_with_refresh(self, job: dict, resurrect: bool = False) -> bool:
         """Update job posting with differential updates to related data while preserving message tracking.
-        
+
         This method is specifically for the database backend to avoid CASCADE DELETE issues.
         The JSON backend doesn't need this because it doesn't have foreign key constraints.
-        
+
         This method:
         1. Updates the main job_posting record (preserves message tracking)
         2. Differentially updates locations, terms, and degrees (only changes what's different)
         3. Avoids deleting the job_posting itself (which would cascade delete message tracking)
-        
+
         Performance benefits:
         - No-op when no changes to related data
         - Minimal database operations for small changes
         - Preserves existing data that hasn't changed
-        
+
         Args:
             job: Job posting dictionary with all fields
-            
+            resurrect: If True, clears is_deleted in the same transaction (for job resurrection)
+
         Returns:
             bool: True if successful, False otherwise
         """
         job_id = job['id']
-        
+
         try:
             with self.database_backend.db_manager.session_scope() as session:
                 # Import the models we need
                 from .database import JobPosting, JobLocation, JobTerm, JobDegree
-                
+
                 # 1. Update the main job posting record (preserves message tracking)
                 job_posting = session.query(JobPosting).filter(JobPosting.id == job_id).first()
                 if not job_posting:
                     logger.error(f"Job posting {job_id} not found for update")
                     return False
-                
+
                 # Update all main fields
                 job_posting.date_updated = job['date_updated']
                 job_posting.url = job['url']
@@ -1360,7 +1337,10 @@ class DataStorage:
                 job_posting.company_url = job.get('company_url')
                 job_posting.is_visible = job.get('is_visible', True)
                 job_posting.category = job.get('category')
-                
+
+                if resurrect:
+                    job_posting.is_deleted = False
+
                 # Flush the job posting update to ensure it's committed before updating related data
                 session.flush()
                 
