@@ -523,7 +523,7 @@ class ReactionQueue:
             self.stats['processed'] += 1
             
         except Exception as e:
-            logger.error(f"Critical error processing reactions for message {message.id}: {e}")
+            logger.error(f"Critical error processing reactions for message {message.id}: {e}", exc_info=True)
             failure_type = self._classify_failure(e)
             self._update_health_metrics(False, failure_type)
             self.stats['failed'] += 1
@@ -656,7 +656,7 @@ async def send_message(message: str, channel_id: str, role_key: Optional[str] = 
                 failed_channels.add(channel_id)  # Immediate blacklist on permission issues
                 return None
             except Exception as e:
-                logger.error(f"Error fetching channel {channel_id}: {e}")
+                logger.error(f"Error fetching channel {channel_id}: {e}", exc_info=True)
                 channel_failure_counts[channel_id] = channel_failure_counts.get(channel_id, 0) + 1
                 if channel_failure_counts[channel_id] >= config.max_retries:
                     failed_channels.add(channel_id)
@@ -681,7 +681,7 @@ async def send_message(message: str, channel_id: str, role_key: Optional[str] = 
         return sent_message
         
     except Exception as e:
-        logger.error(f"Error sending message to channel {channel_id}: {e}")
+        logger.error(f"Error sending message to channel {channel_id}: {e}", exc_info=True)
         channel_failure_counts[channel_id] = channel_failure_counts.get(channel_id, 0) + 1
         if channel_failure_counts[channel_id] >= config.max_retries:
             logger.warning(f"Channel {channel_id} has failed {config.max_retries} times, adding to failed channels")
@@ -740,7 +740,7 @@ async def check_for_new_roles() -> None:
     try:
         has_updates = await loop.run_in_executor(None, clone_or_update_repo)
     except Exception as e:
-        logger.error(f"Error updating repository: {e}")
+        logger.error(f"Error updating repository: {e}", exc_info=True)
         return
     
     if not has_updates:
@@ -764,7 +764,7 @@ async def check_for_new_roles() -> None:
         changes_for_discord = results.get('changes_for_discord')
         
     except Exception as e:
-        logger.error(f"Error processing job changes: {e}")
+        logger.error(f"Error processing job changes: {e}", exc_info=True)
         return
     
     # Process new roles for Discord notifications
@@ -864,7 +864,7 @@ async def send_dm_with_job_info(user: discord.Member, role_data: Dict[str, Any])
         logger.info(f"Sent job details DM to {user.display_name}#{user.discriminator}")
         
     except Exception as e:
-        logger.error(f"Failed to send DM to {user.display_name}#{user.discriminator}: {e}")
+        logger.error(f"Failed to send DM to {user.display_name}#{user.discriminator}: {e}", exc_info=True)
 
 
 async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any]]:
@@ -923,7 +923,7 @@ async def get_role_data_by_message_id(message_id: str) -> Optional[Dict[str, Any
                     return None
                     
         except Exception as e:
-            logger.error(f"Database query failed for message {message_id}: {e}")
+            logger.error(f"Database query failed for message {message_id}: {e}", exc_info=True)
             # Fall back to JSON approach
     
     # Fallback to JSON approach for compatibility
@@ -1038,7 +1038,7 @@ async def get_company_jobs_from_database(company_name: str, days: int = 7) -> Li
         return company_jobs
         
     except Exception as e:
-        logger.error(f"Error fetching company jobs for '{company_name}': {e}")
+        logger.error(f"Error fetching company jobs for '{company_name}': {e}", exc_info=True)
         return []
 
 
@@ -1194,7 +1194,7 @@ async def get_enhanced_company_insights(company_name: str, days: int = 7) -> Dic
             }
             
     except Exception as e:
-        logger.error(f"Error getting enhanced company insights: {e}")
+        logger.error(f"Error getting enhanced company insights: {e}", exc_info=True)
         # Fallback to basic data
         basic_jobs = await get_company_jobs_from_database(company_name, days)
         return {
@@ -1409,7 +1409,7 @@ async def send_enhanced_company_info_dm(user: discord.Member, role_data: Dict[st
         logger.info(f"Sent enhanced company insights DM for {company_name} to {user.display_name}#{user.discriminator} ({recent_positions} recent jobs, {total_positions} total)")
         
     except Exception as e:
-        logger.error(f"Failed to send enhanced company info DM to {user.display_name}#{user.discriminator}: {e}")
+        logger.error(f"Failed to send enhanced company info DM to {user.display_name}#{user.discriminator}: {e}", exc_info=True)
         # Fallback to individual job info
         try:
             await send_dm_with_job_info(user, role_data)
@@ -1487,7 +1487,7 @@ async def handle_application_tracking(user: discord.User, role_data: Dict[str, A
             # Don't send error DM to avoid spam
             
     except Exception as e:
-        logger.error(f"Unexpected error in application tracking for {user.display_name}: {e}")
+        logger.error(f"Unexpected error in application tracking for {user.display_name}: {e}", exc_info=True)
         # Don't send error DM for unexpected failures to avoid spam
 
 
@@ -1507,7 +1507,7 @@ async def send_fallback_dm(user: discord.User, message: str) -> None:
     except discord.HTTPException as e:
         logger.warning(f"Failed to send fallback DM to {user.display_name}: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error sending fallback DM to {user.display_name}: {e}")
+        logger.error(f"Unexpected error sending fallback DM to {user.display_name}: {e}", exc_info=True)
 
 
 async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], storage: DataStorage) -> None:
@@ -1580,7 +1580,7 @@ async def send_congratulatory_dm(user: discord.User, role_data: Dict[str, Any], 
             logger.error(f"Unexpected error sending congratulatory DM to {user.display_name}: {dm_error}")
         
     except Exception as e:
-        logger.error(f"Error preparing congratulatory DM for {user.display_name}: {e}")
+        logger.error(f"Error preparing congratulatory DM for {user.display_name}: {e}", exc_info=True)
 
 
 @bot.event
@@ -1847,5 +1847,5 @@ def run_bot() -> None:
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
-        logger.error(f"Error running bot: {e}")
+        logger.error(f"Error running bot: {e}", exc_info=True)
         raise
