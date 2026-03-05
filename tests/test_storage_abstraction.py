@@ -154,7 +154,6 @@ def test_json_backend():
         assert tracking_data[job_id]['message_id'] == message_id, "Message tracking data mismatch"
         
         logger.info("✅ JSON backend tests passed")
-        return True
 
 
 def test_database_backend():
@@ -256,7 +255,6 @@ def test_database_backend():
         assert result, "Idempotent delete should succeed when job doesn't exist"
         
         logger.info("✅ Database backend tests passed")
-        return True
 
 
 @pytest.mark.parametrize("mode", ["json_only", "database_only", "dual_write"])
@@ -312,7 +310,6 @@ def test_storage_abstraction_mode(mode):
             assert isinstance(tracking_data, dict), "Expected dict of message tracking data"
             
     logger.info(f"✅ Storage abstraction test in {mode} mode completed successfully")
-    return True
 
 
 def test_update_workflow_separation():
@@ -416,7 +413,6 @@ def test_update_workflow_separation():
         assert final_mixed_job['locations'] == ['Remote Only'], "Locations not updated in mixed changes"
         
         logger.info("✅ Update workflow separation test passed")
-        return True
 
 
 def test_process_job_changes():
@@ -454,7 +450,6 @@ def test_process_job_changes():
         assert result['removed_count'] == 0, f"Expected 0 removals, got {result['removed_count']}"
         
         logger.info("✅ process_job_changes test passed")
-        return True
 
 
 def test_abort_on_empty_storage_configuration():
@@ -543,7 +538,6 @@ def test_abort_on_empty_storage_configuration():
         logger.info(f"Normal operation with data: {changes_normal.get('added', changes_normal.get('changes', {}).get('added', []))}")
         
         logger.info("✅ ABORT_ON_EMPTY_STORAGE configuration test passed")
-        return True
 
 
 def test_error_handling_and_edge_cases():
@@ -597,7 +591,6 @@ def test_error_handling_and_edge_cases():
         assert isinstance(result, bool), "Expected boolean result for duplicate handling"
         
         logger.info("✅ Error handling and edge cases test passed")
-        return True
 
 
 def create_updated_test_data():
@@ -704,13 +697,10 @@ def test_differential_update_efficiency():
             assert final_job['degrees'] == ['Any Engineering'], "Final degrees incorrect"
             
             logger.info("✅ Differential update efficiency test passed")
-            return True
-            
+
         except Exception as e:
             logger.error(f"❌ Differential update efficiency test failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+            raise
 
 
 def test_message_tracking_preservation():
@@ -790,65 +780,40 @@ def test_message_tracking_preservation():
             assert job_found, "Updated job not found in storage"
             
             logger.info("✅ Message tracking preservation test passed")
-            return True
-            
+
         except Exception as e:
             logger.error(f"❌ Message tracking preservation test failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+            raise
 
 
 def main():
     """Main test function."""
     logger.info("🚀 Starting storage abstraction layer tests...")
-    
+
     all_passed = True
-    
-    # Test individual backends
-    if not test_json_backend():
-        all_passed = False
-    
-    if not test_database_backend():
-        all_passed = False
-    
-    # Test architectural separation of update workflows (our recent fixes)
-    if not test_update_workflow_separation():
-        all_passed = False
-    
-    # Test process_job_changes functionality
-    if not test_process_job_changes():
-        all_passed = False
-    
-    # Test differential update efficiency
-    if not test_differential_update_efficiency():
-        all_passed = False
-    
-    # Test message tracking preservation during content correction
-    if not test_message_tracking_preservation():
-        all_passed = False
-    
-    # Test ABORT_ON_EMPTY_STORAGE configuration
-    if not test_abort_on_empty_storage_configuration():
-        all_passed = False
-    
-    # Test error handling and edge cases
-    if not test_error_handling_and_edge_cases():
-        all_passed = False
-    
-    # Test storage abstraction in different modes
-    modes = ['json_only', 'dual_write', 'database_only']
-    for mode in modes:
-        # Note: test_storage_abstraction_mode is the pytest parametrized version
-        # For the standalone script, we test each mode individually
+
+    tests = [
+        test_json_backend,
+        test_database_backend,
+        test_update_workflow_separation,
+        test_process_job_changes,
+        test_differential_update_efficiency,
+        test_message_tracking_preservation,
+        test_abort_on_empty_storage_configuration,
+        test_error_handling_and_edge_cases,
+    ]
+
+    for test_fn in tests:
         try:
-            # Import and call the test function directly with the mode
-            test_result = test_storage_abstraction_mode(mode)
-            if test_result:
-                logger.info(f"✅ Storage abstraction {mode} mode tests passed")
-            else:
-                logger.error(f"❌ Storage abstraction {mode} mode tests failed")
-                all_passed = False
+            test_fn()
+        except Exception as e:
+            logger.error(f"❌ {test_fn.__name__} failed: {e}")
+            all_passed = False
+
+    for mode in ['json_only', 'dual_write', 'database_only']:
+        try:
+            test_storage_abstraction_mode(mode)
+            logger.info(f"✅ Storage abstraction {mode} mode tests passed")
         except Exception as e:
             logger.error(f"❌ Storage abstraction {mode} mode tests failed: {e}")
             all_passed = False

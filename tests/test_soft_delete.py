@@ -90,7 +90,7 @@ class TestSoftDeleteFunctionality(unittest.TestCase):
         assert mock_backend.get_job_postings.call_count == 2
 
 
-class TestSoftDeleteIntegration(unittest.TestCase):
+class TestSoftDeleteIntegration(unittest.IsolatedAsyncioTestCase):
     """Integration tests for soft delete functionality."""
     
     @patch('chatd.bot.get_storage')

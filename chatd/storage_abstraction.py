@@ -971,8 +971,7 @@ class DataStorage:
         # Get previous job data from storage
         previous_jobs = self.get_job_postings()
         
-        # DEBUG: Log what we're comparing
-        logger.info(f"Change detection: {len(current_jobs)} current jobs vs {len(previous_jobs)} previous jobs")
+        logger.debug(f"Change detection: {len(current_jobs)} current jobs vs {len(previous_jobs)} previous jobs")
         if len(previous_jobs) == 0 and len(current_jobs) > 0:
             logger.error("CRITICAL: No previous jobs found from storage! All jobs will be treated as new.")
             

@@ -156,7 +156,12 @@ class DatabaseManager:
             echo: Whether to log SQL queries (for debugging)
         """
         self.database_url = database_url
-        self.engine = create_engine(database_url, echo=echo)
+        self.engine = create_engine(
+            database_url,
+            echo=echo,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+        )
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         
     def create_tables(self):

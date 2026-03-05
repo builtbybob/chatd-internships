@@ -59,7 +59,7 @@ def format_epoch(val: float) -> str:
                     system_tz_name = 'America/New_York'
                 
                 target_tz = ZoneInfo(system_tz_name)
-            except:
+            except Exception:
                 # Final fallback to America/New_York
                 target_tz = ZoneInfo('America/New_York')
         
